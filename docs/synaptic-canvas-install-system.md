@@ -444,3 +444,116 @@ Jinja2 templates are rendered in a **sandboxed environment**:
 - `{% include %}` and `{% import %}` are disabled
 
 Templates produce text output only. They cannot execute code or access system resources.
+
+---
+
+## Template Variable Validation
+
+Every Jinja2 template references variables (`{{ repo.name }}`, `{{ answers.style }}`, etc.) that must be satisfiable at install time. The system validates template variables at three points to prevent orphan references.
+
+### Variable Sources
+
+Template variables come from three namespaces with well-defined schemas:
+
+| Namespace | Source | Schema |
+|-----------|--------|--------|
+| `repo.*` | Auto-detected repo profile (Phase 1) | Fixed set: `name`, `root`, `primary_language`, `languages`, `frameworks`, `test_frameworks`, `ci_system`, `monorepo`, `git_conventions` |
+| `answers.*` | User answers to `package_questions` (Phase 2) | Dynamic: one variable per `question_id` in `package_questions` for this package |
+| `env.*` | Synaptic Canvas environment | Fixed set: `synaptic_root`, `synaptic_channel`, `synaptic_agents` |
+
+No new database table is needed — the mapping is implicit. `{{ answers.style }}` is satisfied by `package_questions WHERE question_id = 'style'`. The `repo.*` and `env.*` schemas are fixed and known to the validator.
+
+### Validation Algorithm
+
+For each `.j2` file in the package:
+
+```
+1. Parse all {{ var }} references (including loop variables, conditionals)
+2. For each reference:
+   a. answers.X  → verify package_questions has row with question_id = X
+   b. repo.X     → verify X is in the known repo profile schema
+   c. env.X      → verify X is in the known env schema
+   d. Unknown namespace → ERROR: undeclared variable source
+3. Reverse check: any package_questions.question_id not referenced
+   by any template → WARNING: unused question (may be intentional)
+```
+
+### Validation Points
+
+**1. Dry Run (`sc dry-run install <package>`)**
+
+Runs the full validation algorithm against all `.j2` files in the package. Reports any orphan variables or unknown namespaces. Does not write files or install anything.
+
+```
+═══ Dry Run: commit-msg ═══
+
+Template Variable Check:
+  ✓ {{ repo.name }}           → repo profile (auto-detected)
+  ✓ {{ repo.primary_language }} → repo profile (auto-detected)
+  ✓ {{ answers.style }}       → package_questions: "Commit message style?"
+  ✓ {{ answers.lang }}        → package_questions: "What languages does this repo use?"
+  ✗ {{ answers.scope_prefix }} → ERROR: no matching question_id "scope_prefix"
+  ⚠ question "review_tone"    → WARNING: declared but never referenced in templates
+
+Template validation: FAIL (1 error, 1 warning)
+```
+
+**2. Pre-Publish Gate (`sc admin publish`)**
+
+Template validation runs automatically before any publish operation. This is a **blocking gate** — publish fails if any template variable cannot be satisfied.
+
+```
+sc admin publish commit-msg --from develop --to beta
+
+Pre-publish validation:
+  ✓ SHA integrity check       PASS
+  ✓ Hook script references    PASS
+  ✗ Template variable check   FAIL
+    → answers.scope_prefix has no matching package_questions entry
+
+Publish blocked. Fix template variables before promoting.
+```
+
+The pre-publish gate also runs during `sc admin import` as a **non-blocking warning**, alerting the author that templates have issues before they're committed to the database.
+
+**3. Post-Install Verification**
+
+After template rendering during install, the rendered output is scanned for unresolved Jinja2 patterns. This is a safety net — if validation was bypassed or a rendering error occurred, the user is warned.
+
+```
+Post-install template check:
+  Scanning rendered output for unresolved variables...
+  ✓ skills/commit-msg/main.md    — clean (no unresolved variables)
+  ✗ skills/commit-msg/advanced.md — WARNING: contains "{{ answers.missing_var }}"
+
+Install completed with warnings. Some template variables may not have been filled.
+```
+
+The post-install check looks for literal `{{ ... }}` or `{% ... %}` patterns remaining in rendered output. This catches:
+- Variables that passed namespace validation but had no value at render time
+- Jinja2 syntax errors that produced partial rendering
+- Conditional blocks that weren't properly closed
+
+### Validation in the Lockfile
+
+After successful install, the lockfile records template validation status:
+
+```toml
+[[skills]]
+id = "commit-msg"
+
+  [skills.template_validation]
+  validated_at = "2026-02-22T10:05:00Z"
+  template_files = ["skills/commit-msg/main.md.j2"]
+  variables_resolved = ["repo.name", "repo.primary_language", "answers.style", "answers.lang"]
+  unresolved = []           # empty = clean install
+  warnings = []             # e.g., ["unused question: review_tone"]
+```
+
+This record enables `sc validate` to check whether template validation was clean at install time, and `sc upgrade` to re-validate when questions or templates change.
+
+### Design Rationale
+
+- **No new table:** The `package_questions` table already provides the `answers.*` mapping via `question_id`. The `repo.*` and `env.*` schemas are fixed and embedded in the validator code. Adding a table would duplicate information that's already derivable.
+- **Three validation points:** Dry-run catches issues before install. Pre-publish blocks bad packages from reaching users. Post-install catches rendering failures that static analysis can't predict.
+- **Warnings vs errors:** Unused questions are warnings (may be used for non-template purposes like lockfile metadata). Unknown namespaces and missing question mappings are errors.

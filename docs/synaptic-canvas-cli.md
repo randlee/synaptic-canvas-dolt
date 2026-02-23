@@ -101,6 +101,7 @@ sc admin import <path> --branch <branch>
     Ingest a package directory into Dolt on the specified branch.
     Computes SHA256 per file and aggregate package SHA.
     Creates a Dolt commit with package metadata.
+    Runs template variable validation on .j2 files (warning, non-blocking).
 
 sc admin export <package> --output <dir> [--branch <branch>]
     Export a package from Dolt to filesystem.
@@ -110,6 +111,8 @@ sc admin export <package> --output <dir> [--branch <branch>]
 sc admin publish <package> --from <branch> --to <branch>
     Promote a package between channels (e.g., develop → beta → main).
     Executes a targeted dolt_merge for the package data.
+    Runs template variable validation as a BLOCKING gate — publish
+    fails if any .j2 template references undeclared variables.
 
 sc admin verify <package> [--branch <branch>]
     Full integrity check within Dolt: recompute all SHA256 hashes
@@ -226,7 +229,7 @@ Both build on the SHA foundation. Option A is package-granular, Option B is data
 
 The per-file content storage in Dolt enables automated scanning:
 - Pattern matching for known-bad content (exfiltration, injection)
-- Template variable validation (ensure `{{VAR}}` substitutions are safe)
+- Template variable validation — **implemented** as a three-point check (dry-run, pre-publish gate, post-install). See [Install System](./synaptic-canvas-install-system.md#template-variable-validation)
 - Permission analysis (what hooks/scripts request)
 - Dependency chain verification
 
@@ -380,7 +383,7 @@ ALTER TABLE packages ADD COLUMN signed_by VARCHAR(256) AFTER signature;
 
 3. **Dependency resolution:** When installing a package with dependencies, should `sc` auto-install deps? Or just warn?
 
-4. **Template expansion:** Packages with `variables` (Jinja2 templates) need expansion at install time. Does `sc` handle this, or does it delegate to a post-install hook?
+4. **Template expansion:** ~~Resolved.~~ `sc` handles Jinja2 rendering at install time. Templates are validated at three points: dry-run (preview), pre-publish (blocking gate), and post-install (rendered output scan). See [Install System — Template Variable Validation](./synaptic-canvas-install-system.md#template-variable-validation).
 
 5. **Upgrade strategy:** On `sc upgrade`, what happens to local modifications? Warn and skip? Force overwrite? Stash?
 
@@ -393,3 +396,4 @@ ALTER TABLE packages ADD COLUMN signed_by VARCHAR(256) AFTER signature;
 | Date | Change |
 |------|--------|
 | 2026-02-22 | Initial design document |
+| 2026-02-22 | Add template variable validation to admin publish (blocking gate) and import (warning) |

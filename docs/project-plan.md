@@ -153,7 +153,9 @@ Import/export — the write path. Python prototypes (`tools/dolt-ingest.py`, `to
 - `src/pkg/dolt/writer.go` — Dolt write operations (INSERT/UPDATE)
 - Import logic: scan directory → compute SHAs → write to Dolt → create commit
 - Manifest parsing: read `manifest.yaml` → decompose into relational inserts
+- `src/pkg/template/validator.go` — Jinja2 template variable validator (parse `.j2` files, cross-reference against `package_questions`, known `repo.*` schema, known `env.*` schema)
 - Unit tests for import logic (mock Dolt writer)
+- Unit tests for template validator (known-good and known-bad templates)
 - Integration test: import test fixture → verify Dolt state
 
 **Acceptance Criteria:**
@@ -163,7 +165,8 @@ Import/export — the write path. Python prototypes (`tools/dolt-ingest.py`, `to
 - Creates a Dolt commit with descriptive message
 - Handles manifest.yaml decomposition matching schema spec
 - Refuses to import if branch doesn't exist
-- `--json` output includes import summary
+- Runs template variable validation on `.j2` files — reports warnings for undeclared variables (non-blocking)
+- `--json` output includes import summary (with template validation warnings if any)
 - Matches behavior of `tools/dolt-ingest.py` for same input
 
 ### Sprint 2.2: Admin Export
@@ -211,11 +214,14 @@ Import/export — the write path. Python prototypes (`tools/dolt-ingest.py`, `to
 - `src/cmd/admin/publish.go` — publish command
 - Dolt merge operations for targeted package promotion
 - Pre-publish validation (verify SHAs before promoting)
+- Pre-publish template variable validation (reuses `src/pkg/template/validator.go` from Sprint 2.1)
 
 **Acceptance Criteria:**
 - Promotes package from one branch to another via Dolt merge
 - Runs verify before publishing (fail if corrupt)
-- `--json` output includes publish summary
+- Runs template variable validation as a **BLOCKING gate** — publish fails if any `.j2` template references undeclared variables
+- Template validation errors include: unknown namespace, `answers.*` variable with no matching `package_questions` row, `repo.*` or `env.*` variable not in known schema
+- `--json` output includes publish summary (with template validation results)
 - Cannot publish to same branch
 
 ---
@@ -247,7 +253,8 @@ The read path. These commands never write to Dolt.
 - `src/cmd/install.go` — install command
 - `src/pkg/installer/installer.go` — file installation logic
 - `src/pkg/installer/tracking.go` — installed package tracking (local state)
-- Install logic: query Dolt → verify SHAs → write files → record install
+- Install logic: query Dolt → verify SHAs → write files → render templates → record install
+- Post-install template verification: scan rendered `.j2` output for unresolved `{{ }}` patterns
 
 **Acceptance Criteria:**
 - Installs package files to `.claude/` (local) or `~/.claude/` (global)
@@ -255,9 +262,11 @@ The read path. These commands never write to Dolt.
 - Verifies per-file SHA after writing each file
 - Verifies aggregate SHA after install
 - Fails and rolls back on any SHA mismatch
-- Records installed package/version/channel for status tracking
+- Renders `.j2` templates with repo profile + user answers context
+- Post-install scan: warns if any rendered output contains unresolved `{{ }}` patterns (safety net)
+- Records installed package/version/channel for status tracking, including `template_validation` in lockfile
 - Handles dependencies (warn if missing, don't auto-install for MVP)
-- `--json` output includes install summary
+- `--json` output includes install summary (with template validation results)
 
 ### Sprint 3.3: Validate & Status
 
@@ -367,3 +376,4 @@ The read path. These commands never write to Dolt.
 |------|--------|
 | 2026-02-22 | Initial project plan |
 | 2026-02-22 | Move CI pipeline from Phase 5 into Sprint 1.1; Phase 5 now release-only |
+| 2026-02-22 | Add template variable validation to Sprints 2.1 (validator + warning), 2.4 (blocking gate), 3.2 (post-install scan) |
