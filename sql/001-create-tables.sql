@@ -25,6 +25,12 @@ CREATE TABLE IF NOT EXISTS packages (
     license             VARCHAR(64)   DEFAULT 'MIT',
     tags                TEXT,                             -- comma-separated: "git,commit,workflow"
     min_claude_version  VARCHAR(32),                      -- e.g. "1.0.32"
+
+    -- Installation policy
+    install_scope       VARCHAR(32)   NOT NULL DEFAULT 'any',  -- any|local-only
+    variables           JSON,                             -- token expansion (Tier 1 packages)
+    options             JSON,                             -- install-time options
+
     created_at          TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
     updated_at          TIMESTAMP     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 

@@ -72,6 +72,10 @@ CREATE TABLE packages (
     license         VARCHAR(64)  DEFAULT 'MIT',
     tags            TEXT,                          -- comma-separated: "git,commit,workflow"
     min_claude_version VARCHAR(32),                -- minimum Claude Code version, e.g. "1.0.32"
+    -- Installation policy
+    install_scope   VARCHAR(32)  NOT NULL DEFAULT 'any',  -- any|local-only
+    variables       JSON,                          -- token expansion config (Tier 1 packages)
+    options         JSON,                          -- install-time options (e.g. no-tracking)
     created_at      TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id)
@@ -83,6 +87,9 @@ CREATE TABLE packages (
 - `agent_variant` indicates the target agent: `claude`, `codex`, or `codex+claude`
 - `tags` is comma-separated for simplicity; a join table is over-engineering at this scale
 - `version` is semver (e.g., `1.3.0`). The Dolt commit hash provides the immutable snapshot reference; semver provides the human-readable version
+- `install_scope`: `any` (default, can install globally or locally) or `local-only` (repo `.claude` only)
+- `variables`: JSON object for Tier 1 token expansion, e.g. `{"REPO_NAME": {"auto": "git-repo-basename", "description": "..."}}`
+- `options`: JSON object for install-time boolean/string options, e.g. `{"no-tracking": {"type": "boolean", "default": false}}`
 
 ### `package_files`
 
