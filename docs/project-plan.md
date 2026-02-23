@@ -65,6 +65,7 @@ Scaffold the Go project, establish patterns, connect to Dolt.
 - `src/internal/config/config.go` — CLI configuration (flag parsing, defaults)
 - `.golangci.yml` — linter configuration
 - `.goreleaser.yml` — build configuration (following claude-history patterns)
+- `.github/workflows/test.yml` — CI pipeline (PR and push triggers)
 - Unit tests for config, logging, output formatters
 
 **Acceptance Criteria:**
@@ -74,6 +75,10 @@ Scaffold the Go project, establish patterns, connect to Dolt.
 - `sc --help` prints usage
 - `sc --version` prints injected version
 - JSON and table output formatters tested
+- CI runs on PR and push to main/develop
+- CI matrix: ubuntu/macOS/windows × Go 1.26
+- CI steps: lint (`golangci-lint` with `gosec`), test (with `-race`), build, coverage
+- Coverage reported to Codecov
 
 ### Sprint 1.2: Dolt Client
 
@@ -323,25 +328,9 @@ The read path. These commands never write to Dolt.
 
 ---
 
-## Phase 5: CI/CD & Publishing
+## Phase 5: Release Pipeline
 
-### Sprint 5.1: CI Pipeline
-
-**Goal:** GitHub Actions for testing and linting.
-
-**Deliverables:**
-- `.github/workflows/test.yml` — PR and push CI
-- Matrix: ubuntu/macOS/windows × Go 1.26
-- Steps: lint, test (with race), build, coverage
-
-**Acceptance Criteria:**
-- CI runs on PR and push to main/develop
-- golangci-lint with gosec
-- Tests pass on all platforms with `-race`
-- Coverage reported to Codecov
-- Build artifacts verified
-
-### Sprint 5.2: Release Pipeline
+### Sprint 5.1: Release Pipeline
 
 **Goal:** Tag-triggered GoReleaser publish.
 
@@ -364,11 +353,11 @@ The read path. These commands never write to Dolt.
 
 | Phase | Sprints | Focus |
 |-------|---------|-------|
-| 1. Foundation | 1.1–1.4 | Scaffold, Dolt client, integrity, log-debug agent |
+| 1. Foundation | 1.1–1.4 | Scaffold + CI pipeline, Dolt client, integrity, log-debug agent |
 | 2. Admin | 2.1–2.4 | Import, export, verify, publish |
 | 3. End-User | 3.1–3.4 | List, install, validate, upgrade |
 | 4. Skill | 4.1–4.2 | sc:plugin skill, installer |
-| 5. CI/CD | 5.1–5.2 | Test pipeline, release pipeline |
+| 5. Release | 5.1 | GoReleaser release pipeline |
 
 ---
 
@@ -377,3 +366,4 @@ The read path. These commands never write to Dolt.
 | Date | Change |
 |------|--------|
 | 2026-02-22 | Initial project plan |
+| 2026-02-22 | Move CI pipeline from Phase 5 into Sprint 1.1; Phase 5 now release-only |
