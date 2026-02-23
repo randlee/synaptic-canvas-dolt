@@ -66,7 +66,7 @@ IF iteration > 3 and QA still FAIL:
 
 ## Build & CI
 
-- Go source in `src/` (following claude-history conventions)
+- Go 1.26, source in `src/` (following claude-history conventions)
 - GoReleaser for cross-platform builds
 - CI: `test.yml` (lint + test matrix + build), `release.yml` (tag-triggered publish)
 - All tests must pass with `-race` flag
