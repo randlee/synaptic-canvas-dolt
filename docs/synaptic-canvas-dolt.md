@@ -44,13 +44,15 @@ The core insight driving this architecture: **skills cannot be effectively teste
 
 ```sql
 -- What breaks if I upgrade claude-history?
-SELECT p.name, d.version_constraint
+-- (run on any branch to see impact within that channel)
+SELECT p.name, d.dep_spec
 FROM package_deps d JOIN packages p ON d.package_id = p.id
-WHERE d.depends_on = 'claude-history';
+WHERE d.dep_name = 'claude-history' AND d.dep_type = 'skill';
 
--- Everything on beta that needs python3
-SELECT name, version FROM packages
-WHERE channel = 'beta' AND install_cmd LIKE '%python3%';
+-- Everything that needs python3 (on whichever branch you query)
+SELECT p.name, p.version, d.dep_spec
+FROM packages p JOIN package_deps d ON p.id = d.package_id
+WHERE d.dep_name = 'python3' AND d.dep_type = 'tool';
 ```
 
 Git + JSON can't do this without building a query layer — at which point you're reinventing a database poorly. The dependency graph is relational; as the catalog grows, flat-file approaches collapse.
@@ -107,65 +109,16 @@ Skills are promoted by merging branches on the Dolt server. No separate release 
 
 ## Database Schema
 
-### `packages`
+> **Canonical reference:** [Schema Specification](./synaptic-canvas-schema.md) — full DDL, design rationale, and key queries.
 
-The top-level unit of installation. One package may contain multiple files and declare multiple dependencies.
+**Tables:** `packages`, `package_files`, `package_deps`, `package_variants`, `package_hooks`, `package_questions`
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | `varchar` | Unique package identifier |
-| `name` | `varchar` | Human-readable name |
-| `version` | `varchar` | Semver string |
-| `channel` | `varchar` | Source channel (`main`, `beta`, `develop`) |
-| `description` | `text` | Package description |
-| `agent_variant` | `varchar` | `claude`, `codex`, or `codex+claude` |
-
-### `package_files`
-
-One row per file in the package. Files are stored as blobs with their destination path and hash.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `package_id` | `varchar` | FK to `packages` |
-| `dest_path` | `varchar` | Relative destination path (e.g., `skills/my-skill/main.md`) |
-| `blob` | `longblob` | File contents |
-| `sha256` | `varchar` | SHA-256 of blob for integrity verification |
-| `file_type` | `varchar` | `skill`, `script`, `hook`, or `config` |
-
-### `package_deps`
-
-Declares all dependencies a package requires. The installer walks this graph before materializing any files.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `package_id` | `varchar` | FK to `packages` |
-| `dep_type` | `varchar` | `tool`, `cli`, or `skill` |
-| `dep_name` | `varchar` | Name of the dependency |
-| `dep_spec` | `varchar` | Version spec (e.g., `>=3.11`) or empty |
-| `install_cmd` | `varchar` | Command to install if absent (e.g., `cargo install agent-teams-mail`) |
-
-### `package_variants`
-
-Maps a logical package name to agent-profile-specific implementations.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `package_id` | `varchar` | Logical package ID |
-| `agent_profile` | `varchar` | `claude`, `codex`, or `codex+claude` |
-| `variant_package_id` | `varchar` | Concrete package implementing this profile |
-
-### `package_hooks`
-
-Hook declarations for packages. See [Hook System](./synaptic-canvas-hook-system.md) for full architecture.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `package_id` | `varchar` | FK to `packages` |
-| `event` | `varchar` | `PreToolUse`, `PostToolUse`, etc. |
-| `matcher` | `varchar` | Tool matcher pattern |
-| `script_path` | `varchar` | Relative path to hook script within package |
-| `priority` | `int` | Execution order (lower runs first) |
-| `blocking` | `boolean` | Whether hook can return decisions |
+Key design decisions:
+- **No `channel` column** on packages — channels are Dolt branches, not data columns. Querying a channel = querying that branch.
+- **Blob storage** in `package_files` — skill files are small; keeping blobs in Dolt means everything is branchable and queryable.
+- **`package_questions`** — install-time questions for Jinja2 template rendering (see [Install System](./synaptic-canvas-install-system.md)).
+- **`is_template` flag** on `package_files` — marks Jinja2 template files for install-time rendering.
+- **`cmd_sha256`** on `package_deps` — future security: verify `install_cmd` against signed allowlist.
 
 ---
 
@@ -190,11 +143,10 @@ DOLT_DB=synaptic-canvas
 
 ### Core Queries (CLI → Server)
 
-**List available packages on a channel:**
+**List available packages** (query the appropriate branch for the channel):
 ```sql
-SELECT id, name, version, description, agent_variant
+SELECT id, name, version, description, agent_variant, tags
 FROM packages
-WHERE channel = ?
 ORDER BY name;
 ```
 
@@ -204,12 +156,12 @@ SELECT p.id, p.name, p.version,
        d.dep_type, d.dep_name, d.dep_spec, d.install_cmd
 FROM packages p
 LEFT JOIN package_deps d ON p.id = d.package_id
-WHERE p.id = ? AND p.channel = ?;
+WHERE p.id = ?;
 ```
 
 **Fetch files for a package:**
 ```sql
-SELECT dest_path, blob, sha256, file_type
+SELECT dest_path, blob, sha256, file_type, is_template
 FROM package_files
 WHERE package_id = ?;
 ```
@@ -218,16 +170,18 @@ WHERE package_id = ?;
 ```sql
 SELECT id, name, version
 FROM packages
-WHERE channel = ? AND id IN (?, ?, ?)
+WHERE id IN (?, ?, ?)
   AND version != ?;  -- compare against lockfile versions
 ```
 
-**Dependency impact analysis (before promotion):**
+**Dependency impact analysis:**
 ```sql
-SELECT p.name, p.channel, d.version_constraint
+SELECT p.name, p.version, d.dep_spec
 FROM package_deps d JOIN packages p ON d.package_id = p.id
-WHERE d.depends_on = ?;
+WHERE d.dep_name = ? AND d.dep_type = 'skill';
 ```
+
+> **Full query catalog:** See [Schema Specification](./synaptic-canvas-schema.md#key-queries) for recursive dependency trees, variant resolution, and hook queries.
 
 ### Branch Operations (Admin Only)
 
@@ -364,8 +318,8 @@ resolved_at = "2026-02-21T14:32:00Z"
 id = "claude-history"
 logical_id = "claude-history"
 variant = "claude"
-version = "a3f9c21"                  # Dolt commit hash
-channel = "develop"
+version = "2.1.0"                    # Semver from packages.version
+dolt_commit = "a3f9c21"             # Dolt commit hash for reproducibility
 installed_at = "2026-02-21T14:32:00Z"
 install_scope = "project"
 
