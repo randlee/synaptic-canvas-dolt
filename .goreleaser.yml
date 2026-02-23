@@ -1,0 +1,64 @@
+version: 2
+
+project_name: sc
+
+builds:
+  - id: sc
+    dir: ./src
+    binary: sc
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+archives:
+  - id: default
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+brews:
+  - name: sc
+    repository:
+      owner: randlee
+      name: homebrew-tap
+    directory: Formula
+    homepage: "https://github.com/randlee/synaptic-canvas"
+    description: "Dolt-backed package manager for Claude Code skills"
+    license: "MIT"
+
+# TODO: Enable winget publisher once publisher ID is registered.
+# winget:
+#   - name: sc
+#     publisher: randlee
+#     short_description: "Dolt-backed package manager for Claude Code skills"
+#     license: "MIT"
+#     publisher_url: "https://github.com/randlee/synaptic-canvas"
+#     repository:
+#       owner: randlee
+#       name: winget-pkgs
+#       branch: main
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
