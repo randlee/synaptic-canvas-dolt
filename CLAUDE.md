@@ -26,7 +26,7 @@ All development follows a phased plan split into sprints. Each sprint runs a dev
 - Runs full test suite, demands 100% pass
 - Validates Go conventions (lint, formatting, vet)
 
-**2. Requirements QA Agent**
+**2. Requirements QA Agent** — `.claude/agents/sc-qa.md`
 - Verifies work matches design documents (schema spec, CLI design, pipeline spec)
 - **Stops work outside of documented requirements** — no scope creep
 - Validates CLI commands match the command surface defined in the CLI design doc
@@ -35,14 +35,16 @@ All development follows a phased plan split into sprints. Each sprint runs a dev
 
 ### Loop Structure
 
+All agent runs use `Task` tool with `run_in_background=true`.
+
 ```
 iteration = 1
 WHILE iteration <= 3:
     Run Dev Phase (developer agent)
         - First iteration: full sprint dev prompt
         - Subsequent iterations: fix prompt incorporating QA findings
-    Run Code QA Agent
-    Run Requirements QA Agent
+    Run Code QA Agent                    ← Task(subagent_type, run_in_background=true)
+    Run Requirements QA Agent (sc-qa)    ← Task(subagent_type="sc-qa", run_in_background=true)
     IF BOTH QA verdicts are PASS:
         BREAK → proceed to PR
     IF EITHER QA verdict is FAIL:
