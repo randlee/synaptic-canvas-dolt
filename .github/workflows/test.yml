@@ -33,7 +33,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          version: v2.1
           working-directory: src
           args: --timeout=5m
 
@@ -43,7 +43,7 @@ jobs:
 
       - name: Build
         working-directory: src
-        run: go build -o sc ./...
+        run: go build -o sc .
 
       - name: Upload coverage
         if: matrix.os == 'ubuntu-latest'
