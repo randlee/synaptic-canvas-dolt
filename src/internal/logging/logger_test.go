@@ -2,6 +2,7 @@ package logging
 
 import (
 	"bytes"
+	"context"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -97,7 +98,7 @@ func TestLogFileCreation(t *testing.T) {
 		t.Fatalf("failed to create log directory: %v", err)
 	}
 
-	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o640)
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600) //nolint:gosec // test file in temp dir
 	if err != nil {
 		t.Fatalf("failed to create log file: %v", err)
 	}
@@ -105,10 +106,12 @@ func TestLogFileCreation(t *testing.T) {
 	handler := slog.NewJSONHandler(f, &slog.HandlerOptions{Level: slog.LevelInfo})
 	logger := slog.New(handler)
 	logger.Info("test log entry")
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Fatalf("failed to close log file: %v", err)
+	}
 
 	// Verify the file was created and contains content.
-	data, err := os.ReadFile(logPath)
+	data, err := os.ReadFile(logPath) //nolint:gosec // test file in temp dir
 	if err != nil {
 		t.Fatalf("failed to read log file: %v", err)
 	}
@@ -155,7 +158,7 @@ func TestRotateLog_SameDayNoRotation(t *testing.T) {
 	logPath := filepath.Join(dir, "sc.log")
 
 	// Create a log file "today".
-	if err := os.WriteFile(logPath, []byte("today's log"), 0o640); err != nil {
+	if err := os.WriteFile(logPath, []byte("today's log"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -176,7 +179,7 @@ func TestRotateLog_DifferentDayRotates(t *testing.T) {
 	logPath := filepath.Join(dir, "sc.log")
 
 	// Create a log file and backdate its mod time to yesterday.
-	if err := os.WriteFile(logPath, []byte("yesterday's log"), 0o640); err != nil {
+	if err := os.WriteFile(logPath, []byte("yesterday's log"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	yesterday := time.Now().AddDate(0, 0, -1)
@@ -197,7 +200,7 @@ func TestRotateLog_DifferentDayRotates(t *testing.T) {
 	// The rotated file should exist.
 	expectedName := "sc-" + yesterday.Format("2006-01-02") + ".log"
 	rotatedPath := filepath.Join(dir, expectedName)
-	data, err := os.ReadFile(rotatedPath)
+	data, err := os.ReadFile(rotatedPath) //nolint:gosec // test file in temp dir
 	if err != nil {
 		t.Fatalf("rotated log file should exist at %s: %v", expectedName, err)
 	}
@@ -221,7 +224,7 @@ func TestCleanOldLogs(t *testing.T) {
 	}
 
 	for name := range files {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("log"), 0o640); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("log"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -249,22 +252,26 @@ func TestFileHandlerAlwaysInfoLevel(t *testing.T) {
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "sc.log")
 
-	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o640)
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600) //nolint:gosec // test file in temp dir
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			t.Errorf("failed to close log file: %v", err)
+		}
+	}()
 
 	// Create handler at Info level (as fileHandler does).
 	handler := slog.NewJSONHandler(f, &slog.HandlerOptions{Level: slog.LevelInfo})
 
 	// Debug should NOT be enabled.
-	if handler.Enabled(nil, slog.LevelDebug) {
+	if handler.Enabled(context.Background(), slog.LevelDebug) {
 		t.Error("file handler should not log debug messages")
 	}
 
 	// Info should be enabled.
-	if !handler.Enabled(nil, slog.LevelInfo) {
+	if !handler.Enabled(context.Background(), slog.LevelInfo) {
 		t.Error("file handler should log info messages")
 	}
 }

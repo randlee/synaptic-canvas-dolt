@@ -44,21 +44,33 @@ func (f *Formatter) Table(headers []string, rows [][]string) error {
 	// Print headers.
 	for i, h := range headers {
 		if i > 0 {
-			fmt.Fprint(tw, "\t")
+			if _, err := fmt.Fprint(tw, "\t"); err != nil {
+				return fmt.Errorf("writing table separator: %w", err)
+			}
 		}
-		fmt.Fprint(tw, h)
+		if _, err := fmt.Fprint(tw, h); err != nil {
+			return fmt.Errorf("writing table header: %w", err)
+		}
 	}
-	fmt.Fprintln(tw)
+	if _, err := fmt.Fprintln(tw); err != nil {
+		return fmt.Errorf("writing table header newline: %w", err)
+	}
 
 	// Print rows.
 	for _, row := range rows {
 		for i, col := range row {
 			if i > 0 {
-				fmt.Fprint(tw, "\t")
+				if _, err := fmt.Fprint(tw, "\t"); err != nil {
+					return fmt.Errorf("writing table separator: %w", err)
+				}
 			}
-			fmt.Fprint(tw, col)
+			if _, err := fmt.Fprint(tw, col); err != nil {
+				return fmt.Errorf("writing table cell: %w", err)
+			}
 		}
-		fmt.Fprintln(tw)
+		if _, err := fmt.Fprintln(tw); err != nil {
+			return fmt.Errorf("writing table row newline: %w", err)
+		}
 	}
 	return tw.Flush()
 }
@@ -96,7 +108,7 @@ func (f *Formatter) Success(msg string) {
 	if f.Quiet {
 		return
 	}
-	fmt.Fprintln(f.Writer, msg)
+	_, _ = fmt.Fprintln(f.Writer, msg) //nolint:errcheck // best-effort output
 }
 
 // Error prints an error message to stderr. Always shown regardless of quiet mode.
@@ -105,5 +117,5 @@ func (f *Formatter) Error(msg string) {
 	if w == nil {
 		w = os.Stderr
 	}
-	fmt.Fprintln(w, "Error: "+msg)
+	_, _ = fmt.Fprintln(w, "Error: "+msg) //nolint:errcheck // best-effort error output
 }

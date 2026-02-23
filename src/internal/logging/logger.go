@@ -100,7 +100,7 @@ func fileHandler() (slog.Handler, error) {
 	}
 
 	path := filepath.Join(dir, logFile)
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o640)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600) //nolint:gosec // path derived from os.UserHomeDir
 	if err != nil {
 		return nil, err
 	}
