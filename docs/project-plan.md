@@ -112,6 +112,26 @@ Scaffold the Go project, establish patterns, connect to Dolt.
 - Edge cases tested: empty files, binary content, unicode filenames
 - 100% line coverage on integrity package
 
+### Sprint 1.4: Log Debug Agent
+
+**Goal:** Claude Code agent that tails `sc` logs and surfaces warnings/errors.
+
+**Deliverables:**
+- `.claude/agents/sc-log-debug.md` — log monitoring agent
+- Tails `~/.sc/logs/sc.log` in background
+- Notifies when warnings or errors are encountered (count + summary)
+- Supports on-demand filtering: by level, component, operation, time range, or regex pattern
+- Can correlate log entries across a single operation (e.g., all logs from one `sc install` run)
+- Formats findings for conversational presentation
+
+**Acceptance Criteria:**
+- Agent can be launched to monitor logs during development/testing
+- Detects and reports new warnings/errors as they appear
+- Filters work: `level:error`, `component:dolt`, `operation:install`, custom regex
+- Time-range filtering: "last 5 minutes", "since 14:30"
+- Output is concise — summarizes patterns, doesn't dump raw logs
+- Can be asked to explain error context (surrounding log lines)
+
 ---
 
 ## Phase 2: Admin Commands
@@ -344,7 +364,7 @@ The read path. These commands never write to Dolt.
 
 | Phase | Sprints | Focus |
 |-------|---------|-------|
-| 1. Foundation | 1.1–1.3 | Scaffold, Dolt client, integrity |
+| 1. Foundation | 1.1–1.4 | Scaffold, Dolt client, integrity, log-debug agent |
 | 2. Admin | 2.1–2.4 | Import, export, verify, publish |
 | 3. End-User | 3.1–3.4 | List, install, validate, upgrade |
 | 4. Skill | 4.1–4.2 | sc:plugin skill, installer |
