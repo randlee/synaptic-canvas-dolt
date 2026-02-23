@@ -24,9 +24,14 @@ These apply to every sprint in every phase:
 ### Structured Logging
 - **Package:** `log/slog` (stdlib, Go 1.21+; project targets Go 1.26)
 - Centralized logger initialization in `internal/logging/`
-- JSON output by default, text output with `--verbose` flag
-- Standard attributes on every log entry: `component`, `operation`
+- **Always enabled** — logging is on by default, never opt-in
+- **Log destination:** `~/.sc/logs/sc.log` (file), rotated by date
+- Console output: `--verbose` prints human-readable logs to stderr; `--quiet` suppresses console logging
+- File logging always active regardless of `--quiet`/`--verbose` flags
+- JSON format in log files; text format on console when `--verbose`
+- Standard attributes on every log entry: `component`, `operation`, `timestamp`
 - Levels: `Debug` (internal detail), `Info` (operations), `Warn` (recoverable), `Error` (failures)
+- Default file level: `Info`; `--verbose` sets console to `Debug`
 - No `fmt.Println` for operational output — use `internal/output/` formatters
 - No `log.Fatal` — return errors up the call stack
 
