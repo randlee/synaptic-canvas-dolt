@@ -350,45 +350,6 @@ Not installed by default. Available via `sc install sc-admin-skill --global`.
 
 ---
 
-## Dev-QA Loop
-
-### QA Agents
-
-Two specialist agents run after each sprint:
-
-**1. Code QA Agent**
-- Verifies implementation matches sprint plan
-- Checks test coverage exists for new code
-- Runs full test suite, demands 100% pass
-- Validates Go conventions (lint, formatting)
-
-**2. Requirements QA Agent**
-- Verifies work matches design documents (this doc, schema spec, pipeline spec)
-- Stops work outside of documented requirements
-- Validates CLI commands match the command surface defined here
-- Checks schema changes are reflected in design docs (and vice versa)
-
-### Loop Structure
-
-```
-iteration = 1
-WHILE iteration <= 3:
-    Run Dev Phase (Go developer agent)
-    Run Code QA Agent
-    Run Requirements QA Agent
-    IF BOTH PASS:
-        BREAK → proceed to PR
-    IF EITHER FAIL:
-        Create fix prompt from QA findings
-        iteration += 1
-IF iteration > 3:
-    ESCALATE — architecture review needed
-```
-
-**Dev agent fixes. QA agents judge. Never mixed.**
-
----
-
 ## Schema Additions
 
 The following columns need to be added to support the CLI:
