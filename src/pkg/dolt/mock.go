@@ -2,8 +2,7 @@ package dolt
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
+	"strings"
 
 	"github.com/randlee/synaptic-canvas/pkg/models"
 )
@@ -26,7 +25,6 @@ type MockClient struct {
 	HooksErr     error
 	QuestionsErr error
 	VariantErr   error
-	SearchErr    error
 	CloseErr     error
 
 	Closed bool
@@ -140,26 +138,6 @@ func (m *MockClient) ResolveVariant(_ context.Context, logicalID, agentProfile s
 	return m.Variants[key], nil
 }
 
-// SearchByTags searches for packages by tags in the mock store.
-// The mock implementation does a simple JSON_CONTAINS emulation by checking
-// if each search tag exists in the package's tags list.
-func (m *MockClient) SearchByTags(_ context.Context, tags []string) ([]models.Package, error) {
-	if m.SearchErr != nil {
-		return nil, m.SearchErr
-	}
-	var result []models.Package
-	for _, p := range m.Packages {
-		pkgTags, err := p.TagsList()
-		if err != nil {
-			continue
-		}
-		if containsAll(pkgTags, tags) {
-			result = append(result, *p)
-		}
-	}
-	return result, nil
-}
-
 // Close marks the mock client as closed.
 func (m *MockClient) Close() error {
 	if m.CloseErr != nil {
@@ -169,24 +147,11 @@ func (m *MockClient) Close() error {
 	return nil
 }
 
-// containsAll returns true if haystack contains all elements of needles.
-func containsAll(haystack, needles []string) bool {
-	set := make(map[string]struct{}, len(haystack))
-	for _, s := range haystack {
-		set[s] = struct{}{}
-	}
-	for _, n := range needles {
-		if _, ok := set[n]; !ok {
-			return false
-		}
-	}
-	return true
-}
-
 // Verify MockClient implements Client at compile time.
 var _ Client = (*MockClient)(nil)
 
 // NewTestPackage is a helper that creates a Package with common test defaults.
+// Tags are stored as a comma-separated string (not JSON).
 func NewTestPackage(id, name, version string, tags []string) *models.Package {
 	p := &models.Package{
 		ID:           id,
@@ -195,11 +160,7 @@ func NewTestPackage(id, name, version string, tags []string) *models.Package {
 		InstallScope: "local",
 	}
 	if len(tags) > 0 {
-		tagsJSON, err := json.Marshal(tags)
-		if err != nil {
-			panic(fmt.Sprintf("marshaling test tags: %v", err))
-		}
-		p.Tags = tagsJSON
+		p.Tags = strings.Join(tags, ",")
 	}
 	return p
 }

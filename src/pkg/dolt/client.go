@@ -6,8 +6,8 @@ package dolt
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
+	"log/slog"
 
 	"github.com/randlee/synaptic-canvas/pkg/models"
 )
@@ -43,9 +43,6 @@ type Client interface {
 	// ResolveVariant resolves a logical package ID and agent profile to a
 	// concrete variant package ID. Returns empty string if no variant exists.
 	ResolveVariant(ctx context.Context, logicalID, agentProfile string) (string, error)
-
-	// SearchByTags finds packages that contain all specified tags.
-	SearchByTags(ctx context.Context, tags []string) ([]models.Package, error)
 
 	// Close releases database resources.
 	Close() error
@@ -118,6 +115,7 @@ func (c *SQLClient) switchBranch(ctx context.Context, branch string) error {
 	if stmt == "" {
 		return nil
 	}
+	slog.Debug("switching dolt branch", "branch", branch)
 	if _, err := c.db.ExecContext(ctx, stmt); err != nil {
 		return fmt.Errorf("switching to branch %q: %w", branch, err)
 	}
@@ -130,6 +128,7 @@ func (c *SQLClient) ListPackages(ctx context.Context, opts ListOptions) ([]model
 		return nil, err
 	}
 
+	slog.Debug("listing packages", "branch", opts.Branch)
 	rows, err := c.db.QueryContext(ctx, ListPackagesQuery())
 	if err != nil {
 		return nil, fmt.Errorf("listing packages: %w", err)
@@ -139,7 +138,7 @@ func (c *SQLClient) ListPackages(ctx context.Context, opts ListOptions) ([]model
 	var packages []models.Package
 	for rows.Next() {
 		var p models.Package
-		if err := rows.Scan(&p.ID, &p.Name, &p.Version, &p.Description, &p.Tags, &p.InstallScope); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Version, &p.Description, &p.Tags, &p.InstallScope, &p.SHA256); err != nil {
 			return nil, fmt.Errorf("scanning package row: %w", err)
 		}
 		packages = append(packages, p)
@@ -147,18 +146,21 @@ func (c *SQLClient) ListPackages(ctx context.Context, opts ListOptions) ([]model
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterating packages: %w", err)
 	}
+	slog.Debug("listed packages", "count", len(packages))
 	return packages, nil
 }
 
 // GetPackage retrieves a single package by ID.
 func (c *SQLClient) GetPackage(ctx context.Context, id string) (*models.Package, error) {
+	slog.Debug("getting package", "id", id)
 	var p models.Package
 	err := c.db.QueryRowContext(ctx, GetPackageQuery(), id).Scan(
 		&p.ID, &p.Name, &p.Version, &p.Description, &p.AgentVariant,
 		&p.Author, &p.License, &p.Tags, &p.InstallScope,
-		&p.Variables, &p.Options, &p.SHA256,
+		&p.Variables, &p.Options, &p.SHA256, &p.MinClaudeVer,
 	)
 	if err == sql.ErrNoRows {
+		slog.Debug("package not found", "id", id)
 		return nil, nil
 	}
 	if err != nil {
@@ -169,6 +171,7 @@ func (c *SQLClient) GetPackage(ctx context.Context, id string) (*models.Package,
 
 // GetPackageFiles retrieves all files belonging to a package.
 func (c *SQLClient) GetPackageFiles(ctx context.Context, packageID string) ([]models.PackageFile, error) {
+	slog.Debug("getting package files", "package_id", packageID)
 	rows, err := c.db.QueryContext(ctx, GetPackageFilesQuery(), packageID)
 	if err != nil {
 		return nil, fmt.Errorf("getting files for package %q: %w", packageID, err)
@@ -181,6 +184,7 @@ func (c *SQLClient) GetPackageFiles(ctx context.Context, packageID string) ([]mo
 		if err := rows.Scan(
 			&f.PackageID, &f.DestPath, &f.Content, &f.SHA256,
 			&f.FileType, &f.ContentType, &f.IsTemplate, &f.Frontmatter,
+			&f.FMName, &f.FMDescription, &f.FMVersion, &f.FMModel,
 		); err != nil {
 			return nil, fmt.Errorf("scanning file row: %w", err)
 		}
@@ -189,11 +193,13 @@ func (c *SQLClient) GetPackageFiles(ctx context.Context, packageID string) ([]mo
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterating files: %w", err)
 	}
+	slog.Debug("got package files", "package_id", packageID, "count", len(files))
 	return files, nil
 }
 
 // GetPackageDeps retrieves all dependencies for a package.
 func (c *SQLClient) GetPackageDeps(ctx context.Context, packageID string) ([]models.PackageDep, error) {
+	slog.Debug("getting package deps", "package_id", packageID)
 	rows, err := c.db.QueryContext(ctx, GetPackageDepsQuery(), packageID)
 	if err != nil {
 		return nil, fmt.Errorf("getting deps for package %q: %w", packageID, err)
@@ -214,11 +220,13 @@ func (c *SQLClient) GetPackageDeps(ctx context.Context, packageID string) ([]mod
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterating deps: %w", err)
 	}
+	slog.Debug("got package deps", "package_id", packageID, "count", len(deps))
 	return deps, nil
 }
 
 // GetPackageHooks retrieves all hooks for a package.
 func (c *SQLClient) GetPackageHooks(ctx context.Context, packageID string) ([]models.PackageHook, error) {
+	slog.Debug("getting package hooks", "package_id", packageID)
 	rows, err := c.db.QueryContext(ctx, GetPackageHooksQuery(), packageID)
 	if err != nil {
 		return nil, fmt.Errorf("getting hooks for package %q: %w", packageID, err)
@@ -239,11 +247,13 @@ func (c *SQLClient) GetPackageHooks(ctx context.Context, packageID string) ([]mo
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterating hooks: %w", err)
 	}
+	slog.Debug("got package hooks", "package_id", packageID, "count", len(hooks))
 	return hooks, nil
 }
 
 // GetPackageQuestions retrieves all questions for a package.
 func (c *SQLClient) GetPackageQuestions(ctx context.Context, packageID string) ([]models.PackageQuestion, error) {
+	slog.Debug("getting package questions", "package_id", packageID)
 	rows, err := c.db.QueryContext(ctx, GetPackageQuestionsQuery(), packageID)
 	if err != nil {
 		return nil, fmt.Errorf("getting questions for package %q: %w", packageID, err)
@@ -264,46 +274,22 @@ func (c *SQLClient) GetPackageQuestions(ctx context.Context, packageID string) (
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterating questions: %w", err)
 	}
+	slog.Debug("got package questions", "package_id", packageID, "count", len(questions))
 	return questions, nil
 }
 
 // ResolveVariant resolves a logical package ID and agent profile to a
 // concrete variant package ID. Returns empty string if no variant exists.
 func (c *SQLClient) ResolveVariant(ctx context.Context, logicalID, agentProfile string) (string, error) {
+	slog.Debug("resolving variant", "logical_id", logicalID, "agent_profile", agentProfile)
 	var variantID string
 	err := c.db.QueryRowContext(ctx, ResolveVariantQuery(), logicalID, agentProfile).Scan(&variantID)
 	if err == sql.ErrNoRows {
+		slog.Debug("variant not found", "logical_id", logicalID, "agent_profile", agentProfile)
 		return "", nil
 	}
 	if err != nil {
 		return "", fmt.Errorf("resolving variant %q/%q: %w", logicalID, agentProfile, err)
 	}
 	return variantID, nil
-}
-
-// SearchByTags finds packages that contain all specified tags.
-func (c *SQLClient) SearchByTags(ctx context.Context, tags []string) ([]models.Package, error) {
-	tagsJSON, err := json.Marshal(tags)
-	if err != nil {
-		return nil, fmt.Errorf("marshaling tags: %w", err)
-	}
-
-	rows, err := c.db.QueryContext(ctx, SearchByTagsQuery(), string(tagsJSON))
-	if err != nil {
-		return nil, fmt.Errorf("searching by tags: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	var packages []models.Package
-	for rows.Next() {
-		var p models.Package
-		if err := rows.Scan(&p.ID, &p.Name, &p.Version, &p.Description, &p.Tags); err != nil {
-			return nil, fmt.Errorf("scanning search result: %w", err)
-		}
-		packages = append(packages, p)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating search results: %w", err)
-	}
-	return packages, nil
 }

@@ -9,35 +9,34 @@ func TestPackageTagsList(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		tags    json.RawMessage
-		want    []string
-		wantErr bool
+		name string
+		tags string
+		want []string
 	}{
 		{
-			name: "valid tags",
-			tags: json.RawMessage(`["go","cli","tool"]`),
+			name: "multiple tags",
+			tags: "go,cli,tool",
 			want: []string{"go", "cli", "tool"},
 		},
 		{
 			name: "empty tags",
-			tags: nil,
-			want: []string{},
-		},
-		{
-			name: "null tags",
-			tags: json.RawMessage(`null`),
+			tags: "",
 			want: []string{},
 		},
 		{
 			name: "single tag",
-			tags: json.RawMessage(`["agent"]`),
+			tags: "agent",
 			want: []string{"agent"},
 		},
 		{
-			name:    "invalid json",
-			tags:    json.RawMessage(`not json`),
-			wantErr: true,
+			name: "tags with spaces",
+			tags: "go , cli , tool",
+			want: []string{"go", "cli", "tool"},
+		},
+		{
+			name: "trailing comma",
+			tags: "go,cli,",
+			want: []string{"go", "cli"},
 		},
 	}
 
@@ -45,16 +44,7 @@ func TestPackageTagsList(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			p := &Package{Tags: tt.tags}
-			got, err := p.TagsList()
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
+			got := p.TagsList()
 			if len(got) != len(tt.want) {
 				t.Fatalf("got %d tags, want %d", len(got), len(tt.want))
 			}
@@ -72,29 +62,28 @@ func TestPackageQuestionChoicesList(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		choices json.RawMessage
+		choices string
 		want    []string
-		wantErr bool
 	}{
 		{
 			name:    "valid choices",
-			choices: json.RawMessage(`["yes","no","maybe"]`),
+			choices: "yes,no,maybe",
 			want:    []string{"yes", "no", "maybe"},
 		},
 		{
 			name:    "empty choices",
-			choices: nil,
+			choices: "",
 			want:    []string{},
 		},
 		{
-			name:    "null choices",
-			choices: json.RawMessage(`null`),
-			want:    []string{},
+			name:    "single choice",
+			choices: "only",
+			want:    []string{"only"},
 		},
 		{
-			name:    "invalid json",
-			choices: json.RawMessage(`{bad`),
-			wantErr: true,
+			name:    "choices with spaces",
+			choices: "fast , slow , medium",
+			want:    []string{"fast", "slow", "medium"},
 		},
 	}
 
@@ -102,16 +91,7 @@ func TestPackageQuestionChoicesList(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			q := &PackageQuestion{Choices: tt.choices}
-			got, err := q.ChoicesList()
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
+			got := q.ChoicesList()
 			if len(got) != len(tt.want) {
 				t.Fatalf("got %d choices, want %d", len(got), len(tt.want))
 			}
@@ -128,14 +108,12 @@ func TestFileTypeConstants(t *testing.T) {
 	t.Parallel()
 
 	expected := map[FileType]string{
+		FileTypeSkill:   "skill",
 		FileTypeAgent:   "agent",
 		FileTypeCommand: "command",
-		FileTypeSkill:   "skill",
+		FileTypeScript:  "script",
 		FileTypeHook:    "hook",
-		FileTypeSnippet: "snippet",
 		FileTypeConfig:  "config",
-		FileTypeDoc:     "doc",
-		FileTypeOther:   "other",
 	}
 
 	for ft, want := range expected {
@@ -143,15 +121,22 @@ func TestFileTypeConstants(t *testing.T) {
 			t.Errorf("FileType %v = %q, want %q", ft, string(ft), want)
 		}
 	}
+
+	// Verify exactly 6 file types are defined.
+	if len(expected) != 6 {
+		t.Errorf("expected 6 FileType constants, got %d", len(expected))
+	}
 }
 
 func TestContentTypeConstants(t *testing.T) {
 	t.Parallel()
 
 	expected := map[ContentType]string{
+		ContentTypeMarkdown: "markdown",
+		ContentTypePython:   "python",
+		ContentTypeJSON:     "json",
+		ContentTypeYAML:     "yaml",
 		ContentTypeText:     "text",
-		ContentTypeBinary:   "binary",
-		ContentTypeTemplate: "template",
 	}
 
 	for ct, want := range expected {
@@ -165,9 +150,9 @@ func TestDepTypeConstants(t *testing.T) {
 	t.Parallel()
 
 	expected := map[DepType]string{
-		DepTypePackage: "package",
-		DepTypeTool:    "tool",
-		DepTypeRuntime: "runtime",
+		DepTypeTool:  "tool",
+		DepTypeCLI:   "cli",
+		DepTypeSkill: "skill",
 	}
 
 	for dt, want := range expected {
@@ -181,12 +166,8 @@ func TestHookEventConstants(t *testing.T) {
 	t.Parallel()
 
 	expected := map[HookEvent]string{
-		HookPreInstall:    "pre-install",
-		HookPostInstall:   "post-install",
-		HookPreUninstall:  "pre-uninstall",
-		HookPostUninstall: "post-uninstall",
-		HookPreUpgrade:    "pre-upgrade",
-		HookPostUpgrade:   "post-upgrade",
+		HookPreToolUse:  "PreToolUse",
+		HookPostToolUse: "PostToolUse",
 	}
 
 	for he, want := range expected {
@@ -200,10 +181,11 @@ func TestQuestionTypeConstants(t *testing.T) {
 	t.Parallel()
 
 	expected := map[QuestionType]string{
-		QuestionText:        "text",
-		QuestionBoolean:     "boolean",
-		QuestionChoice:      "choice",
-		QuestionMultiChoice: "multi-choice",
+		QuestionChoice:  "choice",
+		QuestionMulti:   "multi",
+		QuestionText:    "text",
+		QuestionConfirm: "confirm",
+		QuestionAuto:    "auto",
 	}
 
 	for qt, want := range expected {
@@ -223,7 +205,7 @@ func TestPackageJSONSerialization(t *testing.T) {
 		Version:      "1.0.0",
 		Description:  &desc,
 		InstallScope: "local",
-		Tags:         json.RawMessage(`["go","test"]`),
+		Tags:         "go,test",
 	}
 
 	data, err := json.Marshal(p)
@@ -244,5 +226,8 @@ func TestPackageJSONSerialization(t *testing.T) {
 	}
 	if decoded.Description == nil || *decoded.Description != desc {
 		t.Errorf("Description mismatch")
+	}
+	if decoded.Tags != "go,test" {
+		t.Errorf("Tags = %q, want %q", decoded.Tags, "go,test")
 	}
 }

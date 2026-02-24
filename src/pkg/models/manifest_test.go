@@ -39,11 +39,11 @@ func TestBuildManifestMinimal(t *testing.T) {
 	if m.InstallScope != "local" {
 		t.Errorf("InstallScope = %q, want %q", m.InstallScope, "local")
 	}
-	if len(m.Files) != 0 {
-		t.Errorf("expected 0 files, got %d", len(m.Files))
+	if len(m.Artifacts) != 0 {
+		t.Errorf("expected 0 artifacts, got %d", len(m.Artifacts))
 	}
-	if len(m.Deps) != 0 {
-		t.Errorf("expected 0 deps, got %d", len(m.Deps))
+	if len(m.Requires) != 0 {
+		t.Errorf("expected 0 requires, got %d", len(m.Requires))
 	}
 	if len(m.Hooks) != 0 {
 		t.Errorf("expected 0 hooks, got %d", len(m.Hooks))
@@ -53,26 +53,43 @@ func TestBuildManifestMinimal(t *testing.T) {
 	}
 }
 
+func TestBuildManifestInstallScopeAnyOmitted(t *testing.T) {
+	t.Parallel()
+
+	pkg := &Package{
+		ID:           "pkg-any",
+		Name:         "test",
+		Version:      "1.0.0",
+		InstallScope: "any",
+	}
+
+	m, err := BuildManifest(pkg, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if m.InstallScope != "" {
+		t.Errorf("InstallScope = %q, want empty (omitted for 'any')", m.InstallScope)
+	}
+}
+
 func TestBuildManifestOptionalFields(t *testing.T) {
 	t.Parallel()
 
 	desc := "A test package"
-	variant := "claude-code"
 	author := "test-author"
 	license := "MIT"
-	sha := "abc123"
 
 	pkg := &Package{
 		ID:           "pkg-1",
 		Name:         "test",
 		Version:      "1.0.0",
 		Description:  &desc,
-		AgentVariant: &variant,
+		AgentVariant: "claude-code",
 		Author:       &author,
 		License:      &license,
 		InstallScope: "global",
-		SHA256:       &sha,
-		Tags:         json.RawMessage(`["go","cli"]`),
+		SHA256:       "abc123",
+		Tags:         "go,cli",
 		Variables:    json.RawMessage(`{"key":"val"}`),
 		Options:      json.RawMessage(`{"opt":true}`),
 	}
@@ -84,8 +101,8 @@ func TestBuildManifestOptionalFields(t *testing.T) {
 	if m.Description != desc {
 		t.Errorf("Description = %q, want %q", m.Description, desc)
 	}
-	if m.AgentVariant != variant {
-		t.Errorf("AgentVariant = %q, want %q", m.AgentVariant, variant)
+	if m.AgentVariant != "claude-code" {
+		t.Errorf("AgentVariant = %q, want %q", m.AgentVariant, "claude-code")
 	}
 	if m.Author != author {
 		t.Errorf("Author = %q, want %q", m.Author, author)
@@ -93,8 +110,8 @@ func TestBuildManifestOptionalFields(t *testing.T) {
 	if m.License != license {
 		t.Errorf("License = %q, want %q", m.License, license)
 	}
-	if m.SHA256 != sha {
-		t.Errorf("SHA256 = %q, want %q", m.SHA256, sha)
+	if m.SHA256 != "abc123" {
+		t.Errorf("SHA256 = %q, want %q", m.SHA256, "abc123")
 	}
 	if len(m.Tags) != 2 {
 		t.Fatalf("got %d tags, want 2", len(m.Tags))
@@ -127,7 +144,7 @@ func TestBuildManifestWithFiles(t *testing.T) {
 			Content:     "# Agent",
 			SHA256:      "sha1",
 			FileType:    FileTypeAgent,
-			ContentType: ContentTypeText,
+			ContentType: ContentTypeMarkdown,
 			IsTemplate:  false,
 		},
 		{
@@ -136,7 +153,7 @@ func TestBuildManifestWithFiles(t *testing.T) {
 			Content:     "{}",
 			SHA256:      "sha2",
 			FileType:    FileTypeConfig,
-			ContentType: ContentTypeText,
+			ContentType: ContentTypeJSON,
 			IsTemplate:  true,
 			Frontmatter: json.RawMessage(`{"title":"Config"}`),
 		},
@@ -146,17 +163,31 @@ func TestBuildManifestWithFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(m.Files) != 2 {
-		t.Fatalf("got %d files, want 2", len(m.Files))
+
+	// Files should be grouped into artifacts map by pluralized file_type.
+	agents, ok := m.Artifacts["agents"]
+	if !ok {
+		t.Fatal("expected artifacts[agents] to exist")
 	}
-	if m.Files[0].DestPath != "agent.md" {
-		t.Errorf("Files[0].DestPath = %q, want %q", m.Files[0].DestPath, "agent.md")
+	if len(agents) != 1 {
+		t.Fatalf("got %d agents, want 1", len(agents))
 	}
-	if m.Files[1].IsTemplate != true {
-		t.Error("Files[1].IsTemplate should be true")
+	if agents[0].DestPath != "agent.md" {
+		t.Errorf("agents[0].DestPath = %q, want %q", agents[0].DestPath, "agent.md")
 	}
-	if m.Files[1].Frontmatter["title"] != "Config" {
-		t.Errorf("Files[1].Frontmatter[title] = %v, want Config", m.Files[1].Frontmatter["title"])
+
+	configs, ok := m.Artifacts["configs"]
+	if !ok {
+		t.Fatal("expected artifacts[configs] to exist")
+	}
+	if len(configs) != 1 {
+		t.Fatalf("got %d configs, want 1", len(configs))
+	}
+	if !configs[0].IsTemplate {
+		t.Error("configs[0].IsTemplate should be true")
+	}
+	if configs[0].Frontmatter["title"] != "Config" {
+		t.Errorf("configs[0].Frontmatter[title] = %v, want Config", configs[0].Frontmatter["title"])
 	}
 }
 
@@ -170,30 +201,26 @@ func TestBuildManifestWithDeps(t *testing.T) {
 		InstallScope: "local",
 	}
 
-	spec := ">=1.0.0"
-	installCmd := "go install example.com/tool@latest"
-	cmdSHA := "sha-cmd"
-
 	deps := []PackageDep{
-		{PackageID: "pkg-1", DepType: DepTypePackage, DepName: "other-pkg", DepSpec: &spec},
-		{PackageID: "pkg-1", DepType: DepTypeTool, DepName: "tool-x", InstallCmd: &installCmd, CmdSHA256: &cmdSHA},
+		{PackageID: "pkg-1", DepType: DepTypeTool, DepName: "tool-x", DepSpec: ">=1.0.0"},
+		{PackageID: "pkg-1", DepType: DepTypeTool, DepName: "tool-y"},
+		{PackageID: "pkg-1", DepType: DepTypeCLI, DepName: "cli-z", DepSpec: "^2.0"},
 	}
 
 	m, err := BuildManifest(pkg, nil, deps, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(m.Deps) != 2 {
-		t.Fatalf("got %d deps, want 2", len(m.Deps))
+
+	// Only tool deps go into Requires. CLI deps do not.
+	if len(m.Requires) != 2 {
+		t.Fatalf("got %d requires, want 2", len(m.Requires))
 	}
-	if m.Deps[0].DepSpec != spec {
-		t.Errorf("Deps[0].DepSpec = %q, want %q", m.Deps[0].DepSpec, spec)
+	if m.Requires[0] != "tool-x >=1.0.0" {
+		t.Errorf("Requires[0] = %q, want %q", m.Requires[0], "tool-x >=1.0.0")
 	}
-	if m.Deps[1].InstallCmd != installCmd {
-		t.Errorf("Deps[1].InstallCmd = %q, want %q", m.Deps[1].InstallCmd, installCmd)
-	}
-	if m.Deps[1].CmdSHA256 != cmdSHA {
-		t.Errorf("Deps[1].CmdSHA256 = %q, want %q", m.Deps[1].CmdSHA256, cmdSHA)
+	if m.Requires[1] != "tool-y" {
+		t.Errorf("Requires[1] = %q, want %q", m.Requires[1], "tool-y")
 	}
 }
 
@@ -208,7 +235,7 @@ func TestBuildManifestWithHooks(t *testing.T) {
 	}
 
 	hooks := []PackageHook{
-		{PackageID: "pkg-1", Event: HookPostInstall, Matcher: "**/*.md", ScriptPath: "hooks/post.sh", Priority: 10, Blocking: true},
+		{PackageID: "pkg-1", Event: HookPostToolUse, Matcher: "**/*.md", ScriptPath: "hooks/post.sh", Priority: 10, Blocking: true},
 	}
 
 	m, err := BuildManifest(pkg, nil, nil, hooks, nil)
@@ -218,8 +245,8 @@ func TestBuildManifestWithHooks(t *testing.T) {
 	if len(m.Hooks) != 1 {
 		t.Fatalf("got %d hooks, want 1", len(m.Hooks))
 	}
-	if m.Hooks[0].Event != HookPostInstall {
-		t.Errorf("Hooks[0].Event = %q, want %q", m.Hooks[0].Event, HookPostInstall)
+	if m.Hooks[0].Event != HookPostToolUse {
+		t.Errorf("Hooks[0].Event = %q, want %q", m.Hooks[0].Event, HookPostToolUse)
 	}
 	if m.Hooks[0].Priority != 10 {
 		t.Errorf("Hooks[0].Priority = %d, want 10", m.Hooks[0].Priority)
@@ -239,14 +266,13 @@ func TestBuildManifestWithQuestions(t *testing.T) {
 		InstallScope: "local",
 	}
 
-	defaultVal := "yes"
 	questions := []PackageQuestion{
 		{
 			PackageID:  "pkg-1",
 			QuestionID: "q1",
 			Prompt:     "Enable feature?",
-			Type:       QuestionBoolean,
-			DefaultVal: &defaultVal,
+			Type:       QuestionConfirm,
+			DefaultVal: "yes",
 			SortOrder:  1,
 		},
 		{
@@ -254,7 +280,7 @@ func TestBuildManifestWithQuestions(t *testing.T) {
 			QuestionID: "q2",
 			Prompt:     "Choose mode",
 			Type:       QuestionChoice,
-			Choices:    json.RawMessage(`["fast","slow"]`),
+			Choices:    "fast,slow",
 			SortOrder:  2,
 		},
 	}
@@ -266,31 +292,14 @@ func TestBuildManifestWithQuestions(t *testing.T) {
 	if len(m.Questions) != 2 {
 		t.Fatalf("got %d questions, want 2", len(m.Questions))
 	}
-	if m.Questions[0].DefaultVal != defaultVal {
-		t.Errorf("Questions[0].DefaultVal = %q, want %q", m.Questions[0].DefaultVal, defaultVal)
+	if m.Questions[0].DefaultVal != "yes" {
+		t.Errorf("Questions[0].DefaultVal = %q, want %q", m.Questions[0].DefaultVal, "yes")
 	}
 	if len(m.Questions[1].Choices) != 2 {
 		t.Fatalf("Questions[1].Choices = %v, want 2 choices", m.Questions[1].Choices)
 	}
 	if m.Questions[1].Choices[0] != "fast" {
 		t.Errorf("Questions[1].Choices[0] = %q, want %q", m.Questions[1].Choices[0], "fast")
-	}
-}
-
-func TestBuildManifestInvalidTags(t *testing.T) {
-	t.Parallel()
-
-	pkg := &Package{
-		ID:           "pkg-1",
-		Name:         "test",
-		Version:      "1.0.0",
-		InstallScope: "local",
-		Tags:         json.RawMessage(`not json`),
-	}
-
-	_, err := BuildManifest(pkg, nil, nil, nil, nil)
-	if err == nil {
-		t.Fatal("expected error for invalid tags JSON")
 	}
 }
 
@@ -339,32 +348,12 @@ func TestBuildManifestInvalidFrontmatter(t *testing.T) {
 	}
 
 	files := []PackageFile{
-		{PackageID: "pkg-1", DestPath: "bad.md", SHA256: "x", FileType: FileTypeDoc, ContentType: ContentTypeText, Frontmatter: json.RawMessage(`{bad`)},
+		{PackageID: "pkg-1", DestPath: "bad.md", SHA256: "x", FileType: FileTypeSkill, ContentType: ContentTypeMarkdown, Frontmatter: json.RawMessage(`{bad`)},
 	}
 
 	_, err := BuildManifest(pkg, files, nil, nil, nil)
 	if err == nil {
 		t.Fatal("expected error for invalid frontmatter JSON")
-	}
-}
-
-func TestBuildManifestInvalidChoices(t *testing.T) {
-	t.Parallel()
-
-	pkg := &Package{
-		ID:           "pkg-1",
-		Name:         "test",
-		Version:      "1.0.0",
-		InstallScope: "local",
-	}
-
-	questions := []PackageQuestion{
-		{PackageID: "pkg-1", QuestionID: "q1", Prompt: "Bad", Type: QuestionChoice, Choices: json.RawMessage(`not json`), SortOrder: 1},
-	}
-
-	_, err := BuildManifest(pkg, nil, nil, nil, questions)
-	if err == nil {
-		t.Fatal("expected error for invalid choices JSON")
 	}
 }
 
@@ -381,25 +370,23 @@ func TestBuildManifestFullIntegration(t *testing.T) {
 		Description:  &desc,
 		Author:       &author,
 		InstallScope: "global",
-		Tags:         json.RawMessage(`["integration"]`),
+		Tags:         "integration",
 	}
 
 	files := []PackageFile{
-		{PackageID: "full-pkg", DestPath: "skill.md", Content: "# Skill", SHA256: "s1", FileType: FileTypeSkill, ContentType: ContentTypeText},
+		{PackageID: "full-pkg", DestPath: "skill.md", Content: "# Skill", SHA256: "s1", FileType: FileTypeSkill, ContentType: ContentTypeMarkdown},
 	}
 
-	spec := "^1.0"
 	deps := []PackageDep{
-		{PackageID: "full-pkg", DepType: DepTypeRuntime, DepName: "node", DepSpec: &spec},
+		{PackageID: "full-pkg", DepType: DepTypeTool, DepName: "node", DepSpec: "^1.0"},
 	}
 
 	hooks := []PackageHook{
-		{PackageID: "full-pkg", Event: HookPreInstall, Matcher: "*", ScriptPath: "pre.sh", Priority: 1, Blocking: false},
+		{PackageID: "full-pkg", Event: HookPreToolUse, Matcher: "*", ScriptPath: "pre.sh", Priority: 1, Blocking: false},
 	}
 
-	defVal := "default"
 	questions := []PackageQuestion{
-		{PackageID: "full-pkg", QuestionID: "q1", Prompt: "Name?", Type: QuestionText, DefaultVal: &defVal, SortOrder: 1},
+		{PackageID: "full-pkg", QuestionID: "q1", Prompt: "Name?", Type: QuestionText, DefaultVal: "default", SortOrder: 1},
 	}
 
 	m, err := BuildManifest(pkg, files, deps, hooks, questions)
@@ -410,19 +397,28 @@ func TestBuildManifestFullIntegration(t *testing.T) {
 	if m.ID != "full-pkg" {
 		t.Errorf("ID = %q, want %q", m.ID, "full-pkg")
 	}
-	if len(m.Files) != 1 {
-		t.Errorf("Files count = %d, want 1", len(m.Files))
+
+	// Files are in artifacts map.
+	skills, ok := m.Artifacts["skills"]
+	if !ok || len(skills) != 1 {
+		t.Errorf("expected 1 skill in artifacts, got %v", m.Artifacts)
 	}
-	if len(m.Deps) != 1 {
-		t.Errorf("Deps count = %d, want 1", len(m.Deps))
+
+	// Tool deps become requires entries.
+	if len(m.Requires) != 1 {
+		t.Errorf("Requires count = %d, want 1", len(m.Requires))
 	}
+	if len(m.Requires) > 0 && m.Requires[0] != "node ^1.0" {
+		t.Errorf("Requires[0] = %q, want %q", m.Requires[0], "node ^1.0")
+	}
+
 	if len(m.Hooks) != 1 {
 		t.Errorf("Hooks count = %d, want 1", len(m.Hooks))
 	}
 	if len(m.Questions) != 1 {
 		t.Errorf("Questions count = %d, want 1", len(m.Questions))
 	}
-	if m.Questions[0].DefaultVal != defVal {
-		t.Errorf("Questions[0].DefaultVal = %q, want %q", m.Questions[0].DefaultVal, defVal)
+	if len(m.Questions) > 0 && m.Questions[0].DefaultVal != "default" {
+		t.Errorf("Questions[0].DefaultVal = %q, want %q", m.Questions[0].DefaultVal, "default")
 	}
 }

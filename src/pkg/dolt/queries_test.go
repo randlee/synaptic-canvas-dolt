@@ -17,6 +17,10 @@ func TestListPackagesQuery(t *testing.T) {
 	if !strings.Contains(q, "ORDER BY name") {
 		t.Error("expected ORDER BY name in query")
 	}
+	// Must include sha256 column per schema spec.
+	if !strings.Contains(q, "sha256") {
+		t.Error("expected sha256 column in list packages query")
+	}
 }
 
 func TestGetPackageQuery(t *testing.T) {
@@ -25,8 +29,8 @@ func TestGetPackageQuery(t *testing.T) {
 	if !strings.Contains(q, "WHERE id = ?") {
 		t.Error("expected parameterized WHERE clause")
 	}
-	// Should select all package columns.
-	for _, col := range []string{"id", "name", "version", "description", "agent_variant", "author", "license", "tags", "install_scope", "variables", "options", "sha256"} {
+	// Should select all package columns including min_claude_version.
+	for _, col := range []string{"id", "name", "version", "description", "agent_variant", "author", "license", "tags", "install_scope", "variables", "options", "sha256", "min_claude_version"} {
 		if !strings.Contains(q, col) {
 			t.Errorf("expected column %q in query", col)
 		}
@@ -44,6 +48,12 @@ func TestGetPackageFilesQuery(t *testing.T) {
 	}
 	if !strings.Contains(q, "ORDER BY dest_path") {
 		t.Error("expected ORDER BY dest_path")
+	}
+	// Must include frontmatter extraction columns per schema spec.
+	for _, col := range []string{"fm_name", "fm_description", "fm_version", "fm_model"} {
+		if !strings.Contains(q, col) {
+			t.Errorf("expected column %q in package files query", col)
+		}
 	}
 }
 
@@ -91,14 +101,6 @@ func TestResolveVariantQuery(t *testing.T) {
 	}
 	if !strings.Contains(q, "agent_profile = ?") {
 		t.Error("expected agent_profile parameter")
-	}
-}
-
-func TestSearchByTagsQuery(t *testing.T) {
-	t.Parallel()
-	q := SearchByTagsQuery()
-	if !strings.Contains(q, "JSON_CONTAINS") {
-		t.Error("expected JSON_CONTAINS in query")
 	}
 }
 

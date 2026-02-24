@@ -6,14 +6,13 @@ import "fmt"
 // These correspond to the schema defined in docs/synaptic-canvas-schema.md.
 
 // listPackagesQuery returns packages ordered by name.
-// Supports optional branch via Dolt's AS OF syntax.
-const listPackagesBaseQuery = `SELECT id, name, version, description, tags, install_scope FROM packages ORDER BY name`
+const listPackagesBaseQuery = `SELECT id, name, version, description, tags, install_scope, sha256 FROM packages ORDER BY name`
 
 // getPackageQuery retrieves a single package by ID.
-const getPackageBaseQuery = `SELECT id, name, version, description, agent_variant, author, license, tags, install_scope, variables, options, sha256 FROM packages WHERE id = ?`
+const getPackageBaseQuery = `SELECT id, name, version, description, agent_variant, author, license, tags, install_scope, variables, options, sha256, min_claude_version FROM packages WHERE id = ?`
 
 // getPackageFilesQuery retrieves all files for a package.
-const getPackageFilesBaseQuery = `SELECT package_id, dest_path, content, sha256, file_type, content_type, is_template, frontmatter FROM package_files WHERE package_id = ? ORDER BY dest_path`
+const getPackageFilesBaseQuery = `SELECT package_id, dest_path, content, sha256, file_type, content_type, is_template, frontmatter, fm_name, fm_description, fm_version, fm_model FROM package_files WHERE package_id = ? ORDER BY dest_path`
 
 // getPackageDepsQuery retrieves all dependencies for a package.
 const getPackageDepsBaseQuery = `SELECT package_id, dep_type, dep_name, dep_spec, install_cmd, cmd_sha256 FROM package_deps WHERE package_id = ?`
@@ -26,9 +25,6 @@ const getPackageQuestionsBaseQuery = `SELECT package_id, question_id, prompt, ty
 
 // resolveVariantQuery resolves a variant package ID from a logical ID and agent profile.
 const resolveVariantBaseQuery = `SELECT variant_package_id FROM package_variants WHERE logical_id = ? AND agent_profile = ?`
-
-// searchByTagsQuery finds packages that contain all specified tags.
-const searchByTagsBaseQuery = `SELECT id, name, version, description, tags FROM packages WHERE JSON_CONTAINS(tags, ?)`
 
 // BranchQuery wraps a base SQL query with Dolt's branch-awareness.
 // If branch is empty, the query is returned unchanged (uses the current checked-out branch).
@@ -91,9 +87,4 @@ func GetPackageQuestionsQuery() string {
 // ResolveVariantQuery returns the SQL for resolving a variant.
 func ResolveVariantQuery() string {
 	return resolveVariantBaseQuery
-}
-
-// SearchByTagsQuery returns the SQL for searching by tags.
-func SearchByTagsQuery() string {
-	return searchByTagsBaseQuery
 }

@@ -2,7 +2,6 @@ package dolt
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"testing"
 
@@ -88,7 +87,7 @@ func TestMockClientGetPackageFiles(t *testing.T) {
 
 	m := NewMockClient()
 	m.AddFiles("pkg-1", []models.PackageFile{
-		{PackageID: "pkg-1", DestPath: "agent.md", SHA256: "abc123", FileType: models.FileTypeAgent, ContentType: models.ContentTypeText},
+		{PackageID: "pkg-1", DestPath: "agent.md", SHA256: "abc123", FileType: models.FileTypeAgent, ContentType: models.ContentTypeMarkdown},
 	})
 
 	files, err := m.GetPackageFiles(ctx, "pkg-1")
@@ -120,10 +119,9 @@ func TestMockClientGetPackageDeps(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	spec := ">=1.0.0"
 	m := NewMockClient()
 	m.AddDeps("pkg-1", []models.PackageDep{
-		{PackageID: "pkg-1", DepType: models.DepTypePackage, DepName: "other-pkg", DepSpec: &spec},
+		{PackageID: "pkg-1", DepType: models.DepTypeTool, DepName: "other-pkg", DepSpec: ">=1.0.0"},
 	})
 
 	deps, err := m.GetPackageDeps(ctx, "pkg-1")
@@ -157,7 +155,7 @@ func TestMockClientGetPackageHooks(t *testing.T) {
 
 	m := NewMockClient()
 	m.AddHooks("pkg-1", []models.PackageHook{
-		{PackageID: "pkg-1", Event: models.HookPostInstall, Matcher: "**/*.md", ScriptPath: "hooks/post.sh", Priority: 10, Blocking: true},
+		{PackageID: "pkg-1", Event: models.HookPostToolUse, Matcher: "**/*.md", ScriptPath: "hooks/post.sh", Priority: 10, Blocking: true},
 	})
 
 	hooks, err := m.GetPackageHooks(ctx, "pkg-1")
@@ -167,8 +165,8 @@ func TestMockClientGetPackageHooks(t *testing.T) {
 	if len(hooks) != 1 {
 		t.Fatalf("got %d hooks, want 1", len(hooks))
 	}
-	if hooks[0].Event != models.HookPostInstall {
-		t.Errorf("Event = %q, want %q", hooks[0].Event, models.HookPostInstall)
+	if hooks[0].Event != models.HookPostToolUse {
+		t.Errorf("Event = %q, want %q", hooks[0].Event, models.HookPostToolUse)
 	}
 }
 
@@ -259,62 +257,6 @@ func TestMockClientResolveVariant(t *testing.T) {
 	})
 }
 
-func TestMockClientSearchByTags(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-
-	m := NewMockClient()
-	m.AddPackage(NewTestPackage("pkg-1", "alpha", "1.0.0", []string{"go", "cli"}))
-	m.AddPackage(NewTestPackage("pkg-2", "beta", "2.0.0", []string{"go", "web"}))
-	m.AddPackage(NewTestPackage("pkg-3", "gamma", "3.0.0", []string{"python"}))
-
-	t.Run("single tag match", func(t *testing.T) {
-		t.Parallel()
-		pkgs, err := m.SearchByTags(ctx, []string{"go"})
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(pkgs) != 2 {
-			t.Fatalf("got %d packages, want 2", len(pkgs))
-		}
-	})
-
-	t.Run("multi tag match", func(t *testing.T) {
-		t.Parallel()
-		pkgs, err := m.SearchByTags(ctx, []string{"go", "cli"})
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(pkgs) != 1 {
-			t.Fatalf("got %d packages, want 1", len(pkgs))
-		}
-		if pkgs[0].ID != "pkg-1" {
-			t.Errorf("ID = %q, want %q", pkgs[0].ID, "pkg-1")
-		}
-	})
-
-	t.Run("no match", func(t *testing.T) {
-		t.Parallel()
-		pkgs, err := m.SearchByTags(ctx, []string{"rust"})
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(pkgs) != 0 {
-			t.Fatalf("got %d packages, want 0", len(pkgs))
-		}
-	})
-
-	t.Run("error injection", func(t *testing.T) {
-		t.Parallel()
-		m2 := NewMockClient()
-		m2.SearchErr = errors.New("search failed")
-		_, err := m2.SearchByTags(ctx, []string{"go"})
-		if err == nil {
-			t.Fatal("expected error, got nil")
-		}
-	})
-}
-
 func TestMockClientClose(t *testing.T) {
 	t.Parallel()
 
@@ -354,10 +296,7 @@ func TestNewTestPackage(t *testing.T) {
 		if p.InstallScope != "local" {
 			t.Errorf("InstallScope = %q, want %q", p.InstallScope, "local")
 		}
-		tags, err := p.TagsList()
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+		tags := p.TagsList()
 		if len(tags) != 2 {
 			t.Fatalf("got %d tags, want 2", len(tags))
 		}
@@ -366,8 +305,8 @@ func TestNewTestPackage(t *testing.T) {
 	t.Run("without tags", func(t *testing.T) {
 		t.Parallel()
 		p := NewTestPackage("id-2", "test", "1.0.0", nil)
-		if p.Tags != nil {
-			t.Errorf("expected nil Tags, got %v", p.Tags)
+		if p.Tags != "" {
+			t.Errorf("expected empty Tags, got %q", p.Tags)
 		}
 	})
 }
@@ -429,6 +368,3 @@ func searchString(s, substr string) bool {
 
 // Verify that MockClient satisfies Client interface at compile time.
 var _ Client = (*MockClient)(nil)
-
-// Verify json import is used (for NewTestPackage).
-var _ = json.RawMessage{}
