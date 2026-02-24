@@ -157,7 +157,7 @@ func NewTestPackage(id, name, version string, tags []string) *models.Package {
 		ID:           id,
 		Name:         name,
 		Version:      version,
-		InstallScope: "local",
+		InstallScope: "any",
 	}
 	if len(tags) > 0 {
 		p.Tags = strings.Join(tags, ",")

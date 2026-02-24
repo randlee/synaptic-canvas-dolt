@@ -9,13 +9,15 @@ import (
 // fileTypePluralKey maps a FileType to the pluralized key used in the
 // manifest artifacts map. These keys match the directory names in the
 // export pipeline's target structure.
+// Note: FileTypeConfig is intentionally excluded — config files are handled
+// separately in the export pipeline (written as plugin.json) and are not
+// part of the manifest artifacts grouping.
 var fileTypePluralKey = map[FileType]string{
 	FileTypeSkill:   "skills",
 	FileTypeAgent:   "agents",
 	FileTypeCommand: "commands",
 	FileTypeScript:  "scripts",
 	FileTypeHook:    "hooks",
-	FileTypeConfig:  "configs",
 }
 
 // Manifest represents the reconstructed manifest.yaml structure built from
@@ -23,32 +25,27 @@ var fileTypePluralKey = map[FileType]string{
 // package_hooks, and package_questions tables. This is used by the export
 // pipeline to produce the filesystem representation of a package.
 type Manifest struct {
-	ID           string                    `json:"id"`
-	Name         string                    `json:"name"`
-	Version      string                    `json:"version"`
-	Description  string                    `json:"description,omitempty"`
-	AgentVariant string                    `json:"agent_variant,omitempty"`
-	Author       string                    `json:"author,omitempty"`
-	License      string                    `json:"license,omitempty"`
-	Tags         []string                  `json:"tags,omitempty"`
-	InstallScope string                    `json:"install_scope,omitempty"`
-	Variables    map[string]any            `json:"variables,omitempty"`
-	Options      map[string]any            `json:"options,omitempty"`
-	SHA256       string                    `json:"sha256,omitempty"`
-	Artifacts    map[string][]ManifestFile `json:"artifacts,omitempty"`
-	Requires     []string                  `json:"requires,omitempty"`
-	Hooks        []ManifestHook            `json:"hooks,omitempty"`
-	Questions    []ManifestQuestion        `json:"questions,omitempty"`
-}
-
-// ManifestFile is the file entry within a manifest artifacts group.
-type ManifestFile struct {
-	DestPath    string         `json:"dest_path"`
-	SHA256      string         `json:"sha256"`
-	FileType    FileType       `json:"file_type"`
-	ContentType ContentType    `json:"content_type"`
-	IsTemplate  bool           `json:"is_template,omitempty"`
-	Frontmatter map[string]any `json:"frontmatter,omitempty"`
+	ID               string              `json:"id"`
+	Name             string              `json:"name"`
+	Version          string              `json:"version"`
+	Description      string              `json:"description,omitempty"`
+	Author           string              `json:"author,omitempty"`
+	License          string              `json:"license,omitempty"`
+	Tags             []string            `json:"tags,omitempty"`
+	MinClaudeVersion string              `yaml:"min_claude_version,omitempty" json:"min_claude_version,omitempty"`
+	InstallScope     string              `json:"install_scope,omitempty"`
+	Variables        map[string]any      `json:"variables,omitempty"`
+	Options          map[string]any      `json:"options,omitempty"`
+	SHA256           string              `json:"sha256,omitempty"`
+	Artifacts        map[string][]string `json:"artifacts,omitempty"`
+	Requires         []string            `json:"requires,omitempty"`
+	// Hooks and Questions extend the base manifest.yaml format defined in the
+	// export pipeline spec. They are populated here for use by the install
+	// system (see docs/synaptic-canvas-install-system.md and
+	// docs/synaptic-canvas-hook-system.md) and are not part of the core
+	// manifest.yaml output.
+	Hooks     []ManifestHook     `json:"hooks,omitempty"`
+	Questions []ManifestQuestion `json:"questions,omitempty"`
 }
 
 // ManifestHook is the hook entry within a manifest.
@@ -66,7 +63,7 @@ type ManifestQuestion struct {
 	Prompt     string       `json:"prompt"`
 	Type       QuestionType `json:"type"`
 	DefaultVal string       `json:"default_val,omitempty"`
-	Choices    []string     `json:"choices,omitempty"`
+	Choices    []string     `json:"choices,omitempty" yaml:"choices,omitempty"`
 	SortOrder  int          `json:"sort_order"`
 }
 
@@ -74,7 +71,8 @@ type ManifestQuestion struct {
 // The content of files is intentionally omitted from the manifest; the export
 // pipeline writes file content separately.
 //
-// Artifacts are grouped by pluralized file_type key (skills, agents, etc.).
+// Artifacts are grouped by pluralized file_type key (skills, agents, etc.)
+// and contain only dest_path strings, matching the export pipeline spec.
 // Tool dependencies are formatted into the Requires list.
 // InstallScope is omitted if the value is "any".
 func BuildManifest(
@@ -89,11 +87,10 @@ func BuildManifest(
 	}
 
 	m := &Manifest{
-		ID:           pkg.ID,
-		Name:         pkg.Name,
-		Version:      pkg.Version,
-		AgentVariant: pkg.AgentVariant,
-		SHA256:       pkg.SHA256,
+		ID:      pkg.ID,
+		Name:    pkg.Name,
+		Version: pkg.Version,
+		SHA256:  pkg.SHA256,
 	}
 
 	// Omit InstallScope if "any" (per export pipeline spec).
@@ -110,6 +107,9 @@ func BuildManifest(
 	}
 	if pkg.License != nil {
 		m.License = *pkg.License
+	}
+	if pkg.MinClaudeVer != nil {
+		m.MinClaudeVersion = *pkg.MinClaudeVer
 	}
 
 	// Split comma-separated tags.
@@ -129,26 +129,18 @@ func BuildManifest(
 	}
 
 	// Group files into artifacts by pluralized file_type key.
+	// Artifacts contain only dest_path strings per the export pipeline spec.
+	// Files with FileTypeConfig are skipped (config files are handled
+	// separately as plugin.json in the export pipeline).
 	if len(files) > 0 {
-		m.Artifacts = make(map[string][]ManifestFile)
+		m.Artifacts = make(map[string][]string)
 		for _, f := range files {
-			mf := ManifestFile{
-				DestPath:    f.DestPath,
-				SHA256:      f.SHA256,
-				FileType:    f.FileType,
-				ContentType: f.ContentType,
-				IsTemplate:  f.IsTemplate,
-			}
-			if len(f.Frontmatter) > 0 && string(f.Frontmatter) != "null" {
-				if err := json.Unmarshal(f.Frontmatter, &mf.Frontmatter); err != nil {
-					return nil, fmt.Errorf("building manifest: parsing frontmatter for %s: %w", f.DestPath, err)
-				}
-			}
 			key, ok := fileTypePluralKey[f.FileType]
 			if !ok {
-				key = string(f.FileType) + "s"
+				// Skip file types not in the artifacts map (e.g. config).
+				continue
 			}
-			m.Artifacts[key] = append(m.Artifacts[key], mf)
+			m.Artifacts[key] = append(m.Artifacts[key], f.DestPath)
 		}
 	}
 
@@ -187,7 +179,10 @@ func BuildManifest(
 			DefaultVal: q.DefaultVal,
 			SortOrder:  q.SortOrder,
 		}
-		mq.Choices = q.ChoicesList()
+		choices := q.ChoicesList()
+		if len(choices) > 0 {
+			mq.Choices = choices
+		}
 		m.Questions = append(m.Questions, mq)
 	}
 

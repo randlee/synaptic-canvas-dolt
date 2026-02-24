@@ -20,7 +20,7 @@ func TestBuildManifestMinimal(t *testing.T) {
 		ID:           "pkg-1",
 		Name:         "test",
 		Version:      "1.0.0",
-		InstallScope: "local",
+		InstallScope: "any",
 	}
 
 	m, err := BuildManifest(pkg, nil, nil, nil, nil)
@@ -36,8 +36,9 @@ func TestBuildManifestMinimal(t *testing.T) {
 	if m.Version != "1.0.0" {
 		t.Errorf("Version = %q, want %q", m.Version, "1.0.0")
 	}
-	if m.InstallScope != "local" {
-		t.Errorf("InstallScope = %q, want %q", m.InstallScope, "local")
+	// InstallScope "any" should be omitted (empty string in manifest).
+	if m.InstallScope != "" {
+		t.Errorf("InstallScope = %q, want empty (omitted for 'any')", m.InstallScope)
 	}
 	if len(m.Artifacts) != 0 {
 		t.Errorf("expected 0 artifacts, got %d", len(m.Artifacts))
@@ -78,6 +79,7 @@ func TestBuildManifestOptionalFields(t *testing.T) {
 	desc := "A test package"
 	author := "test-author"
 	license := "MIT"
+	minClaude := "1.0.32"
 
 	pkg := &Package{
 		ID:           "pkg-1",
@@ -87,11 +89,12 @@ func TestBuildManifestOptionalFields(t *testing.T) {
 		AgentVariant: "claude-code",
 		Author:       &author,
 		License:      &license,
-		InstallScope: "global",
+		InstallScope: "local-only",
 		SHA256:       "abc123",
 		Tags:         "go,cli",
 		Variables:    json.RawMessage(`{"key":"val"}`),
 		Options:      json.RawMessage(`{"opt":true}`),
+		MinClaudeVer: &minClaude,
 	}
 
 	m, err := BuildManifest(pkg, nil, nil, nil, nil)
@@ -101,9 +104,6 @@ func TestBuildManifestOptionalFields(t *testing.T) {
 	if m.Description != desc {
 		t.Errorf("Description = %q, want %q", m.Description, desc)
 	}
-	if m.AgentVariant != "claude-code" {
-		t.Errorf("AgentVariant = %q, want %q", m.AgentVariant, "claude-code")
-	}
 	if m.Author != author {
 		t.Errorf("Author = %q, want %q", m.Author, author)
 	}
@@ -112,6 +112,12 @@ func TestBuildManifestOptionalFields(t *testing.T) {
 	}
 	if m.SHA256 != "abc123" {
 		t.Errorf("SHA256 = %q, want %q", m.SHA256, "abc123")
+	}
+	if m.MinClaudeVersion != "1.0.32" {
+		t.Errorf("MinClaudeVersion = %q, want %q", m.MinClaudeVersion, "1.0.32")
+	}
+	if m.InstallScope != "local-only" {
+		t.Errorf("InstallScope = %q, want %q", m.InstallScope, "local-only")
 	}
 	if len(m.Tags) != 2 {
 		t.Fatalf("got %d tags, want 2", len(m.Tags))
@@ -134,7 +140,7 @@ func TestBuildManifestWithFiles(t *testing.T) {
 		ID:           "pkg-1",
 		Name:         "test",
 		Version:      "1.0.0",
-		InstallScope: "local",
+		InstallScope: "any",
 	}
 
 	files := []PackageFile{
@@ -164,7 +170,7 @@ func TestBuildManifestWithFiles(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Files should be grouped into artifacts map by pluralized file_type.
+	// Agent files should be grouped into artifacts as dest_path strings.
 	agents, ok := m.Artifacts["agents"]
 	if !ok {
 		t.Fatal("expected artifacts[agents] to exist")
@@ -172,22 +178,14 @@ func TestBuildManifestWithFiles(t *testing.T) {
 	if len(agents) != 1 {
 		t.Fatalf("got %d agents, want 1", len(agents))
 	}
-	if agents[0].DestPath != "agent.md" {
-		t.Errorf("agents[0].DestPath = %q, want %q", agents[0].DestPath, "agent.md")
+	if agents[0] != "agent.md" {
+		t.Errorf("agents[0] = %q, want %q", agents[0], "agent.md")
 	}
 
-	configs, ok := m.Artifacts["configs"]
-	if !ok {
-		t.Fatal("expected artifacts[configs] to exist")
-	}
-	if len(configs) != 1 {
-		t.Fatalf("got %d configs, want 1", len(configs))
-	}
-	if !configs[0].IsTemplate {
-		t.Error("configs[0].IsTemplate should be true")
-	}
-	if configs[0].Frontmatter["title"] != "Config" {
-		t.Errorf("configs[0].Frontmatter[title] = %v, want Config", configs[0].Frontmatter["title"])
+	// Config files should NOT appear in artifacts (they are handled
+	// separately by the export pipeline as plugin.json).
+	if _, ok := m.Artifacts["configs"]; ok {
+		t.Error("config files should not appear in artifacts")
 	}
 }
 
@@ -198,7 +196,7 @@ func TestBuildManifestWithDeps(t *testing.T) {
 		ID:           "pkg-1",
 		Name:         "test",
 		Version:      "1.0.0",
-		InstallScope: "local",
+		InstallScope: "any",
 	}
 
 	deps := []PackageDep{
@@ -231,7 +229,7 @@ func TestBuildManifestWithHooks(t *testing.T) {
 		ID:           "pkg-1",
 		Name:         "test",
 		Version:      "1.0.0",
-		InstallScope: "local",
+		InstallScope: "any",
 	}
 
 	hooks := []PackageHook{
@@ -263,7 +261,7 @@ func TestBuildManifestWithQuestions(t *testing.T) {
 		ID:           "pkg-1",
 		Name:         "test",
 		Version:      "1.0.0",
-		InstallScope: "local",
+		InstallScope: "any",
 	}
 
 	questions := []PackageQuestion{
@@ -295,6 +293,10 @@ func TestBuildManifestWithQuestions(t *testing.T) {
 	if m.Questions[0].DefaultVal != "yes" {
 		t.Errorf("Questions[0].DefaultVal = %q, want %q", m.Questions[0].DefaultVal, "yes")
 	}
+	// Confirm question has no choices — Choices should be nil (omitted).
+	if m.Questions[0].Choices != nil {
+		t.Errorf("Questions[0].Choices should be nil, got %v", m.Questions[0].Choices)
+	}
 	if len(m.Questions[1].Choices) != 2 {
 		t.Fatalf("Questions[1].Choices = %v, want 2 choices", m.Questions[1].Choices)
 	}
@@ -310,7 +312,7 @@ func TestBuildManifestInvalidVariables(t *testing.T) {
 		ID:           "pkg-1",
 		Name:         "test",
 		Version:      "1.0.0",
-		InstallScope: "local",
+		InstallScope: "any",
 		Variables:    json.RawMessage(`not json`),
 	}
 
@@ -327,7 +329,7 @@ func TestBuildManifestInvalidOptions(t *testing.T) {
 		ID:           "pkg-1",
 		Name:         "test",
 		Version:      "1.0.0",
-		InstallScope: "local",
+		InstallScope: "any",
 		Options:      json.RawMessage(`{bad`),
 	}
 
@@ -337,31 +339,12 @@ func TestBuildManifestInvalidOptions(t *testing.T) {
 	}
 }
 
-func TestBuildManifestInvalidFrontmatter(t *testing.T) {
-	t.Parallel()
-
-	pkg := &Package{
-		ID:           "pkg-1",
-		Name:         "test",
-		Version:      "1.0.0",
-		InstallScope: "local",
-	}
-
-	files := []PackageFile{
-		{PackageID: "pkg-1", DestPath: "bad.md", SHA256: "x", FileType: FileTypeSkill, ContentType: ContentTypeMarkdown, Frontmatter: json.RawMessage(`{bad`)},
-	}
-
-	_, err := BuildManifest(pkg, files, nil, nil, nil)
-	if err == nil {
-		t.Fatal("expected error for invalid frontmatter JSON")
-	}
-}
-
 func TestBuildManifestFullIntegration(t *testing.T) {
 	t.Parallel()
 
 	desc := "Full integration test"
 	author := "tester"
+	minClaude := "1.2.0"
 
 	pkg := &Package{
 		ID:           "full-pkg",
@@ -369,8 +352,9 @@ func TestBuildManifestFullIntegration(t *testing.T) {
 		Version:      "2.0.0",
 		Description:  &desc,
 		Author:       &author,
-		InstallScope: "global",
+		InstallScope: "local-only",
 		Tags:         "integration",
+		MinClaudeVer: &minClaude,
 	}
 
 	files := []PackageFile{
@@ -397,11 +381,20 @@ func TestBuildManifestFullIntegration(t *testing.T) {
 	if m.ID != "full-pkg" {
 		t.Errorf("ID = %q, want %q", m.ID, "full-pkg")
 	}
+	if m.InstallScope != "local-only" {
+		t.Errorf("InstallScope = %q, want %q", m.InstallScope, "local-only")
+	}
+	if m.MinClaudeVersion != "1.2.0" {
+		t.Errorf("MinClaudeVersion = %q, want %q", m.MinClaudeVersion, "1.2.0")
+	}
 
-	// Files are in artifacts map.
+	// Files are in artifacts map as dest_path strings.
 	skills, ok := m.Artifacts["skills"]
 	if !ok || len(skills) != 1 {
 		t.Errorf("expected 1 skill in artifacts, got %v", m.Artifacts)
+	}
+	if len(skills) > 0 && skills[0] != "skill.md" {
+		t.Errorf("skills[0] = %q, want %q", skills[0], "skill.md")
 	}
 
 	// Tool deps become requires entries.

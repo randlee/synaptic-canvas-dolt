@@ -293,8 +293,8 @@ func TestNewTestPackage(t *testing.T) {
 		if p.ID != "id-1" {
 			t.Errorf("ID = %q, want %q", p.ID, "id-1")
 		}
-		if p.InstallScope != "local" {
-			t.Errorf("InstallScope = %q, want %q", p.InstallScope, "local")
+		if p.InstallScope != "any" {
+			t.Errorf("InstallScope = %q, want %q", p.InstallScope, "any")
 		}
 		tags := p.TagsList()
 		if len(tags) != 2 {
