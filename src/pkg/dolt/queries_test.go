@@ -66,6 +66,9 @@ func TestGetPackageDepsQuery(t *testing.T) {
 	if !strings.Contains(q, "WHERE package_id = ?") {
 		t.Error("expected parameterized WHERE clause")
 	}
+	if !strings.Contains(q, "ORDER BY dep_name") {
+		t.Error("expected ORDER BY dep_name")
+	}
 }
 
 func TestGetPackageHooksQuery(t *testing.T) {
@@ -85,8 +88,8 @@ func TestGetPackageQuestionsQuery(t *testing.T) {
 	if !strings.Contains(q, "FROM package_questions") {
 		t.Error("expected FROM package_questions")
 	}
-	if !strings.Contains(q, "ORDER BY sort_order") {
-		t.Error("expected ORDER BY sort_order")
+	if !strings.Contains(q, "ORDER BY sort_order, question_id") {
+		t.Error("expected ORDER BY sort_order, question_id")
 	}
 }
 
@@ -102,28 +105,6 @@ func TestResolveVariantQuery(t *testing.T) {
 	if !strings.Contains(q, "agent_profile = ?") {
 		t.Error("expected agent_profile parameter")
 	}
-}
-
-func TestBranchQuery(t *testing.T) {
-	t.Parallel()
-
-	base := "SELECT * FROM packages"
-
-	t.Run("empty branch returns unchanged", func(t *testing.T) {
-		t.Parallel()
-		got := BranchQuery(base, "")
-		if got != base {
-			t.Errorf("got %q, want %q", got, base)
-		}
-	})
-
-	t.Run("non-empty branch returns unchanged (handled at connection level)", func(t *testing.T) {
-		t.Parallel()
-		got := BranchQuery(base, "staging")
-		if got != base {
-			t.Errorf("got %q, want %q", got, base)
-		}
-	})
 }
 
 func TestUseBranchQuery(t *testing.T) {

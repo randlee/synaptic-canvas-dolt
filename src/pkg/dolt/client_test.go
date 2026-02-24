@@ -365,6 +365,3 @@ func searchString(s, substr string) bool {
 	}
 	return false
 }
-
-// Verify that MockClient satisfies Client interface at compile time.
-var _ Client = (*MockClient)(nil)

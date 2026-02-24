@@ -9,6 +9,9 @@ import (
 	"fmt"
 	"log/slog"
 
+	// MySQL driver for database/sql — Dolt exposes a MySQL-compatible interface.
+	_ "github.com/go-sql-driver/mysql"
+
 	"github.com/randlee/synaptic-canvas/pkg/models"
 )
 

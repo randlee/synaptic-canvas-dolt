@@ -20,10 +20,14 @@ var fileTypePluralKey = map[FileType]string{
 	FileTypeHook:    "hooks",
 }
 
-// Manifest represents the reconstructed manifest.yaml structure built from
-// relational data across the packages, package_files, package_deps,
-// package_hooks, and package_questions tables. This is used by the export
-// pipeline to produce the filesystem representation of a package.
+// Manifest represents the full in-memory package manifest, which is a superset
+// of the export pipeline's manifest.yaml format. The base fields (Name, Version,
+// Description, InstallScope, MinClaudeVersion, Requires, Artifacts) correspond
+// to the export pipeline spec. Hooks and Questions extend the manifest for
+// install-system orchestration and are not written to manifest.yaml.
+//
+// Built from relational data across the packages, package_files, package_deps,
+// package_hooks, and package_questions tables.
 type Manifest struct {
 	ID               string              `json:"id"`
 	Name             string              `json:"name"`
@@ -145,7 +149,7 @@ func BuildManifest(
 	}
 
 	// Build requires list from tool dependencies.
-	// Format: "dep_name" or "dep_name dep_spec" if spec is non-empty.
+	// Format: "dep_name dep_spec" (space-separated). Export pipeline spec examples are ambiguous; using space for readability.
 	for _, d := range deps {
 		if d.DepType == DepTypeTool {
 			entry := d.DepName

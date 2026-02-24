@@ -6,6 +6,7 @@ package models
 import (
 	"encoding/json"
 	"strings"
+	"time"
 )
 
 // Package represents a row in the packages table.
@@ -23,6 +24,8 @@ type Package struct {
 	Options      json.RawMessage `json:"options,omitempty"`
 	SHA256       string          `json:"sha256"`
 	MinClaudeVer *string         `json:"min_claude_version,omitempty"`
+	CreatedAt    *time.Time      `json:"created_at,omitempty"`
+	UpdatedAt    *time.Time      `json:"updated_at,omitempty"`
 }
 
 // TagsList splits the comma-separated tags field into a string slice.
@@ -117,12 +120,14 @@ const (
 
 // PackageHook represents a row in the package_hooks table.
 type PackageHook struct {
-	PackageID  string    `json:"package_id"`
-	Event      HookEvent `json:"event"`
-	Matcher    string    `json:"matcher"`
-	ScriptPath string    `json:"script_path"`
-	Priority   int       `json:"priority"`
-	Blocking   bool      `json:"blocking"`
+	PackageID string    `json:"package_id"`
+	Event     HookEvent `json:"event"`
+	// Matcher is a regex pattern. Default is ".*" per schema spec.
+	Matcher string `json:"matcher"`
+	// ScriptPath must match a dest_path in package_files where file_type = "hook".
+	ScriptPath string `json:"script_path"`
+	Priority   int    `json:"priority"`
+	Blocking   bool   `json:"blocking"`
 }
 
 // QuestionType enumerates the allowed values for package_questions.type.
