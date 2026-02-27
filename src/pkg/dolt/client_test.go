@@ -3,6 +3,7 @@ package dolt
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/randlee/synaptic-canvas/pkg/models"
@@ -335,10 +336,10 @@ func TestConfigDSN(t *testing.T) {
 		t.Fatal("DSN should not be empty")
 	}
 	// Basic format check: user@tcp(host:port)/database
-	if !contains(dsn, "tcp(127.0.0.1:3306)") {
+	if !strings.Contains(dsn, "tcp(127.0.0.1:3306)") {
 		t.Errorf("DSN %q missing host:port", dsn)
 	}
-	if !contains(dsn, "synaptic_canvas") {
+	if !strings.Contains(dsn, "synaptic_canvas") {
 		t.Errorf("DSN %q missing database name", dsn)
 	}
 }
@@ -350,18 +351,4 @@ func TestListOptions(t *testing.T) {
 	if opts.Branch != "staging" {
 		t.Errorf("Branch = %q, want %q", opts.Branch, "staging")
 	}
-}
-
-// contains is a simple helper to avoid importing strings in test.
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && searchString(s, substr)
-}
-
-func searchString(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

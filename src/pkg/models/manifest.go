@@ -94,7 +94,6 @@ func BuildManifest(
 		ID:      pkg.ID,
 		Name:    pkg.Name,
 		Version: pkg.Version,
-		SHA256:  pkg.SHA256,
 	}
 
 	// Omit InstallScope if "any" (per export pipeline spec).

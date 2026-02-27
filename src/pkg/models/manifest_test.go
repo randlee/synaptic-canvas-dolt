@@ -90,7 +90,6 @@ func TestBuildManifestOptionalFields(t *testing.T) {
 		Author:       &author,
 		License:      &license,
 		InstallScope: "local-only",
-		SHA256:       "abc123",
 		Tags:         "go,cli",
 		Variables:    json.RawMessage(`{"key":"val"}`),
 		Options:      json.RawMessage(`{"opt":true}`),
@@ -109,9 +108,6 @@ func TestBuildManifestOptionalFields(t *testing.T) {
 	}
 	if m.License != license {
 		t.Errorf("License = %q, want %q", m.License, license)
-	}
-	if m.SHA256 != "abc123" {
-		t.Errorf("SHA256 = %q, want %q", m.SHA256, "abc123")
 	}
 	if m.MinClaudeVersion != "1.0.32" {
 		t.Errorf("MinClaudeVersion = %q, want %q", m.MinClaudeVersion, "1.0.32")

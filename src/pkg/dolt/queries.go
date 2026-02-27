@@ -8,10 +8,10 @@ import "fmt"
 // NOTE: sha256 column is defined in cli.md schema additions but not yet in schema.md DDL. Tracked for schema.md update.
 
 // listPackagesQuery returns packages ordered by name.
-const listPackagesBaseQuery = `SELECT id, name, version, description, tags, install_scope, sha256 FROM packages ORDER BY name`
+const listPackagesBaseQuery = `SELECT id, name, version, description, tags, install_scope FROM packages ORDER BY name`
 
 // getPackageQuery retrieves a single package by ID.
-const getPackageBaseQuery = `SELECT id, name, version, description, agent_variant, author, license, tags, install_scope, variables, options, sha256, min_claude_version FROM packages WHERE id = ?`
+const getPackageBaseQuery = `SELECT id, name, version, description, agent_variant, author, license, tags, install_scope, variables, options, min_claude_version FROM packages WHERE id = ?`
 
 // getPackageFilesQuery retrieves all files for a package.
 const getPackageFilesBaseQuery = `SELECT package_id, dest_path, content, sha256, file_type, content_type, is_template, frontmatter, fm_name, fm_description, fm_version, fm_model FROM package_files WHERE package_id = ? ORDER BY dest_path`

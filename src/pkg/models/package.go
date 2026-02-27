@@ -6,7 +6,6 @@ package models
 import (
 	"encoding/json"
 	"strings"
-	"time"
 )
 
 // Package represents a row in the packages table.
@@ -22,10 +21,7 @@ type Package struct {
 	InstallScope string          `json:"install_scope"`
 	Variables    json.RawMessage `json:"variables,omitempty"`
 	Options      json.RawMessage `json:"options,omitempty"`
-	SHA256       string          `json:"sha256"`
 	MinClaudeVer *string         `json:"min_claude_version,omitempty"`
-	CreatedAt    *time.Time      `json:"created_at,omitempty"`
-	UpdatedAt    *time.Time      `json:"updated_at,omitempty"`
 }
 
 // TagsList splits the comma-separated tags field into a string slice.
