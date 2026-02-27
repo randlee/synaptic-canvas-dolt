@@ -40,7 +40,6 @@ type Manifest struct {
 	InstallScope     string              `json:"install_scope,omitempty"`
 	Variables        map[string]any      `json:"variables,omitempty"`
 	Options          map[string]any      `json:"options,omitempty"`
-	SHA256           string              `json:"sha256,omitempty"`
 	Artifacts        map[string][]string `json:"artifacts,omitempty"`
 	Requires         []string            `json:"requires,omitempty"`
 	// Hooks and Questions extend the base manifest.yaml format defined in the
