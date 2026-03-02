@@ -17,9 +17,10 @@ func TestListPackagesQuery(t *testing.T) {
 	if !strings.Contains(q, "ORDER BY name") {
 		t.Error("expected ORDER BY name in query")
 	}
-	// sha256 is NOT in the packages DDL — it belongs on package_files only.
+	// sha256 is in the packages DDL but intentionally not selected here —
+	// the Package struct does not include SHA256 at this sprint stage.
 	if strings.Contains(q, "sha256") {
-		t.Error("sha256 should not be in list packages query (not in DDL)")
+		t.Error("sha256 should not be in list packages query (not in Package struct)")
 	}
 }
 

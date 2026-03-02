@@ -231,3 +231,24 @@ func TestPackageJSONSerialization(t *testing.T) {
 		t.Errorf("Tags = %q, want %q", decoded.Tags, "go,test")
 	}
 }
+
+func TestInstallScopeIsValid(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		scope InstallScope
+		want  bool
+	}{
+		{InstallScopeAny, true},
+		{InstallScopeLocalOnly, true},
+		{"global", false},
+		{"", false},
+		{"local", false},
+	}
+
+	for _, tt := range tests {
+		if got := tt.scope.IsValid(); got != tt.want {
+			t.Errorf("InstallScope(%q).IsValid() = %v, want %v", tt.scope, got, tt.want)
+		}
+	}
+}
