@@ -161,7 +161,7 @@ func (c *SQLClient) GetPackage(ctx context.Context, id string) (*models.Package,
 	err := c.db.QueryRowContext(ctx, GetPackageQuery(), id).Scan(
 		&p.ID, &p.Name, &p.Version, &p.Description, &p.AgentVariant,
 		&p.Author, &p.License, &p.Tags, &p.InstallScope,
-		&p.Variables, &p.Options, &p.MinClaudeVer,
+		&p.Variables, &p.Options, &p.SHA256, &p.MinClaudeVer,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		slog.Debug("package not found", "id", id)

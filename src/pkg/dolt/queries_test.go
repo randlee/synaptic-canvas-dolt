@@ -17,8 +17,8 @@ func TestListPackagesQuery(t *testing.T) {
 	if !strings.Contains(q, "ORDER BY name") {
 		t.Error("expected ORDER BY name in query")
 	}
-	// sha256 is in the packages DDL but intentionally not selected here —
-	// the Package struct does not include SHA256 at this sprint stage.
+	// sha256 is in the packages DDL and Package struct, but intentionally
+	// not selected in the list query (lightweight listing).
 	if strings.Contains(q, "sha256") {
 		t.Error("sha256 should not be in list packages query (not in Package struct)")
 	}
@@ -31,7 +31,7 @@ func TestGetPackageQuery(t *testing.T) {
 		t.Error("expected parameterized WHERE clause")
 	}
 	// Should select all package columns including min_claude_version.
-	for _, col := range []string{"id", "name", "version", "description", "agent_variant", "author", "license", "tags", "install_scope", "variables", "options", "min_claude_version"} {
+	for _, col := range []string{"id", "name", "version", "description", "agent_variant", "author", "license", "tags", "install_scope", "variables", "options", "sha256", "min_claude_version"} {
 		if !strings.Contains(q, col) {
 			t.Errorf("expected column %q in query", col)
 		}

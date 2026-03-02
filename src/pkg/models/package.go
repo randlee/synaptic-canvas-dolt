@@ -34,6 +34,7 @@ type Package struct {
 	InstallScope InstallScope    `json:"install_scope"`
 	Variables    json.RawMessage `json:"variables,omitempty"`
 	Options      json.RawMessage `json:"options,omitempty"`
+	SHA256       *string         `json:"sha256,omitempty"`
 	MinClaudeVer *string         `json:"min_claude_version,omitempty"`
 }
 

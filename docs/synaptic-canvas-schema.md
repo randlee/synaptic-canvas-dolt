@@ -76,6 +76,7 @@ CREATE TABLE packages (
     install_scope   VARCHAR(32)  NOT NULL DEFAULT 'any',  -- any|local-only
     variables       JSON,                          -- token expansion config (Tier 1 packages)
     options         JSON,                          -- install-time options (e.g. no-tracking)
+    sha256          VARCHAR(64),                   -- content-addressable integrity hash
     created_at      TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id)
