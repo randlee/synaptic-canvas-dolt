@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/randlee/synaptic-canvas/pkg/models"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
 )
 
 // MockClient is an in-memory implementation of Client for testing.

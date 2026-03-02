@@ -57,7 +57,7 @@ Scaffold the Go project, establish patterns, connect to Dolt.
 **Goal:** Buildable Go binary with root command and global flags.
 
 **Deliverables:**
-- `src/go.mod` (module: `github.com/randlee/synaptic-canvas`, Go 1.26)
+- `src/go.mod` (module: `github.com/randlee/synaptic-canvas-dolt`, Go 1.26)
 - `src/main.go` with version injection via ldflags
 - `src/cmd/root.go` — root Cobra command with global flags (`--dolt-dir`, `--remote`, `--json`, `--quiet`, `--verbose`)
 - `src/internal/logging/logger.go` — centralized `slog` setup

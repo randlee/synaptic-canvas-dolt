@@ -3,8 +3,8 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/randlee/synaptic-canvas/internal/config"
-	"github.com/randlee/synaptic-canvas/internal/logging"
+	"github.com/randlee/synaptic-canvas-dolt/internal/config"
+	"github.com/randlee/synaptic-canvas-dolt/internal/logging"
 	"github.com/spf13/cobra"
 )
 
