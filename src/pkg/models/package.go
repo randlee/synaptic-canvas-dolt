@@ -8,6 +8,19 @@ import (
 	"strings"
 )
 
+// InstallScope enumerates the allowed values for packages.install_scope.
+type InstallScope string
+
+const (
+	InstallScopeAny       InstallScope = "any"
+	InstallScopeLocalOnly InstallScope = "local-only"
+)
+
+// IsValid returns true if the install scope is one of the permitted values.
+func (s InstallScope) IsValid() bool {
+	return s == InstallScopeAny || s == InstallScopeLocalOnly
+}
+
 // Package represents a row in the packages table.
 type Package struct {
 	ID           string          `json:"id"`
@@ -18,7 +31,7 @@ type Package struct {
 	Author       *string         `json:"author,omitempty"`
 	License      *string         `json:"license,omitempty"`
 	Tags         string          `json:"tags,omitempty"`
-	InstallScope string          `json:"install_scope"`
+	InstallScope InstallScope    `json:"install_scope"`
 	Variables    json.RawMessage `json:"variables,omitempty"`
 	Options      json.RawMessage `json:"options,omitempty"`
 	MinClaudeVer *string         `json:"min_claude_version,omitempty"`

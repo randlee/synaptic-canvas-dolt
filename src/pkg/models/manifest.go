@@ -96,8 +96,8 @@ func BuildManifest(
 	}
 
 	// Omit InstallScope if "any" (per export pipeline spec).
-	if pkg.InstallScope != "any" {
-		m.InstallScope = pkg.InstallScope
+	if pkg.InstallScope != InstallScopeAny {
+		m.InstallScope = string(pkg.InstallScope)
 	}
 
 	// Copy optional scalar fields.

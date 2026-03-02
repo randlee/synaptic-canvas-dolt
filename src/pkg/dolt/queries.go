@@ -4,8 +4,6 @@ import "fmt"
 
 // SQL query constants for the Synaptic Canvas database.
 // These correspond to the schema defined in docs/synaptic-canvas-schema.md.
-//
-// NOTE: sha256 column is defined in cli.md schema additions but not yet in schema.md DDL. Tracked for schema.md update.
 
 // listPackagesQuery returns packages ordered by name.
 const listPackagesBaseQuery = `SELECT id, name, version, description, tags, install_scope FROM packages ORDER BY name`

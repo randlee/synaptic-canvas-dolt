@@ -6,6 +6,7 @@ package dolt
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -162,7 +163,7 @@ func (c *SQLClient) GetPackage(ctx context.Context, id string) (*models.Package,
 		&p.Author, &p.License, &p.Tags, &p.InstallScope,
 		&p.Variables, &p.Options, &p.MinClaudeVer,
 	)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		slog.Debug("package not found", "id", id)
 		return nil, nil
 	}
@@ -287,7 +288,7 @@ func (c *SQLClient) ResolveVariant(ctx context.Context, logicalID, agentProfile 
 	slog.Debug("resolving variant", "logical_id", logicalID, "agent_profile", agentProfile)
 	var variantID string
 	err := c.db.QueryRowContext(ctx, ResolveVariantQuery(), logicalID, agentProfile).Scan(&variantID)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		slog.Debug("variant not found", "logical_id", logicalID, "agent_profile", agentProfile)
 		return "", nil
 	}

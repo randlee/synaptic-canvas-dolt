@@ -204,7 +204,7 @@ func TestPackageJSONSerialization(t *testing.T) {
 		Name:         "test",
 		Version:      "1.0.0",
 		Description:  &desc,
-		InstallScope: "local-only",
+		InstallScope: InstallScopeLocalOnly,
 		Tags:         "go,test",
 	}
 

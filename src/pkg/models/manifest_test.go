@@ -20,7 +20,7 @@ func TestBuildManifestMinimal(t *testing.T) {
 		ID:           "pkg-1",
 		Name:         "test",
 		Version:      "1.0.0",
-		InstallScope: "any",
+		InstallScope: InstallScopeAny,
 	}
 
 	m, err := BuildManifest(pkg, nil, nil, nil, nil)
@@ -61,7 +61,7 @@ func TestBuildManifestInstallScopeAnyOmitted(t *testing.T) {
 		ID:           "pkg-any",
 		Name:         "test",
 		Version:      "1.0.0",
-		InstallScope: "any",
+		InstallScope: InstallScopeAny,
 	}
 
 	m, err := BuildManifest(pkg, nil, nil, nil, nil)
@@ -89,7 +89,7 @@ func TestBuildManifestOptionalFields(t *testing.T) {
 		AgentVariant: "claude-code",
 		Author:       &author,
 		License:      &license,
-		InstallScope: "local-only",
+		InstallScope: InstallScopeLocalOnly,
 		Tags:         "go,cli",
 		Variables:    json.RawMessage(`{"key":"val"}`),
 		Options:      json.RawMessage(`{"opt":true}`),
@@ -136,7 +136,7 @@ func TestBuildManifestWithFiles(t *testing.T) {
 		ID:           "pkg-1",
 		Name:         "test",
 		Version:      "1.0.0",
-		InstallScope: "any",
+		InstallScope: InstallScopeAny,
 	}
 
 	files := []PackageFile{
@@ -192,7 +192,7 @@ func TestBuildManifestWithDeps(t *testing.T) {
 		ID:           "pkg-1",
 		Name:         "test",
 		Version:      "1.0.0",
-		InstallScope: "any",
+		InstallScope: InstallScopeAny,
 	}
 
 	deps := []PackageDep{
@@ -225,7 +225,7 @@ func TestBuildManifestWithHooks(t *testing.T) {
 		ID:           "pkg-1",
 		Name:         "test",
 		Version:      "1.0.0",
-		InstallScope: "any",
+		InstallScope: InstallScopeAny,
 	}
 
 	hooks := []PackageHook{
@@ -257,7 +257,7 @@ func TestBuildManifestWithQuestions(t *testing.T) {
 		ID:           "pkg-1",
 		Name:         "test",
 		Version:      "1.0.0",
-		InstallScope: "any",
+		InstallScope: InstallScopeAny,
 	}
 
 	questions := []PackageQuestion{
@@ -308,7 +308,7 @@ func TestBuildManifestInvalidVariables(t *testing.T) {
 		ID:           "pkg-1",
 		Name:         "test",
 		Version:      "1.0.0",
-		InstallScope: "any",
+		InstallScope: InstallScopeAny,
 		Variables:    json.RawMessage(`not json`),
 	}
 
@@ -325,7 +325,7 @@ func TestBuildManifestInvalidOptions(t *testing.T) {
 		ID:           "pkg-1",
 		Name:         "test",
 		Version:      "1.0.0",
-		InstallScope: "any",
+		InstallScope: InstallScopeAny,
 		Options:      json.RawMessage(`{bad`),
 	}
 
@@ -348,7 +348,7 @@ func TestBuildManifestFullIntegration(t *testing.T) {
 		Version:      "2.0.0",
 		Description:  &desc,
 		Author:       &author,
-		InstallScope: "local-only",
+		InstallScope: InstallScopeLocalOnly,
 		Tags:         "integration",
 		MinClaudeVer: &minClaude,
 	}
