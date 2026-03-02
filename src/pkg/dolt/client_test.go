@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/randlee/synaptic-canvas/pkg/models"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
 )
 
 func TestMockClientListPackages(t *testing.T) {

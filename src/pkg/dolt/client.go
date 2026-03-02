@@ -13,7 +13,7 @@ import (
 	// MySQL driver for database/sql — Dolt exposes a MySQL-compatible interface.
 	_ "github.com/go-sql-driver/mysql"
 
-	"github.com/randlee/synaptic-canvas/pkg/models"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
 )
 
 // ListOptions controls filtering and pagination for list operations.

@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/randlee/synaptic-canvas/cmd"
+	"github.com/randlee/synaptic-canvas-dolt/cmd"
 )
 
 // version, commit, and date are set via ldflags at build time.

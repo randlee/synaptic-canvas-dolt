@@ -1,4 +1,4 @@
-module github.com/randlee/synaptic-canvas
+module github.com/randlee/synaptic-canvas-dolt
 
 go 1.26
 

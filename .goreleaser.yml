@@ -39,7 +39,7 @@ brews:
       owner: randlee
       name: homebrew-tap
     directory: Formula
-    homepage: "https://github.com/randlee/synaptic-canvas"
+    homepage: "https://github.com/randlee/synaptic-canvas-dolt"
     description: "Dolt-backed package manager for Claude Code skills"
     license: "MIT"
 
