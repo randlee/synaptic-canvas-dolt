@@ -316,6 +316,67 @@ func TestVerifyPackage(t *testing.T) {
 	})
 }
 
+// TestVerifyPackage_PathTraversal verifies that VerifyPackage returns an error
+// for malicious or malformed DestPath values and does not touch the filesystem.
+func TestVerifyPackage_PathTraversal(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		destPath string
+	}{
+		{name: "single_dotdot", destPath: ".."},
+		{name: "dotdot_escape", destPath: "../escape"},
+		{name: "deep_escape", destPath: "../../.ssh/config"},
+		{name: "absolute_path", destPath: "/absolute/path"},
+		{name: "empty_string", destPath: ""},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Use a non-existent dir to confirm no filesystem access is needed
+			// to detect the error — validation must happen before any I/O.
+			installedDir := "/nonexistent/should/never/be/accessed"
+
+			expected := []FileHash{
+				{DestPath: tc.destPath, SHA256: "deadbeef"},
+			}
+			_, err := VerifyPackage(expected, installedDir)
+			if err == nil {
+				t.Errorf("VerifyPackage with DestPath=%q: expected error, got nil", tc.destPath)
+			}
+		})
+	}
+}
+
+// TestVerifyPackage_NestedPaths verifies that nested files with slash-delimited
+// DestPaths are classified as StatusOK (not StatusExtra) on all platforms.
+func TestVerifyPackage_NestedPaths(t *testing.T) {
+	dir := t.TempDir()
+
+	content := "nested content"
+	sha := ComputeContentSHA256([]byte(content))
+	writeFile(t, dir, filepath.Join("subdir", "nested", "file.txt"), content)
+
+	expected := []FileHash{
+		{DestPath: "subdir/nested/file.txt", SHA256: sha},
+	}
+
+	results, err := VerifyPackage(expected, dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("len(results) = %d; want 1", len(results))
+	}
+	if results[0].Status != StatusOK {
+		t.Errorf("nested file: status = %v; want StatusOK", results[0].Status)
+	}
+}
+
 // TestVerifyStatusString verifies the String() method on VerifyStatus for all
 // defined values and the default (unknown) branch.
 func TestVerifyStatusString(t *testing.T) {

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 // VerifyFile computes the SHA256 of the file at path and compares it against
@@ -30,11 +31,30 @@ func VerifyFile(path, expectedSHA string) VerifyStatus {
 	return StatusModified
 }
 
+// validateDestPath rejects dest paths that could escape the install root:
+//   - empty string
+//   - absolute paths (filepath.IsAbs)
+//   - paths whose cleaned, slash-normalised form begins with ".." or equal ".."
+func validateDestPath(destPath string) error {
+	if destPath == "" {
+		return errors.New("dest_path must not be empty")
+	}
+	if filepath.IsAbs(destPath) {
+		return fmt.Errorf("dest_path must be relative, got absolute path %q", destPath)
+	}
+	cleaned := filepath.ToSlash(filepath.Clean(destPath))
+	if cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+		return fmt.Errorf("dest_path %q escapes the install root", destPath)
+	}
+	return nil
+}
+
 // VerifyPackage verifies all files in expected against files on disk under
 // installedDir. It also detects extra files present on disk that have no
 // entry in expected.
 //
 // For each FileHash in expected:
+//   - Validates fh.DestPath with validateDestPath (returns error on bad path)
 //   - Resolves the full path as filepath.Join(installedDir, fh.DestPath)
 //   - Calls VerifyFile and records the result
 //
@@ -45,16 +65,21 @@ func VerifyFile(path, expectedSHA string) VerifyStatus {
 // Returns a slice of VerifyResult, one per file processed (expected + extra).
 // Order: expected files first (in input order), extra files after (sorted).
 func VerifyPackage(expected []FileHash, installedDir string) ([]VerifyResult, error) {
-	// Build expected set for quick lookup.
+	// Build expected set for quick lookup. Canonicalise to forward slashes so
+	// the lookup works identically on all platforms (filepath.Rel returns
+	// backslashes on Windows for nested paths).
 	expectedSet := make(map[string]struct{}, len(expected))
 	for _, fh := range expected {
-		expectedSet[fh.DestPath] = struct{}{}
+		expectedSet[filepath.ToSlash(fh.DestPath)] = struct{}{}
 	}
 
 	// Verify each expected file. VerifyFile returns StatusMissing when
 	// installedDir does not exist (the path will not exist either).
 	results := make([]VerifyResult, 0, len(expected))
 	for _, fh := range expected {
+		if err := validateDestPath(fh.DestPath); err != nil {
+			return nil, fmt.Errorf("invalid dest_path %q: %w", fh.DestPath, err)
+		}
 		fullPath := filepath.Join(installedDir, fh.DestPath)
 		status := VerifyFile(fullPath, fh.SHA256)
 		results = append(results, VerifyResult{Path: fh.DestPath, Status: status})
@@ -76,8 +101,11 @@ func VerifyPackage(expected []FileHash, installedDir string) ([]VerifyResult, er
 		}
 		// filepath.Rel cannot fail when both paths are absolute and well-formed.
 		rel, _ := filepath.Rel(installedDir, path)
-		if _, ok := expectedSet[rel]; !ok {
-			extraPaths = append(extraPaths, rel)
+		// Canonicalise to forward slashes so the lookup matches the expectedSet
+		// keys built above (important on Windows where filepath.Rel uses backslashes).
+		relSlash := filepath.ToSlash(rel)
+		if _, ok := expectedSet[relSlash]; !ok {
+			extraPaths = append(extraPaths, relSlash)
 		}
 		return nil
 	})
