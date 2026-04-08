@@ -94,6 +94,32 @@ class CorrelateScriptTests(unittest.TestCase):
             payload = json.loads(result.stdout.strip())
             self.assertEqual(payload[0]["outcome"], "error")
 
+    def test_existing_timestamp_like_field_is_preserved(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_path = Path(tmpdir) / "sc.log"
+            write_jsonl(
+                log_path,
+                [
+                    {
+                        "time": "2026-04-07T14:23:45Z",
+                        "level": "INFO",
+                        "operation": "install",
+                        "msg": "one",
+                        "_timestamp": "keep-me",
+                    }
+                ],
+            )
+            result = subprocess.run(
+                [sys.executable, str(SCRIPT), "--log", str(log_path), "--operation", "install", "--json"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            payload = json.loads(result.stdout.strip())
+            self.assertEqual(payload[0]["entries"][0]["_timestamp"], "keep-me")
+
     def test_no_matches_returns_exit_code_one(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             log_path = Path(tmpdir) / "sc.log"

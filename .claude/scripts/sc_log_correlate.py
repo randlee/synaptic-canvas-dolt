@@ -12,9 +12,9 @@ from sc_log_common import (
     entry_matches,
     iter_log_entries,
     json_dumps,
+    local_now,
     parse_time_spec,
     resolve_log_paths,
-    utc_now,
 )
 
 
@@ -38,18 +38,17 @@ def outcome_for(entries: list[dict]) -> str:
     return "ok"
 
 
-def correlate(entries: list[dict], window_seconds: float) -> list[dict]:
+def correlate(entries: list[tuple[object, dict]], window_seconds: float) -> list[dict]:
     runs: list[dict] = []
-    current: list[dict] = []
+    current: list[tuple[object, dict]] = []
     last_timestamp = None
 
-    for item in entries:
-        timestamp = item["_timestamp"]
+    for timestamp, entry in entries:
         if last_timestamp is None or (timestamp - last_timestamp).total_seconds() <= window_seconds:
-            current.append(item)
+            current.append((timestamp, entry))
         else:
             runs.append(build_run(current))
-            current = [item]
+            current = [(timestamp, entry)]
         last_timestamp = timestamp
 
     if current:
@@ -58,8 +57,8 @@ def correlate(entries: list[dict], window_seconds: float) -> list[dict]:
     return runs
 
 
-def build_run(entries: list[dict]) -> dict:
-    clean_entries = [{k: v for k, v in entry.items() if k != "_timestamp"} for entry in entries]
+def build_run(entries: list[tuple[object, dict]]) -> dict:
+    clean_entries = [entry for _, entry in entries]
     return {
         "start": clean_entries[0]["time"],
         "end": clean_entries[-1]["time"],
@@ -81,15 +80,13 @@ def main() -> int:
         print(f"log file does not exist: {log_path}", file=sys.stderr)
         return 2
 
-    since = parse_time_spec(args.since, utc_now())
-    entries = []
-    for parsed in iter_log_entries(resolve_log_paths(log_path, args.include_rotated)):
+    since = parse_time_spec(args.since, local_now())
+    entries: list[tuple[object, dict]] = []
+    for parsed in iter_log_entries(resolve_log_paths(log_path, args.include_rotated, since=since)):
         if entry_matches(parsed, operation=args.operation, since=since):
-            entry = dict(parsed.entry)
-            entry["_timestamp"] = parsed.timestamp
-            entries.append(entry)
+            entries.append((parsed.timestamp, dict(parsed.entry)))
 
-    entries.sort(key=lambda entry: entry["_timestamp"])
+    entries.sort(key=lambda item: item[0])
     if not entries:
         return 1
 

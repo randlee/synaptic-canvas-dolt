@@ -8,6 +8,8 @@ import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from sc_log_common import parse_time_spec, resolve_log_paths
+
 
 SCRIPT = Path(__file__).with_name("sc_log_query.py")
 
@@ -66,6 +68,11 @@ class QueryScriptTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             lines = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
             self.assertEqual([line["msg"] for line in lines], ["after"])
+
+    def test_since_today_clock_time_rolls_back_when_target_is_in_future(self) -> None:
+        now = datetime.fromisoformat("2026-04-07T10:00:00-07:00")
+        parsed = parse_time_spec("14:30", now)
+        self.assertEqual(parsed.isoformat(), "2026-04-06T14:30:00-07:00")
 
     def test_iso8601_and_until_filters(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -130,6 +137,24 @@ class QueryScriptTests(unittest.TestCase):
             lines = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
             self.assertEqual(lines[0]["msg"], "rotated")
 
+    def test_resolve_log_paths_skips_rotated_logs_older_than_since_date(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            current = tmp / "sc.log"
+            older = tmp / "sc-2026-04-05.log"
+            newer = tmp / "sc-2026-04-06.log"
+            current.write_text("", encoding="utf-8")
+            older.write_text("", encoding="utf-8")
+            newer.write_text("", encoding="utf-8")
+
+            paths = resolve_log_paths(
+                current,
+                True,
+                since=datetime.fromisoformat("2026-04-06T12:00:00+00:00"),
+            )
+
+            self.assertEqual(paths, [current, newer])
+
     def test_summary_outputs_counts_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             log_path = Path(tmpdir) / "sc.log"
@@ -167,6 +192,20 @@ class QueryScriptTests(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 1)
+
+    def test_invalid_regex_returns_exit_code_two(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_path = Path(tmpdir) / "sc.log"
+            write_jsonl(log_path, [{"time": "2026-04-07T14:23:45Z", "level": "INFO", "msg": "i"}])
+            result = subprocess.run(
+                [sys.executable, str(SCRIPT), "--log", str(log_path), "--regex", "[unclosed"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("invalid regex", result.stderr)
 
     def test_missing_log_file_returns_exit_code_two(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

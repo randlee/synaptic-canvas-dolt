@@ -2,7 +2,7 @@
 name: sc-log-debug
 version: 1.0.0
 description: Monitors Synaptic Canvas logs, summarizes warnings/errors, and queries historical context via Python helpers.
-tools: BashOutput, Read, Grep
+tools: Bash, Read, Grep
 model: sonnet
 color: red
 ---

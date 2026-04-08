@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Iterable
 
@@ -85,12 +85,15 @@ def parse_time_spec(spec: str | None, now: datetime | None = None) -> datetime |
 
     local = LOCAL_TIME_RE.match(spec)
     if local:
-        return current.replace(
+        parsed_local = current.replace(
             hour=int(local.group("hour")),
             minute=int(local.group("minute")),
             second=int(local.group("second") or 0),
             microsecond=0,
         )
+        if parsed_local > current:
+            parsed_local -= timedelta(days=1)
+        return parsed_local
 
     try:
         parsed = parse_log_timestamp(spec)
@@ -104,15 +107,32 @@ def parse_time_spec(spec: str | None, now: datetime | None = None) -> datetime |
     return parsed
 
 
-def resolve_log_paths(log_path: Path, include_rotated: bool) -> list[Path]:
+def resolve_log_paths(
+    log_path: Path,
+    include_rotated: bool,
+    *,
+    since: datetime | None = None,
+) -> list[Path]:
     """Return current log plus optional rotated logs from the same directory."""
     paths = [log_path]
     if not include_rotated:
         return paths
 
+    earliest_date: date | None = None
+    if since is not None:
+        earliest_date = since.date()
+
     for candidate in sorted(log_path.parent.glob("sc-*.log")):
-        if ROTATED_LOG_RE.match(candidate.name):
-            paths.append(candidate)
+        match = ROTATED_LOG_RE.match(candidate.name)
+        if not match:
+            continue
+
+        if earliest_date is not None:
+            rotated_date = datetime.strptime(match.group(1), "%Y-%m-%d").date()
+            if rotated_date < earliest_date:
+                continue
+
+        paths.append(candidate)
     return paths
 
 
@@ -188,7 +208,10 @@ def compile_regex(pattern: str | None) -> re.Pattern[str] | None:
     """Compile a regex if one was supplied."""
     if pattern is None:
         return None
-    return re.compile(pattern)
+    try:
+        return re.compile(pattern)
+    except re.error as exc:
+        raise ValueError(f"invalid regex {pattern!r}: {exc}") from exc
 
 
 def summarize_levels(entries: Iterable[ParsedEntry]) -> dict[str, int]:
@@ -206,6 +229,6 @@ def json_dumps(value: object) -> str:
     return json.dumps(value, sort_keys=True)
 
 
-def utc_now() -> datetime:
+def local_now() -> datetime:
     """Return the current time as an aware local datetime."""
-    return datetime.now(timezone.utc).astimezone()
+    return datetime.now().astimezone()

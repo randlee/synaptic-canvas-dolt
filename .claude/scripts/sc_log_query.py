@@ -13,11 +13,11 @@ from sc_log_common import (
     entry_matches,
     iter_log_entries,
     json_dumps,
+    local_now,
     parse_level,
     parse_time_spec,
     resolve_log_paths,
     summarize_levels,
-    utc_now,
 )
 
 
@@ -53,7 +53,7 @@ def main() -> int:
         print(f"log file does not exist: {log_path}", file=sys.stderr)
         return 2
 
-    now = utc_now()
+    now = local_now()
     min_level = parse_level(args.level)
     since = parse_time_spec(args.since, now)
     until = parse_time_spec(args.until, now)
@@ -61,7 +61,7 @@ def main() -> int:
 
     entries = [
         parsed
-        for parsed in iter_log_entries(resolve_log_paths(log_path, args.include_rotated))
+        for parsed in iter_log_entries(resolve_log_paths(log_path, args.include_rotated, since=since))
         if entry_matches(
             parsed,
             min_level=min_level,
