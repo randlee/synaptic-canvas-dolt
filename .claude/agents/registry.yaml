@@ -1,0 +1,7 @@
+agents:
+  sc-qa:
+    version: 1.0.0
+    path: .claude/agents/sc-qa.md
+  sc-log-debug:
+    version: 1.0.0
+    path: .claude/agents/sc-log-debug.md
