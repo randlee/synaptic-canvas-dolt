@@ -38,7 +38,11 @@ func validateDestPath(destPath string) error {
 	if destPath == "" {
 		return errors.New("dest_path must not be empty")
 	}
-	if filepath.IsAbs(destPath) {
+	// Reject absolute and rooted paths on all platforms.
+	// filepath.IsAbs catches volume-prefixed Windows paths (C:\, \\server\share).
+	// The HasPrefix check catches Unix-style /foo paths which filepath.IsAbs
+	// returns false for on Windows (no drive letter).
+	if filepath.IsAbs(destPath) || strings.HasPrefix(filepath.ToSlash(destPath), "/") {
 		return fmt.Errorf("dest_path must be relative, got absolute path %q", destPath)
 	}
 	cleaned := filepath.ToSlash(filepath.Clean(destPath))
