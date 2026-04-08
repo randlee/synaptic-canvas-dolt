@@ -104,6 +104,7 @@ Scaffold the Go project, establish patterns, connect to Dolt.
 **Goal:** SHA256 computation and verification library.
 
 **Deliverables:**
+- `src/pkg/integrity/types.go` — shared types: FileHash, VerifyStatus, VerifyResult
 - `src/pkg/integrity/sha.go` — per-file SHA256 computation
 - `src/pkg/integrity/aggregate.go` — package-level aggregate SHA (sorted dest_path:sha256 pairs)
 - `src/pkg/integrity/verify.go` — comparison functions (OK, MODIFIED, MISSING, EXTRA)
