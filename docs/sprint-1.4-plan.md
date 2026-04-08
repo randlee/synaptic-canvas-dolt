@@ -12,10 +12,12 @@ Supports two deployment modes: background (deterministic turns) and persistent
 
 ```
 .claude/agents/sc-log-debug.md          # Agent definition
-.claude/agents/scripts/
+.claude/agents/registry.yaml            # Optional runner registry
+.claude/scripts/
   sc_log_tail.py                        # Blocking tail w/ filter + timeout
   sc_log_query.py                       # Historical query (level/component/operation/time)
   sc_log_correlate.py                   # Group entries by operation + time proximity
+  sc_log_common.py                      # Shared parsing/filter/time helpers
   test_sc_log_tail.py
   test_sc_log_query.py
   test_sc_log_correlate.py
@@ -38,13 +40,20 @@ line, RFC3339Nano timestamp.
 | Field | Type | Values |
 |-------|------|--------|
 | `time` | RFC3339Nano | always present |
-| `level` | string | `DEBUG` `INFO` `WARN` `ERROR` |
+| `level` | string | `INFO` `WARN` `ERROR` today; parser should also tolerate `DEBUG` for forward compatibility |
 | `msg` | string | human-readable |
-| `component` | string | `dolt` `config` `output` `integrity` `installer` |
-| `operation` | string | `list` `get` `get-files` `get-deps` `install` `import` `export` `verify` |
+| `component` | string | arbitrary slog attr; currently `cli` is present, future values may include `dolt` `config` `output` `integrity` `installer` |
+| `operation` | string | arbitrary slog attr; currently `init` is present, future values may include `list` `get` `get-files` `get-deps` `install` `import` `export` `verify` |
 
 Additional context fields are arbitrary slog attrs appended per call site
 (e.g. `"package_id":"foo"`, `"count":3`).
+
+### Current Logging Constraints
+
+- `src/internal/logging/logger.go` writes file logs at `INFO` level today.
+- Helper scripts should still accept a `debug` filter for forward compatibility,
+  even though current `sc.log` content should be expected to contain
+  `INFO`/`WARN`/`ERROR` entries only.
 
 ### Log File Paths
 
@@ -96,11 +105,11 @@ Stderr: human-readable status (e.g. "Watching sc.log... timeout after 30s")
 
 ```json
 {
-  "watch_errors":    "python3 ~/.claude/agents/scripts/sc_log_tail.py --level warn --timeout 30",
-  "watch_component": "python3 ~/.claude/agents/scripts/sc_log_tail.py --level warn --component dolt --timeout 30",
-  "watch_operation": "python3 ~/.claude/agents/scripts/sc_log_tail.py --operation install --timeout 60",
-  "watch_regex":     "python3 ~/.claude/agents/scripts/sc_log_tail.py --regex 'sha256|integrity' --timeout 30",
-  "watch_resume":    "python3 ~/.claude/agents/scripts/sc_log_tail.py --level warn --timeout 30 --since-offset {offset}"
+  "watch_errors":    "python3 ~/.claude/scripts/sc_log_tail.py --level warn --timeout 30",
+  "watch_component": "python3 ~/.claude/scripts/sc_log_tail.py --level warn --component dolt --timeout 30",
+  "watch_operation": "python3 ~/.claude/scripts/sc_log_tail.py --operation install --timeout 60",
+  "watch_regex":     "python3 ~/.claude/scripts/sc_log_tail.py --regex 'sha256|integrity' --timeout 30",
+  "watch_resume":    "python3 ~/.claude/scripts/sc_log_tail.py --level warn --timeout 30 --since-offset {offset}"
 }
 ```
 
@@ -122,6 +131,7 @@ Options:
   --component COMPONENT Filter by component
   --operation OPERATION Filter by operation
   --since SPEC          Time filter (see Parsing below)
+  --until SPEC          Optional upper-bound time filter (same syntax as --since)
   --regex PATTERN       Regex applied to full line
   --include-rotated     Also search sc-YYYY-MM-DD.log files within time range
   --summary             Print counts by level only, no full entries
@@ -150,12 +160,13 @@ Required for queries that span midnight.
 
 ```json
 {
-  "query_recent_errors": "python3 ~/.claude/agents/scripts/sc_log_query.py --level error --since 5m",
-  "query_last_hour":     "python3 ~/.claude/agents/scripts/sc_log_query.py --level warn --since 1h --include-rotated",
-  "query_component":     "python3 ~/.claude/agents/scripts/sc_log_query.py --component dolt --since 30m",
-  "query_operation":     "python3 ~/.claude/agents/scripts/sc_log_query.py --operation install --since 2h --include-rotated",
-  "query_since_time":    "python3 ~/.claude/agents/scripts/sc_log_query.py --level warn --since 14:30",
-  "query_summary":       "python3 ~/.claude/agents/scripts/sc_log_query.py --since 1h --summary"
+  "query_recent_errors": "python3 ~/.claude/scripts/sc_log_query.py --level error --since 5m",
+  "query_last_hour":     "python3 ~/.claude/scripts/sc_log_query.py --level warn --since 1h --include-rotated",
+  "query_component":     "python3 ~/.claude/scripts/sc_log_query.py --component dolt --since 30m",
+  "query_operation":     "python3 ~/.claude/scripts/sc_log_query.py --operation install --since 2h --include-rotated",
+  "query_since_time":    "python3 ~/.claude/scripts/sc_log_query.py --level warn --since 14:30",
+  "query_summary":       "python3 ~/.claude/scripts/sc_log_query.py --since 1h --summary",
+  "query_context":       "python3 ~/.claude/scripts/sc_log_query.py --since 2026-04-07T14:23:15Z --until 2026-04-07T14:24:15Z --json"
 }
 ```
 
@@ -178,6 +189,11 @@ Options:
   --window SECS         Max gap between entries in the same run (default: 5)
   --include-rotated     Search rotated files
   --json                Output structured JSON per correlated run
+
+Exit codes:
+  0   Results found
+  1   No results matched filters
+  2   Log file does not exist
 ```
 
 ### Output (`--json`)
@@ -208,9 +224,9 @@ Options:
 
 ```json
 {
-  "correlate_install": "python3 ~/.claude/agents/scripts/sc_log_correlate.py --operation install --since 1h --json",
-  "correlate_import":  "python3 ~/.claude/agents/scripts/sc_log_correlate.py --operation import --since 30m --json",
-  "correlate_get":     "python3 ~/.claude/agents/scripts/sc_log_correlate.py --operation get --since 15m --json"
+  "correlate_install": "python3 ~/.claude/scripts/sc_log_correlate.py --operation install --since 1h --json",
+  "correlate_import":  "python3 ~/.claude/scripts/sc_log_correlate.py --operation import --since 30m --json",
+  "correlate_get":     "python3 ~/.claude/scripts/sc_log_correlate.py --operation get --since 15m --json"
 }
 ```
 
@@ -253,6 +269,7 @@ Tests use synthetic JSONL fixtures — never touch the real `sc.log`.
 - `--since 14:30` parses as today at 14:30 local time
 - ISO8601 `--since` parses correctly
 - `--include-rotated` picks up entries from dated log files
+- `--until` applies an upper-bound time filter
 - `--summary` outputs counts by level, no individual entries
 - No results → exit 1
 - Log file missing → exit 2
@@ -264,6 +281,7 @@ Tests use synthetic JSONL fixtures — never touch the real `sc.log`.
 - `outcome` precedence: ERROR wins over WARN wins over INFO
 - Empty result when no entries match `--operation`
 - `--window` respected: entries outside window start a new run
+- Log file missing → exit 2
 
 ---
 
@@ -274,6 +292,7 @@ Tests use synthetic JSONL fixtures — never touch the real `sc.log`.
 ```yaml
 ---
 name: sc-log-debug
+version: 1.0.0
 description: >
   Monitors ~/.sc/logs/sc.log for warnings and errors. Supports two modes:
   background (fixed turns) and persistent (named agent in tmux, indefinite).
@@ -281,6 +300,29 @@ description: >
   operation correlation.
 ---
 ```
+
+### Output Contract
+
+Agent responses should follow the shared skills/agents guidance:
+
+- Return fenced JSON for machine-readable result payloads.
+- Prefer the minimal response envelope for normal operations:
+
+```json
+{
+  "success": true,
+  "data": {
+    "mode": "background",
+    "summary": "1 warning from dolt/install",
+    "matches": []
+  },
+  "error": null
+}
+```
+
+- The CLI is expected to be available on the command line in later sprints, but
+  Sprint 1.4 must not depend on `sc` being invokable yet. The agent should
+  interact directly with `~/.sc/logs/sc.log` via the Python helper scripts.
 
 ### Background Mode
 
@@ -305,9 +347,9 @@ Agent receives `mode=persistent`. Runs indefinitely:
 
 ### Explaining Error Context
 
-When asked to explain an error, call `sc_log_query.py` with a ±30s window
-around the error's `time` field to retrieve surrounding entries, then
-present the full operation sequence.
+When asked to explain an error, call `sc_log_query.py` with `--since` and
+`--until` spanning a ±30s window around the error's `time` field to retrieve
+surrounding entries, then present the full operation sequence.
 
 ---
 
@@ -323,6 +365,15 @@ present the full operation sequence.
 
 ---
 
-## Open Questions
+## Review Notes / Resolved Gaps
 
-None — plan is complete and ready for implementation.
+- Script paths were standardized to `.claude/scripts/` so the plan matches the
+  repository layout for local helper scripts.
+- Added `--until` to `sc_log_query.py`; without it, bounded context lookup for a
+  specific error timestamp was underspecified.
+- Tightened the agent definition to include `version` and a structured output
+  contract aligned with the shared skills/agents architecture guidance.
+- Clarified that Sprint 1.4 must not depend on `sc` being on `PATH` yet; the
+  agent operates directly on the log files and helper scripts.
+- Clarified that current file logs are `INFO`+ only, while helper filters still
+  accept `debug` for forward compatibility.
