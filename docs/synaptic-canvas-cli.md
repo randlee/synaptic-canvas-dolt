@@ -86,7 +86,7 @@ sc uninstall <package>
 
 sc validate [<package>] [--all]
     Verify installed files match Dolt SHA256 hashes.
-    Reports: OK, MODIFIED (local edits), MISSING, EXTRA (untracked files).
+    Reports: OK, MODIFIED (local edits), MISSING, UNREADABLE (permission denied or I/O error), EXTRA (untracked files).
 
 sc status
     Show installed packages, their versions, channels, and validation state.
@@ -171,12 +171,19 @@ This is a Merkle-like construction — changing any file changes the package SHA
 
 ### Validation Scenarios
 
+Per-file validation states:
+- `OK` — file exists and SHA matches
+- `MODIFIED` — file exists but SHA does not match
+- `MISSING` — file does not exist
+- `UNREADABLE` — file exists but cannot be read (permission denied or I/O error); `Err` field contains the underlying cause
+- `EXTRA` — file exists on disk but has no entry in the package
+
 **`sc validate <package>`** (end-user):
 ```
 For each installed file:
   local_sha = SHA256(read file from disk)
   expected_sha = query package_files.sha256 from Dolt
-  Compare → OK | MODIFIED | MISSING
+  Compare → OK | MODIFIED | MISSING | UNREADABLE
 
 For extra files in package directory not in Dolt:
   Report → EXTRA (untracked)
