@@ -60,8 +60,11 @@ func TestVerifyFile(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			got := VerifyFile(tc.path, tc.expectedSHA)
-			if got != tc.want {
-				t.Errorf("VerifyFile(%q, %q) = %v; want %v", tc.path, tc.expectedSHA, got, tc.want)
+			if got.Status != tc.want {
+				t.Errorf("VerifyFile(%q, %q).Status = %v; want %v", tc.path, tc.expectedSHA, got.Status, tc.want)
+			}
+			if got.Path != tc.path {
+				t.Errorf("VerifyFile(%q, %q).Path = %q; want %q", tc.path, tc.expectedSHA, got.Path, tc.path)
 			}
 		})
 	}
@@ -86,8 +89,14 @@ func TestVerifyFile_Unreadable(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
 
 	got := VerifyFile(path, "anyhash")
-	if got != StatusMissing {
-		t.Errorf("VerifyFile on unreadable file = %v; want StatusMissing", got)
+	if got.Status != StatusUnreadable {
+		t.Errorf("VerifyFile on unreadable file: Status = %v; want StatusUnreadable", got.Status)
+	}
+	if got.Err == nil {
+		t.Error("VerifyFile on unreadable file: Err = nil; want non-nil error with cause")
+	}
+	if got.Path != path {
+		t.Errorf("VerifyFile on unreadable file: Path = %q; want %q", got.Path, path)
 	}
 }
 
@@ -389,6 +398,7 @@ func TestVerifyStatusString(t *testing.T) {
 		{StatusOK, "OK"},
 		{StatusModified, "MODIFIED"},
 		{StatusMissing, "MISSING"},
+		{StatusUnreadable, "UNREADABLE"},
 		{StatusExtra, "EXTRA"},
 		{VerifyStatus(99), "UNKNOWN"},
 	}

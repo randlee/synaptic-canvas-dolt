@@ -11,24 +11,23 @@ import (
 )
 
 // VerifyFile computes the SHA256 of the file at path and compares it against
-// expectedSHA. Returns:
+// expectedSHA. Returns a VerifyResult with:
 //   - StatusMissing if the file does not exist (errors.Is fs.ErrNotExist)
+//   - StatusUnreadable if the file exists but cannot be read; Err holds the cause
 //   - StatusOK if SHA matches
 //   - StatusModified if SHA does not match
-func VerifyFile(path, expectedSHA string) VerifyStatus {
+func VerifyFile(path, expectedSHA string) VerifyResult {
 	actual, err := ComputeFileSHA256(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return StatusMissing
+			return VerifyResult{Path: path, Status: StatusMissing}
 		}
-		// Treat unreadable files (permissions, etc.) as missing so callers get
-		// a definitive status rather than a raw error path.
-		return StatusMissing
+		return VerifyResult{Path: path, Status: StatusUnreadable, Err: err}
 	}
 	if actual == expectedSHA {
-		return StatusOK
+		return VerifyResult{Path: path, Status: StatusOK}
 	}
-	return StatusModified
+	return VerifyResult{Path: path, Status: StatusModified}
 }
 
 // validateDestPath rejects dest paths that could escape the install root:
@@ -81,8 +80,9 @@ func VerifyPackage(expected []FileHash, installedDir string) ([]VerifyResult, er
 			return nil, fmt.Errorf("invalid dest_path %q: %w", fh.DestPath, err)
 		}
 		fullPath := filepath.Join(installedDir, fh.DestPath)
-		status := VerifyFile(fullPath, fh.SHA256)
-		results = append(results, VerifyResult{Path: fh.DestPath, Status: status})
+		r := VerifyFile(fullPath, fh.SHA256)
+		r.Path = fh.DestPath
+		results = append(results, r)
 	}
 
 	// Walk the installed directory to detect extra files.

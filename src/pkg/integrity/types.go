@@ -21,6 +21,8 @@ const (
 	StatusModified
 	// StatusMissing means the file does not exist on disk.
 	StatusMissing
+	// StatusUnreadable means the file exists but cannot be read (e.g. permission denied or I/O error).
+	StatusUnreadable
 	// StatusExtra means the file exists on disk but has no entry in Dolt.
 	StatusExtra
 )
@@ -34,6 +36,8 @@ func (s VerifyStatus) String() string {
 		return "MODIFIED"
 	case StatusMissing:
 		return "MISSING"
+	case StatusUnreadable:
+		return "UNREADABLE"
 	case StatusExtra:
 		return "EXTRA"
 	default:
@@ -45,4 +49,5 @@ func (s VerifyStatus) String() string {
 type VerifyResult struct {
 	Path   string
 	Status VerifyStatus
+	Err    error // non-nil only for StatusUnreadable
 }
