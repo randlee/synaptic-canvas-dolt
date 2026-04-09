@@ -315,14 +315,18 @@ The read path. These commands never write to Dolt.
 
 **Deliverables:**
 - `src/cmd/install.go` — install command
+- `src/cmd/init.go` — repository bootstrap command for first-time setup
 - `src/pkg/installer/installer.go` — file installation logic
 - `src/pkg/installer/tracking.go` — installed package tracking (local state)
 - Install logic: query Dolt → verify SHAs → write files → render templates → record install
+- Dry-run mode for install planning and template preview
 - Post-install template verification: scan rendered `.j2` output for unresolved `{{ }}` patterns
 - Unit and integration tests for install and tracking behavior
 
 **Acceptance Criteria:**
 - Installs package files to `.claude/` (local) or `~/.claude/` (global)
+- Stores lockfiles, repo profile, hook registry state, cache, and temp files
+  under `.synaptic/`
 - Branch resolution follows `--branch`, then `SC_DOLT_BRANCH`, then `main`
 - Branch values map directly to Dolt branch names
 - Respects `install_scope` from packages table
@@ -330,10 +334,14 @@ The read path. These commands never write to Dolt.
 - Verifies aggregate SHA after install
 - Fails and rolls back on any SHA mismatch
 - Renders `.j2` templates with repo profile + user answers context
+- `sc install --dry-run` shows the install plan and template preview without
+  side effects
 - Post-install scan: warns if any rendered output contains unresolved `{{ }}` patterns (safety net)
 - Records installed package/version/branch for status tracking, including `template_validation` in lockfile
 - Handles dependencies (warn if missing, don't auto-install for MVP)
 - `--json` output includes install summary (with template validation results)
+- `sc init` bootstraps `.synaptic/` state for a new repository and can be
+  triggered implicitly by first install
 
 ### Sprint 3.3: Validate & Status
 

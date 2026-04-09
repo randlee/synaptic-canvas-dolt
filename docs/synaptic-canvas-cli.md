@@ -73,10 +73,14 @@ sc list [--branch <branch>] [--tags <tag,...>]
 sc info <package>
     Show package details: version, description, dependencies, file count, SHA.
 
-sc install <package> [--global] [--branch <branch>]
+sc init
+    Initialize `.synaptic/` state for the current repository.
+
+sc install <package> [--global] [--branch <branch>] [--dry-run]
     Install a package from Dolt.
     --global    Install to ~/.claude/ (default: .claude/ in current repo)
     --branch    Install from specific branch (default: main)
+    --dry-run   Show the install plan and template preview without side effects
 
 sc upgrade <package> [--all]
     Upgrade installed package(s) to latest version on their branch.
@@ -262,7 +266,7 @@ Following the `claude-history` conventions:
 synaptic-canvas-dolt/
 ├── src/                          # Go source root
 │   ├── main.go                   # Entry point, version injection
-│   ├── go.mod                    # Module: github.com/randlee/synaptic-canvas
+│   ├── go.mod                    # Module: github.com/randlee/synaptic-canvas-dolt
 │   ├── cmd/                      # Cobra commands
 │   │   ├── root.go               # Root command, global flags
 │   │   ├── list.go               # sc list

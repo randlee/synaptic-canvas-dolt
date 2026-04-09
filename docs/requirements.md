@@ -96,7 +96,19 @@ The CLI is expected to be used by both humans and AI wrappers.
 - AG-005 Agent and script behavior required by a sprint shall be documented in
   the sprint plan and verified by tests or explicit QA steps.
 
-## 6. Verification Traceability
+## 6. Install Targets And Product State
+
+- FS-001 For MVP, package artifacts for Claude Code shall be materialized into
+  `.claude/` for local installs or `~/.claude/` for global installs.
+- FS-002 Synaptic Canvas product-managed state shall live under `.synaptic/`
+  locally or `~/.synaptic/` for machine-level state as applicable.
+- FS-003 `.synaptic/` is reserved for lockfiles, generated configuration,
+  metadata, caches, logs, temporary files, and other Synaptic-managed state; it
+  is not the primary runtime artifact root for Claude-targeted packages.
+- FS-004 Future runtime targets such as `.codex/` and `.agents/` may be added
+  later, but they are not part of the MVP package-install target surface.
+
+## 7. Verification Traceability
 
 - VER-001 Requirements shall be testable or otherwise verifiable.
 - VER-002 Sprint acceptance criteria shall map to one or more concrete

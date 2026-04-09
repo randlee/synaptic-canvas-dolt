@@ -199,7 +199,7 @@ CREATE TABLE package_deps (
 
 ### `package_variants`
 
-Maps a logical package name to agent-profile-specific implementations. This enables `synaptic install claude-history` to automatically resolve to the correct variant based on `SYNAPTIC_AGENTS`.
+Maps a logical package name to agent-profile-specific implementations. This enables `sc install claude-history` to automatically resolve to the correct variant based on `SYNAPTIC_AGENTS`.
 
 ```sql
 CREATE TABLE package_variants (
@@ -219,7 +219,7 @@ CREATE TABLE package_variants (
 | claude-history | codex | claude-history-codex |
 | claude-history | codex+claude | claude-history-dual |
 
-When a user runs `synaptic install claude-history`, the resolver:
+When a user runs `sc install claude-history`, the resolver:
 1. Reads `SYNAPTIC_AGENTS` (e.g., `claude`)
 2. Looks up `package_variants WHERE logical_id = 'claude-history' AND agent_profile = 'claude'`
 3. Resolves to `claude-history-claude` as the concrete package to install
