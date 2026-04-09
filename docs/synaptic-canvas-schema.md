@@ -542,4 +542,4 @@ The marketplace export pipeline (Dolt → Claude Code format) should produce out
 - **Download counts / telemetry:** Separate from the core schema; could be a DoltHub API integration
 - **Deprecation flags:** `deprecated BOOLEAN`, `successor_id VARCHAR` on packages
 - **Changelogs:** Dolt commit messages serve as the changelog for now; a dedicated `package_changelog` table may be warranted later
-- **Rating/reviews:** Out of scope for v1; the quality signal is promotion, not user ratings
+- **Rating/reviews:** Out of scope for v1; rollout status is tracked through branch promotion, while automated verification and future evals remain separate concerns

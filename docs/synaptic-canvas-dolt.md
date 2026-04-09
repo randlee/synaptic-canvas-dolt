@@ -4,7 +4,11 @@
 
 Synaptic Canvas uses Dolt as the **centralized authoring and management backbone** for skill storage, dependency management, and distribution. Dolt is server-side infrastructure — users never run Dolt locally. The system provides multiple distribution paths: direct pull for power users, Claude Code marketplace export, and lightweight local snapshots.
 
-The core insight driving this architecture: **skills cannot be effectively tested with traditional automated tests**. Quality assurance is therefore promotion-based — skills advance through staged confidence branches with queryable dependency impact and fast rollback — rather than CI-gated.
+Release promotion remains useful for staged rollout across `develop`, `beta`,
+and `main`, but it is not the full verification strategy. The long-term
+direction is explicit automated testing for the CLI and helper scripts plus a
+dedicated test harness and eval coverage for package-specific scripts and
+agents.
 
 ---
 
@@ -75,26 +79,28 @@ Update the script once; both packages reference the new version on next promotio
 
 Promotion is a merge on the server. `dolt log` gives you who published what, when. Conflict resolution is an admin problem, not a user problem. Rollback is `dolt_reset('--hard', 'HEAD~1')`.
 
-### Quality assurance without automated tests
+### Promotion and staged rollout
 
-Skills modify agent behavior in context-dependent ways — no unit test can validate this. Dolt's branch model provides staged human confidence:
+Dolt's branch model provides staged rollout and broader testing:
 
 | Branch | Meaning |
 |--------|---------|
-| `develop` | "I wrote this, it seems to work" |
-| `beta` | "I've used this across several projects" |
-| `main` | "This is proven, ship it" |
+| `develop` | Active development and internal testing |
+| `beta` | Broader pre-release validation |
+| `main` | Stable default branch |
 
-Promotion records a human judgment as a merge. The dependency graph is queryable before promotion to assess blast radius.
+Promotion records a merge and keeps rollout auditable. Automated tests, script
+unit tests, and future evals remain separate verification mechanisms.
 
 ---
 
 ## Release Channels
 
-A single environment variable controls which Dolt branch the resolver targets:
+A single environment variable can control which Dolt branch the resolver
+targets:
 
 ```bash
-SYNAPTIC_CHANNEL=develop   # develop | beta | main
+SC_DOLT_BRANCH=develop   # develop | beta | main
 ```
 
 | Channel | Branch | Purpose |
@@ -235,8 +241,8 @@ For offline development or CI environments, a filtered branch can be exported as
 - **SQLite export** — queryable offline, useful for validation testing
 
 ```bash
-synaptic snapshot --channel main --format files --output .synaptic/cache/
-synaptic snapshot --channel main --format sqlite --output skills.db
+synaptic snapshot --branch main --format files --output .synaptic/cache/
+synaptic snapshot --branch main --format sqlite --output skills.db
 ```
 
 The SQLite export is particularly useful as a **validation artifact**: compare SQLite snapshot against Dolt to confirm export correctness.
@@ -354,7 +360,7 @@ SYNAPTIC_ROOT = "/Users/rand/projects/myproject/.synaptic"
 SYNAPTIC_SHARED = "/Users/rand/projects/myproject/.synaptic/shared"
 SYNAPTIC_SKILLS = "/Users/rand/projects/myproject/.synaptic/skills"
 SYNAPTIC_PROJECT_ROOT = "/Users/rand/projects/myproject"
-SYNAPTIC_CHANNEL = "develop"
+SC_DOLT_BRANCH = "develop"
 SYNAPTIC_AGENTS = "claude"
 ```
 
@@ -373,7 +379,7 @@ synaptic install <package>         # resolve, fetch, materialize
 synaptic remove <package>          # remove files, update lockfile
 synaptic upgrade [package]         # upgrade one or all packages
 synaptic list                      # installed packages
-synaptic list --available          # all packages on current channel
+synaptic list --available          # all packages on the effective branch
 synaptic list --deps <package>     # dependency tree for a package
 synaptic dry-run install <package> # show what files land where, no action
 ```
@@ -387,11 +393,11 @@ synaptic deps --reverse <package>  # what depends on this package
 synaptic diff <package>            # changes between installed and latest
 ```
 
-### Channel & Snapshot
+### Branch & Snapshot
 
 ```bash
-synaptic channel                   # show current channel
-synaptic channel set beta          # switch channel
+synaptic list --branch beta        # read from a specific branch
+SC_DOLT_BRANCH=beta synaptic list  # set default branch for a caller/session
 synaptic snapshot --format files   # export to flat files
 synaptic snapshot --format sqlite  # export to SQLite
 ```
@@ -407,7 +413,7 @@ synaptic export marketplace        # export main branch → Claude Code format
 ## Install Flow: `synaptic install claude-history`
 
 ```
-1. Query Dolt for 'claude-history' on SYNAPTIC_CHANNEL
+1. Query Dolt for 'claude-history' on SC_DOLT_BRANCH
 2. Detect SYNAPTIC_AGENTS → select variant (e.g., claude)
 3. Walk dependency graph:
      claude-history → common-utils (shared script)
@@ -473,7 +479,7 @@ The TUI itself is a Synaptic Canvas package — it installs via the same mechani
 
 | Variable | Values | Purpose |
 |----------|--------|---------|
-| `SYNAPTIC_CHANNEL` | `main`, `beta`, `develop` | Dolt branch to resolve against |
+| `SC_DOLT_BRANCH` | `main`, `beta`, `develop` | Dolt branch to resolve against |
 | `SYNAPTIC_AGENTS` | `claude`, `codex`, `codex+claude` | Agent capability profile for variant selection |
 | `SYNAPTIC_STARTUP_MODE` | `off`, `check`, `auto` | Upgrade behavior on session start |
 | `SYNAPTIC_ROOT` | absolute path | Generated; set in `env.toml` |

@@ -154,7 +154,7 @@ SYNAPTIC_PROJECT_ROOT="/Users/rand/projects/myproject"
 SYNAPTIC_ROOT="/Users/rand/projects/myproject/.synaptic"
 SYNAPTIC_SHARED="/Users/rand/projects/myproject/.synaptic/shared"
 SYNAPTIC_SKILLS="/Users/rand/projects/myproject/.synaptic/skills"
-SYNAPTIC_CHANNEL="develop"
+SC_DOLT_BRANCH="develop"
 SYNAPTIC_AGENTS="claude"
 
 # Hook-specific context

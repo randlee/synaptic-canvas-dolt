@@ -20,6 +20,8 @@ These apply to every sprint in every phase:
 - Target: 80%+ line coverage, 100% coverage on integrity/SHA code paths
 - Test fixtures in `test/` directory
 - Mocks for Dolt database interactions (interface-based)
+- Repository-owned helper scripts must have unit tests
+- Tests must avoid nondeterministic dependence on wall-clock time, user state, or production logs
 
 ### Structured Logging
 - **Package:** `log/slog` (stdlib, Go 1.21+; project targets Go 1.26)
@@ -32,6 +34,7 @@ These apply to every sprint in every phase:
 - Standard attributes on every log entry: `component`, `operation`, `timestamp`
 - Levels: `Debug` (internal detail), `Info` (operations), `Warn` (recoverable), `Error` (failures)
 - Default file level: `Info`; `--verbose` sets console to `Debug`
+- Log failures after initialization are fail-open; they do not break normal CLI command flow
 - No `fmt.Println` for operational output — use `internal/output/` formatters
 - No `log.Fatal` — return errors up the call stack
 
@@ -39,6 +42,19 @@ These apply to every sprint in every phase:
 - All errors wrapped with context: `fmt.Errorf("operation: %w", err)`
 - Cobra command errors surfaced to user via structured output
 - `--json` output includes error details for skill integration
+- AI-facing wrappers should call the CLI with `--json` explicitly
+
+### Branch Resolution
+- Read-path commands resolve branches using:
+  1. `--branch`
+  2. `SC_DOLT_BRANCH`
+  3. `main`
+- The CLI ignores the current Dolt session branch for read behavior
+- Read-path commands must not rely on session branch switching for correctness
+
+### Verification Traceability
+- Sprint acceptance criteria must map cleanly to tests or explicit QA checks
+- Agent and script requirements must identify how they will be verified
 
 ### Code Quality
 - `golangci-lint` with `gosec` enabled
@@ -59,7 +75,7 @@ Scaffold the Go project, establish patterns, connect to Dolt.
 **Deliverables:**
 - `src/go.mod` (module: `github.com/randlee/synaptic-canvas-dolt`, Go 1.26)
 - `src/main.go` with version injection via ldflags
-- `src/cmd/root.go` — root Cobra command with global flags (`--dolt-dir`, `--remote`, `--json`, `--quiet`, `--verbose`)
+- `src/cmd/root.go` — root Cobra command with global flags (`--dolt-dir`, `--remote`, `--branch`, `--json`, `--quiet`, `--verbose`)
 - `src/internal/logging/logger.go` — centralized `slog` setup
 - `src/internal/output/formatter.go` — table + JSON output formatters
 - `src/internal/config/config.go` — CLI configuration (flag parsing, defaults)
@@ -74,6 +90,7 @@ Scaffold the Go project, establish patterns, connect to Dolt.
 - `golangci-lint run` clean
 - `sc --help` prints usage
 - `sc --version` prints injected version
+- `--branch` is available as a global flag
 - JSON and table output formatters tested
 - CI runs on PR and push to main/develop
 - CI matrix: ubuntu/macOS/windows × Go 1.26
@@ -95,6 +112,8 @@ Scaffold the Go project, establish patterns, connect to Dolt.
 **Acceptance Criteria:**
 - Dolt client interface defined and mockable
 - Can query packages, files, dependencies from Dolt
+- Read-path queries resolve branch using `--branch`, then `SC_DOLT_BRANCH`, then `main`
+- Read-path queries do not rely on session branch switching for correctness
 - Models map cleanly to schema spec tables
 - All query builders tested
 - Manifest reconstruction tested against known fixture data
@@ -124,6 +143,9 @@ Scaffold the Go project, establish patterns, connect to Dolt.
 
 **Deliverables:**
 - `.claude/agents/sc-log-debug.md` — log monitoring agent
+- Agent definition aligned with `../synaptic-canvas/docs/claude-code-skills-agents-guidelines.md`
+- Python helper scripts under `.claude/scripts/`
+- Unit tests for all helper scripts
 - Tails `~/.sc/logs/sc.log` in background
 - Notifies when warnings or errors are encountered (count + summary)
 - Supports on-demand filtering: by level, component, operation, time range, or regex pattern
@@ -137,6 +159,8 @@ Scaffold the Go project, establish patterns, connect to Dolt.
 - Time-range filtering: "last 5 minutes", "since 14:30"
 - Output is concise — summarizes patterns, doesn't dump raw logs
 - Can be asked to explain error context (surrounding log lines)
+- All helper scripts have passing unit tests
+- Sprint artifacts include explicit traceability from requirements to tests/QA checks
 
 ---
 
@@ -236,19 +260,20 @@ The read path. These commands never write to Dolt.
 **Goal:** `sc list` and `sc info <package>`
 
 **Deliverables:**
-- `src/cmd/list.go` — list command with `--channel` and `--tags` filters
+- `src/cmd/list.go` — list command with `--branch` and `--tags` filters
 - `src/cmd/info.go` — info command showing package details
 - Table and JSON output for both
 
 **Acceptance Criteria:**
-- Lists packages from specified channel (branch), defaults to main
+- Lists packages from specified branch, defaults to main
+- Branch resolution follows `--branch`, then `SC_DOLT_BRANCH`, then `main`
 - Filters by tags
 - Info shows: name, version, description, dependencies, file count, SHA
 - Both support `--json` output
 
 ### Sprint 3.2: Install
 
-**Goal:** `sc install <package> [--global] [--channel <channel>]`
+**Goal:** `sc install <package> [--global] [--branch <branch>]`
 
 **Deliverables:**
 - `src/cmd/install.go` — install command
@@ -259,13 +284,14 @@ The read path. These commands never write to Dolt.
 
 **Acceptance Criteria:**
 - Installs package files to `.claude/` (local) or `~/.claude/` (global)
+- Branch resolution follows `--branch`, then `SC_DOLT_BRANCH`, then `main`
 - Respects `install_scope` from packages table
 - Verifies per-file SHA after writing each file
 - Verifies aggregate SHA after install
 - Fails and rolls back on any SHA mismatch
 - Renders `.j2` templates with repo profile + user answers context
 - Post-install scan: warns if any rendered output contains unresolved `{{ }}` patterns (safety net)
-- Records installed package/version/channel for status tracking, including `template_validation` in lockfile
+- Records installed package/version/branch for status tracking, including `template_validation` in lockfile
 - Handles dependencies (warn if missing, don't auto-install for MVP)
 - `--json` output includes install summary (with template validation results)
 
@@ -282,7 +308,7 @@ The read path. These commands never write to Dolt.
 - Validate reports per-file: OK, MODIFIED, MISSING
 - Validate reports extra files: EXTRA (untracked)
 - Validate computes and checks aggregate SHA
-- Status shows installed packages, versions, channels, validation state
+- Status shows installed packages, versions, branches, validation state
 - Both support `--json` output
 
 ### Sprint 3.4: Upgrade & Uninstall
@@ -296,7 +322,7 @@ The read path. These commands never write to Dolt.
 - Uninstall logic: remove files → update tracking
 
 **Acceptance Criteria:**
-- Upgrade checks current vs available version on channel
+- Upgrade checks current vs available version on branch
 - Upgrade warns about local modifications before overwriting
 - Uninstall removes package files and tracking record
 - Both support `--json` output
@@ -313,6 +339,10 @@ The read path. These commands never write to Dolt.
 - Skill markdown file: maps natural language → `sc` CLI commands with `--json`
 - Parses JSON output for conversational presentation
 - Handles error cases gracefully
+
+**Design Constraints:**
+- The skill is an AI wrapper and should invoke `sc` with `--json` explicitly
+- The skill must remain a thin wrapper with no business logic
 
 **Acceptance Criteria:**
 - "list packages" → `sc list --json` → conversational response

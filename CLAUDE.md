@@ -6,8 +6,10 @@ Synaptic Canvas is a Dolt-backed package management system for Claude Code skill
 
 ## Design Documents
 
-All design decisions are documented. Read before making changes:
+Requirements and architecture are documented. Read before making changes:
 
+- [Requirements](docs/requirements.md) — cross-cutting product requirements
+- [Architecture](docs/architecture.md) — top-level system architecture
 - [CLI Design](docs/synaptic-canvas-cli.md) — `sc` command surface, architecture, integrity model
 - [Schema Spec](docs/synaptic-canvas-schema.md) — Dolt table definitions and rationale
 - [Export Pipeline](docs/synaptic-canvas-export-pipeline.md) — Dolt → filesystem reconstruction
