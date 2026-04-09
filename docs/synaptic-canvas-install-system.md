@@ -224,11 +224,22 @@ generated environment model. The backing `env.toml` file may use uppercase
 environment-variable names, but templates reference the normalized lowercase
 form such as `env.synaptic_root` and `env.sc_dolt_branch`.
 
+| `env.toml` key | Template key |
+|----------------|--------------|
+| `SYNAPTIC_ROOT` | `env.synaptic_root` |
+| `SYNAPTIC_SHARED` | `env.synaptic_shared` |
+| `SYNAPTIC_SKILLS` | `env.synaptic_skills` |
+| `SYNAPTIC_PROJECT_ROOT` | `env.synaptic_project_root` |
+| `SC_DOLT_BRANCH` | `env.sc_dolt_branch` |
+| `SYNAPTIC_AGENTS` | `env.synaptic_agents` |
+
 ### Rendering Rules
 
 1. Templates are rendered **before** file checksums are computed — the lockfile records the hash of the rendered output, not the template.
 2. Rendered output is shown to the user during the approval phase. They see what the skill will actually say, not the template source.
 3. Re-rendering happens on `sc upgrade` if answers or repo profile have changed. Unchanged templates produce identical output (deterministic rendering).
+   On upgrade, the installer re-fetches template source from Dolt and re-renders
+   it using the current repo profile and stored answers.
 4. Non-template files (`.md`, `.sh` without `.j2`) are materialized as-is.
 
 ---
@@ -334,6 +345,10 @@ template_rendered = true
   languages_hash = "sha256:lang_list_hash..."
 ```
 
+Lockfiles are part of Synaptic Canvas state, not Claude runtime artifacts. A
+project-local install writes the lockfile under `.synaptic/manifest.lock`; a
+global install writes it under `~/.synaptic/manifest.lock`.
+
 **Key property**: after install, no skill invocation ever checks dependencies. The lockfile is the proof. Only `sc upgrade` or `SYNAPTIC_STARTUP_MODE=check` re-verifies.
 
 ### Install Scope Enforcement
@@ -361,6 +376,10 @@ When `sc upgrade` runs:
 4. Present upgrade plan (same format as install)
 5. On approval: re-materialize changed files, update lockfile
 6. Unchanged skills: no action, no re-verification
+
+`sc init` is idempotent. If `.synaptic/` state already exists, the command
+verifies or refreshes generated state rather than failing purely because the
+repo was already initialized.
 
 ### Answer Preservation
 

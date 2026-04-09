@@ -169,7 +169,7 @@ WHERE file_type = 'agent'
   AND JSON_EXTRACT(frontmatter, '$.hooks') IS NOT NULL;
 ```
 
-**`is_template`:** When `TRUE`, the `content` column contains Jinja2 template source. The installer renders it at install time using repo profile + user answers, then stores the rendered output. The lockfile records the hash of the rendered output, not the template source.
+**`is_template`:** When `TRUE`, the `content` column contains Jinja2 template source. The installer renders it at install time using repo profile + user answers, then stores the rendered output. The lockfile records the hash of the rendered output, not the template source. On upgrade, the installer re-fetches the template source from Dolt and re-renders it with the current repo profile and stored answers.
 
 ### `package_deps`
 

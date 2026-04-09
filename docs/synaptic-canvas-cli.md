@@ -109,6 +109,7 @@ sc admin import <path> --branch <branch>
 
 sc admin export <package> --output <dir> [--branch <branch>]
     Export a package from Dolt to filesystem.
+    Defaults to the effective branch (`--branch`, then SC_DOLT_BRANCH, then main).
     Reconstructs manifest.yaml and plugin.json from relational data.
     Verifies SHA on each exported file.
 
@@ -120,6 +121,7 @@ sc admin publish <package> --from <branch> --to <branch>
 
 sc admin verify <package> [--branch <branch>]
     Full integrity check within Dolt: recompute all SHA256 hashes
+    Defaults to the effective branch (`--branch`, then SC_DOLT_BRANCH, then main).
     from stored content and compare against stored hashes.
 
 sc admin diff <package> --branch1 <b1> --branch2 <b2>
@@ -130,7 +132,7 @@ sc admin diff <package> --branch1 <b1> --branch2 <b2>
 
 ```
 --dolt-dir <path>     Path to Dolt database directory (default: auto-detect)
---remote <url>        DoltHub remote URL (for remote operations)
+--remote <url>        Optional Dolt remote override for commands that connect to a non-default Dolt host
 --branch <branch>     Read/query branch override (default: SC_DOLT_BRANCH or main)
 --json                Output as JSON (for scripting/skill integration)
 --quiet               Suppress non-essential output
@@ -149,6 +151,10 @@ the resolved branch explicitly on each read operation.
 There is no separate user-facing `--channel` abstraction in MVP. End-user and
 admin flows both use `--branch`, and those values map directly to Dolt branch
 names.
+
+`--remote` is primarily for admin and explicit remote-read workflows. Local
+operations may rely on configured defaults; commands that require a non-default
+remote should document that requirement explicitly.
 
 ---
 
@@ -406,11 +412,11 @@ ALTER TABLE packages ADD COLUMN signed_by VARCHAR(256) AFTER signature;
 
 2. ~~**Channel defaults:**~~ **Resolved.** Read-path commands resolve branches using `--branch`, then `SC_DOLT_BRANCH`, then `main`. The CLI ignores the current Dolt session branch.
 
-3. **Dependency resolution:** When installing a package with dependencies, should `sc` auto-install deps? Or just warn?
+3. ~~**Dependency resolution:**~~ **Resolved.** For MVP, `sc install` warns about missing dependencies but does not auto-install them.
 
 4. **Template expansion:** ~~Resolved.~~ `sc` handles Jinja2 rendering at install time. Templates are validated at three points: dry-run (preview), pre-publish (blocking gate), and post-install (rendered output scan). See [Install System — Template Variable Validation](./synaptic-canvas-install-system.md#template-variable-validation).
 
-5. **Upgrade strategy:** On `sc upgrade`, what happens to local modifications? Warn and skip? Force overwrite? Stash?
+5. ~~**Upgrade strategy:**~~ **Resolved.** For MVP, `sc upgrade` warns about local modifications before overwriting them.
 
 6. **Admin authentication:** How does `sc admin import` authenticate to write to Dolt? Local-only for MVP, DoltHub credentials later?
 

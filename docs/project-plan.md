@@ -241,6 +241,8 @@ Import/export — the write path. Python prototypes (`tools/dolt-ingest.py`, `to
 
 **Acceptance Criteria:**
 - Exports package from Dolt to filesystem
+- If `--branch` is omitted, export reads from the effective branch resolved as
+  `--branch`, then `SC_DOLT_BRANCH`, then `main`
 - Reconstructs manifest.yaml from relational data
 - Reconstructs plugin.json from relational data
 - Verifies per-file SHA on each written file
@@ -262,6 +264,8 @@ Import/export — the write path. Python prototypes (`tools/dolt-ingest.py`, `to
 
 **Acceptance Criteria:**
 - Verify detects OK and CORRUPT states for stored content
+- If `--branch` is omitted, verify reads from the effective branch resolved as
+  `--branch`, then `SC_DOLT_BRANCH`, then `main`
 - Verify recomputes aggregate and compares against stored package SHA
 - Diff shows file-level changes between branches
 - Both commands support `--json` output
@@ -343,6 +347,7 @@ The read path. These commands never write to Dolt.
 - `--json` output includes install summary (with template validation results)
 - `sc init` bootstraps `.synaptic/` state for a new repository and can be
   triggered implicitly by first install
+- `sc init` is idempotent on an already initialized repository
 
 ### Sprint 3.3: Validate & Status
 

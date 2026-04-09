@@ -1,8 +1,8 @@
-# Synaptic Canvas — Dolt-Backed Skills Platform
+# Synaptic Canvas — Dolt-Backed Package Platform
 
 ## Overview
 
-Synaptic Canvas uses Dolt as the **centralized authoring and management backbone** for skill storage, dependency management, and distribution. Dolt is server-side infrastructure — users never run Dolt locally. The system provides multiple distribution paths: direct pull for power users, Claude Code marketplace export, and lightweight local snapshots.
+Synaptic Canvas uses Dolt as the **centralized authoring and management backbone** for package storage, dependency management, and distribution. Dolt is server-side infrastructure — users never run Dolt locally. The system provides multiple distribution paths: direct pull for power users, Claude Code marketplace export, and lightweight local snapshots.
 
 Release promotion remains useful for staged rollout across `develop`, `beta`,
 and `main`, but it is not the full verification strategy. The long-term
@@ -264,6 +264,16 @@ the same export pipeline later.
 
 ## Dependency Tiers
 
+These tiers describe install behavior. They map onto schema `dep_type` values
+as follows:
+
+| Tier | Meaning | Schema mapping |
+|------|---------|----------------|
+| Tier 1 | Hard tool requirements | `dep_type = tool` |
+| Tier 2 | Agent capability selection | variant selection, not `package_deps` |
+| Tier 3 | External CLIs to install | `dep_type = cli` |
+| Tier 4 | Package dependencies | `dep_type = skill` |
+
 ### Tier 1 — Hard Tool Requirements
 
 Binary tools that must be present on `PATH` with version constraints satisfied. These are **blocking**: installation fails with a clear diagnostic if unmet.
@@ -292,9 +302,15 @@ claude-history/
 The installed variant is recorded in the lockfile. If `SYNAPTIC_AGENTS`
 changes, `sc upgrade` can swap variants automatically.
 
-### Tier 3 — Skill Dependencies
+### Tier 3 — External CLI Dependencies
 
-A package can declare `dep_type = skill` to pull in another skill as a
+External command-line tools declared as `dep_type = cli` are install-time
+dependencies rather than host environment prerequisites. They are shown to the
+user during install and may be installed through an explicit `install_cmd`.
+
+### Tier 4 — Package Dependencies
+
+A package can declare `dep_type = skill` to pull in another package as a
 prerequisite. Shared utility packages (type `script`, no slash command)
 materialize under `.claude/shared/` in MVP and are referenced by dependents via
 paths derived from `.synaptic/env.toml`.
@@ -337,39 +353,10 @@ is committed. Other `.synaptic/` contents are gitignored and regenerated.
 
 ## The Lockfile (`manifest.lock`)
 
-The lockfile records the precise resolved state of every installed package. It is a reproducibility artifact — actual files are materialized locally from Dolt blobs.
-
-```toml
-[metadata]
-branch = "develop"
-dolt_remote = "dolthub/randlee/synaptic-canvas"
-resolved_at = "2026-02-21T14:32:00Z"
-
-[[skills]]
-id = "claude-history"
-logical_id = "claude-history"
-variant = "claude"
-version = "2.1.0"                    # Semver from packages.version
-dolt_commit = "a3f9c21"             # Dolt commit hash for reproducibility
-installed_at = "2026-02-21T14:32:00Z"
-install_scope = "project"
-
-  [skills.files]
-  ".claude/skills/claude-history/main.md" = "sha256:abc123..."
-  ".claude/shared/common-utils/helpers.sh" = "sha256:def456..."
-
-  [skills.requirements]
-  tools = ["python3>=3.11"]
-  agents = ["claude"]
-  cli_installed = ["agent-teams-mail"]
-  acknowledged_at = "2026-02-21T14:31:45Z"
-
-[[skills]]
-id = "common-utils"
-dep_of = "claude-history"
-install_scope = "shared"
-# ...
-```
+The lockfile records the precise resolved state of every installed package. It
+is a reproducibility artifact — actual files are materialized locally from Dolt
+blobs. The authoritative lockfile example and field-level behavior are defined
+in [Install System](./synaptic-canvas-install-system.md#phase-5-lockfile-recording).
 
 On startup, the installer checksums materialized files against the lockfile. Drift (missing, modified, or version-mismatched files) triggers a re-install or a warning depending on `SYNAPTIC_STARTUP_MODE`.
 
