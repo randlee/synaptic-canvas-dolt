@@ -6,6 +6,8 @@ Phased plan for building the `sc` Go CLI. Each phase contains sprints. Each spri
 
 **Reference project:** `claude-history` (Go + Cobra + GoReleaser conventions)
 **Design docs:** See [CLAUDE.md](../CLAUDE.md) for full list
+**Normative docs:** [`requirements.md`](./requirements.md) and
+[`architecture.md`](./architecture.md)
 
 ---
 
@@ -49,12 +51,16 @@ These apply to every sprint in every phase:
   1. `--branch`
   2. `SC_DOLT_BRANCH`
   3. `main`
+- User-selectable branch values map directly to Dolt branch names in MVP
 - The CLI ignores the current Dolt session branch for read behavior
 - Read-path commands must not rely on session branch switching for correctness
 
 ### Verification Traceability
 - Sprint acceptance criteria must map cleanly to tests or explicit QA checks
 - Agent and script requirements must identify how they will be verified
+- MVP verification is part of the product surface, not just development process
+- Promotion across `develop`, `beta`, and `main` complements testing but does
+  not replace it
 
 ### Code Quality
 - `golangci-lint` with `gosec` enabled
@@ -107,12 +113,13 @@ Scaffold the Go project, establish patterns, connect to Dolt.
 - `src/pkg/models/package.go` — Package, File, Dependency structs
 - `src/pkg/models/manifest.go` — Manifest reconstruction from relational data
 - Unit tests with mock Dolt client (interface-based testing)
-- Integration test harness (optional, uses test Dolt DB in `test/fixtures/`)
+- Integration test harness using test Dolt DB fixtures in `test/fixtures/`
 
 **Acceptance Criteria:**
 - Dolt client interface defined and mockable
 - Can query packages, files, dependencies from Dolt
 - Read-path queries resolve branch using `--branch`, then `SC_DOLT_BRANCH`, then `main`
+- Read-path queries treat the supplied branch value as the Dolt branch name directly
 - Read-path queries do not rely on session branch switching for correctness
 - Models map cleanly to schema spec tables
 - All query builders tested
@@ -251,6 +258,7 @@ Import/export — the write path. Python prototypes (`tools/dolt-ingest.py`, `to
 - `src/cmd/admin/diff.go` — diff command
 - Verify logic: recompute SHAs from stored content → compare against stored hashes
 - Diff logic: compare package data across two branches
+- Unit tests for verify and diff behavior
 
 **Acceptance Criteria:**
 - Verify detects OK and CORRUPT states for stored content
@@ -267,6 +275,7 @@ Import/export — the write path. Python prototypes (`tools/dolt-ingest.py`, `to
 - Dolt merge operations for targeted package promotion
 - Pre-publish validation (verify SHAs before promoting)
 - Pre-publish template variable validation (reuses `src/pkg/template/validator.go` from Sprint 2.1)
+- Unit and integration tests for publish behavior and gating
 
 **Acceptance Criteria:**
 - Promotes package from one branch to another via Dolt merge
@@ -290,10 +299,12 @@ The read path. These commands never write to Dolt.
 - `src/cmd/list.go` — list command with `--branch` and `--tags` filters
 - `src/cmd/info.go` — info command showing package details
 - Table and JSON output for both
+- Unit tests for list/info command behavior and output
 
 **Acceptance Criteria:**
 - Lists packages from specified branch, defaults to main
 - Branch resolution follows `--branch`, then `SC_DOLT_BRANCH`, then `main`
+- Branch values map directly to Dolt branch names
 - Filters by tags
 - Info shows: name, version, description, dependencies, file count, SHA
 - Both support `--json` output
@@ -308,10 +319,12 @@ The read path. These commands never write to Dolt.
 - `src/pkg/installer/tracking.go` — installed package tracking (local state)
 - Install logic: query Dolt → verify SHAs → write files → render templates → record install
 - Post-install template verification: scan rendered `.j2` output for unresolved `{{ }}` patterns
+- Unit and integration tests for install and tracking behavior
 
 **Acceptance Criteria:**
 - Installs package files to `.claude/` (local) or `~/.claude/` (global)
 - Branch resolution follows `--branch`, then `SC_DOLT_BRANCH`, then `main`
+- Branch values map directly to Dolt branch names
 - Respects `install_scope` from packages table
 - Verifies per-file SHA after writing each file
 - Verifies aggregate SHA after install
@@ -330,6 +343,7 @@ The read path. These commands never write to Dolt.
 - `src/cmd/validate.go` — validate command
 - `src/cmd/status.go` — status command
 - Validate logic: recompute SHAs from installed files → compare against Dolt
+- Unit tests for validate and status behavior
 
 **Acceptance Criteria:**
 - Validate reports per-file: OK, MODIFIED, MISSING
@@ -347,6 +361,7 @@ The read path. These commands never write to Dolt.
 - `src/cmd/uninstall.go` — uninstall command
 - Upgrade logic: check for newer version → install → verify
 - Uninstall logic: remove files → update tracking
+- Unit and integration tests for upgrade and uninstall behavior
 
 **Acceptance Criteria:**
 - Upgrade checks current vs available version on branch
@@ -366,16 +381,21 @@ The read path. These commands never write to Dolt.
 - Skill markdown file: maps natural language → `sc` CLI commands with `--json`
 - Parses JSON output for conversational presentation
 - Handles error cases gracefully
+- Verification fixtures or golden examples for the wrapper behavior
 
 **Design Constraints:**
 - The skill is an AI wrapper and should invoke `sc` with `--json` explicitly
 - The skill must remain a thin wrapper with no business logic
+- The skill should pass `--branch` explicitly when operating against a
+  non-default branch
 
 **Acceptance Criteria:**
 - "list packages" → `sc list --json` → conversational response
 - "install delay" → `sc install sc-delay-tasks --json` → conversational response
 - Skill is a thin wrapper — no business logic in the skill
 - Error messages from CLI presented clearly
+- Non-default branch workflows remain explicit in the CLI invocation rather
+  than hidden in skill logic
 
 ### Sprint 4.2: Installer Script
 
@@ -386,6 +406,7 @@ The read path. These commands never write to Dolt.
 - `scripts/install.ps1` — Windows installer (or winget manifest)
 - Installs `sc` binary to PATH
 - Installs `sc:plugin` skill globally to `~/.claude/`
+- Installation verification on supported platforms
 
 **Acceptance Criteria:**
 - Fresh install works on macOS, Linux, Windows
@@ -420,11 +441,39 @@ The read path. These commands never write to Dolt.
 
 | Phase | Sprints | Focus |
 |-------|---------|-------|
-| 1. Foundation | 1.1–1.4 | Scaffold + CI pipeline, Dolt client, integrity, log-debug agent |
+| 1. Foundation | 1.1–1.5 | Scaffold + CI pipeline, Dolt client, integrity, log-debug agent, gap closure |
 | 2. Admin | 2.1–2.4 | Import, export, verify, publish |
 | 3. End-User | 3.1–3.4 | List, install, validate, upgrade |
 | 4. Skill | 4.1–4.2 | sc:plugin skill, installer |
 | 5. Release | 5.1 | GoReleaser release pipeline |
+
+---
+
+## MVP Release Gate
+
+The MVP should not be considered production-ready until all of the following are
+true:
+
+- Phase 1 through Phase 5 deliverables are complete
+- Cross-cutting branch-resolution rules are implemented consistently
+- Structured logging and integrity verification behave as documented
+- All documented CLI JSON contracts required for AI wrappers are implemented
+- Repository-owned helper scripts and CLI/package code have passing automated
+  tests
+- Remaining verification gaps are documented explicitly rather than implied away
+
+---
+
+## Future Validation Considerations
+
+These are not required for MVP completion, but they should be considered in
+later planning so verification remains part of the product story:
+
+- Dedicated package test harness for scripts and agents
+- Per-package eval suites for behavior that cannot be covered fully by
+  conventional tests
+- Optional storage of validation evidence in package metadata, schema-adjacent
+  records, or other auditable package-associated state
 
 ---
 
@@ -435,3 +484,6 @@ The read path. These commands never write to Dolt.
 | 2026-02-22 | Initial project plan |
 | 2026-02-22 | Move CI pipeline from Phase 5 into Sprint 1.1; Phase 5 now release-only |
 | 2026-02-22 | Add template variable validation to Sprints 2.1 (validator + warning), 2.4 (blocking gate), 3.2 (post-install scan) |
+| 2026-04-08 | Align plan with `requirements.md` and `architecture.md`, including explicit branch resolution and AI JSON access |
+| 2026-04-08 | Add Sprint 1.5 for Phase 1 gap closure and strengthen verification/test expectations across later phases |
+| 2026-04-08 | Add MVP release gate and future validation considerations (test harness, evals, validation evidence) |

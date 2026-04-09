@@ -46,6 +46,8 @@ Architecture rules:
 - the CLI ignores the current/checked-out Dolt branch for read-path behavior
 - read operations should be branch-qualified rather than relying on session
   switching
+- in MVP, externally selectable branch values are the Dolt branch names
+  directly; there is no separate channel-mapping layer
 
 This keeps CLI behavior deterministic and allows multiple readers to query
 different branches safely in parallel.
@@ -69,6 +71,16 @@ The intended long-term model is:
 - a dedicated product test harness for plugin validation
 - per-plugin eval coverage for scripts and agents where automated correctness
   cannot be captured fully by conventional tests
+
+Testing is part of the product story:
+
+- the MVP must ship with automated verification for its CLI and helper-script
+  surface
+- staged rollout across `develop`, `beta`, and `main` complements testing but
+  does not replace it
+- future package validation may include test evidence captured alongside package
+  metadata or adjacent validation records, but that evidence model is a later
+  design step rather than an MVP prerequisite
 
 ## 5. AI Access Strategy
 

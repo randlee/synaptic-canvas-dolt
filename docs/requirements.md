@@ -65,6 +65,8 @@ explicit and deterministic.
 - BR-007 Admin or write-path operations may still target explicit branches, but
   those behaviors shall be documented independently in the relevant command
   design.
+- BR-008 In MVP, user-selectable branch values map directly to Dolt branch
+  names. There is no separate channel-to-branch translation layer.
 
 ## 4. CLI Access Strategy
 
@@ -103,7 +105,13 @@ The CLI is expected to be used by both humans and AI wrappers.
   documented reason prevents automation.
 - VER-004 Where tests are not sufficient, the sprint plan shall identify the QA
   procedure required to validate the behavior.
-- VER-005 Longer term, plugin validation shall include a dedicated test
-  harness and per-plugin eval coverage for scripts and agents. Promotion across
-  `develop`, `beta`, and `main` remains useful for staged rollout, but it does
-  not replace automated verification.
+- VER-005 Verification is part of the product, not just part of development
+  process. MVP scope includes automated verification for the CLI, Go packages,
+  and repository-owned helper scripts.
+- VER-006 Branch promotion supports staged rollout, but it shall not be treated
+  as a substitute for automated verification.
+- VER-007 The product should evolve toward a dedicated validation system for
+  packages, including a test harness and per-package eval coverage for scripts
+  and agents.
+- VER-008 Test evidence may later be stored in package metadata or adjacent
+  validation records, but evidence storage is not required for MVP.
