@@ -19,9 +19,9 @@ settings.json
   └── one permanent dispatcher hook (never changes after install)
         └── .synaptic/hooks/dispatch
               └── reads .synaptic/hooks/registry.toml
-                    ├── .claude/skills/skill-a/hooks/pre-bash.sh       (priority 10)
-                    ├── .claude/skills/skill-b/hooks/pre-bash.sh       (priority 20)
-                    └── .claude/skills/skill-c/hooks/post-fs-audit.sh  (priority 50)
+                    ├── skill-a/hooks/pre-bash.sh       (priority 10)
+                    ├── skill-b/hooks/pre-bash.sh       (priority 20)
+                    └── skill-c/hooks/post-fs-audit.sh  (priority 50)
 ```
 
 Installing or removing a skill only modifies `registry.toml`. `settings.json` is touched exactly once — at initial Synaptic Canvas bootstrap — and never again.
@@ -89,7 +89,7 @@ blocking = false    # fire-and-forget
 
 At install time the installer:
 
-1. Materializes hook scripts to `.claude/skills/{skill-name}/hooks/` using absolute paths resolved from `env.toml`
+1. Materializes hook scripts to `.synaptic/skills/{skill-name}/hooks/` using absolute paths resolved from `env.toml`
 2. Appends entries to `.synaptic/hooks/registry.toml`
 3. Marks hook scripts executable
 
@@ -108,7 +108,7 @@ The registry is the dispatcher's source of truth. It is written by the installer
 event = "PreToolUse"
 matcher = "Bash"
 skill = "env-injector"
-script = "/Users/rand/projects/myproject/.claude/skills/env-injector/hooks/pre-bash.sh"
+script = "/Users/rand/projects/myproject/.synaptic/skills/env-injector/hooks/pre-bash.sh"
 priority = 10
 blocking = true
 
@@ -116,7 +116,7 @@ blocking = true
 event = "PreToolUse"
 matcher = "Bash"
 skill = "policy-guard"
-script = "/Users/rand/projects/myproject/.claude/skills/policy-guard/hooks/pre-bash.sh"
+script = "/Users/rand/projects/myproject/.synaptic/skills/policy-guard/hooks/pre-bash.sh"
 priority = 20
 blocking = true
 
@@ -124,7 +124,7 @@ blocking = true
 event = "PostToolUse"
 matcher = "mcp__filesystem__.*"
 skill = "audit-logger"
-script = "/Users/rand/projects/myproject/.claude/skills/audit-logger/hooks/post-fs.sh"
+script = "/Users/rand/projects/myproject/.synaptic/skills/audit-logger/hooks/post-fs.sh"
 priority = 50
 blocking = false
 ```
@@ -152,8 +152,8 @@ Before invoking each hook script, the dispatcher sets:
 ```bash
 SYNAPTIC_PROJECT_ROOT="/Users/rand/projects/myproject"
 SYNAPTIC_ROOT="/Users/rand/projects/myproject/.synaptic"
-SYNAPTIC_SHARED="/Users/rand/projects/myproject/.claude/shared"
-SYNAPTIC_SKILLS="/Users/rand/projects/myproject/.claude/skills"
+SYNAPTIC_SHARED="/Users/rand/projects/myproject/.synaptic/shared"
+SYNAPTIC_SKILLS="/Users/rand/projects/myproject/.synaptic/skills"
 SC_DOLT_BRANCH="develop"
 SYNAPTIC_AGENTS="claude"
 
@@ -197,7 +197,7 @@ Both paths arrive at the same variable with the same value:
 echo $SYNAPTIC_PROJECT_ROOT
 
 # In a bash tool script — sourced from env.toml at script start
-source "$SYNAPTIC_PROJECT_ROOT/.synaptic/env.toml"
+source "$HOME/.synaptic/env.toml"   # or project-local if known
 echo $SYNAPTIC_PROJECT_ROOT
 ```
 
@@ -249,20 +249,20 @@ Package authors declare a priority in their hook definition. Users can override 
 
 ## Install and Removal Flow
 
-### On `sc install my-skill`
+### On `skill install my-skill`
 
 ```
 1. Materialize hook scripts from Dolt blobs to:
-     .claude/skills/my-skill/hooks/*.sh
+     .synaptic/skills/my-skill/hooks/*.sh
 2. chmod +x each hook script
 3. Append entries to .synaptic/hooks/registry.toml
 4. Verify dispatcher is registered in settings.json (bootstrap if not)
 ```
 
-### On `sc uninstall my-skill`
+### On `skill remove my-skill`
 
 ```
-1. Remove .claude/skills/my-skill/hooks/ directory
+1. Remove .synaptic/skills/my-skill/hooks/ directory
 2. Remove my-skill's entries from registry.toml
 3. Leave settings.json untouched
 ```
@@ -283,7 +283,7 @@ The Synaptic Canvas bootstrap sequence runs once per machine and is idempotent:
 4. Add ~/.synaptic/bin to PATH in shell profile if absent
 ```
 
-Bootstrap is triggered automatically on the first `sc install` command, or can be run explicitly with `sc admin bootstrap`.
+Bootstrap is triggered automatically on the first `skill install` command, or can be run explicitly with `/skill bootstrap`.
 
 ---
 
