@@ -89,6 +89,7 @@ CREATE TABLE packages (
 - `tags` is comma-separated for simplicity; a join table is over-engineering at this scale
 - `version` is semver (e.g., `1.3.0`). The Dolt commit hash provides the immutable snapshot reference; semver provides the human-readable version
 - `install_scope`: `any` (default, can install globally or locally) or `local-only` (repo `.claude` only)
+- Enforcement rule: a `local-only` package must be rejected if the user requests a global install
 - `variables`: JSON object for Tier 1 token expansion, e.g. `{"REPO_NAME": {"auto": "git-repo-basename", "description": "..."}}`
 - `options`: JSON object for install-time boolean/string options, e.g. `{"no-tracking": {"type": "boolean", "default": false}}`
 
@@ -199,7 +200,7 @@ CREATE TABLE package_deps (
 
 ### `package_variants`
 
-Maps a logical package name to agent-profile-specific implementations. This enables `synaptic install claude-history` to automatically resolve to the correct variant based on `SYNAPTIC_AGENTS`.
+Maps a logical package name to agent-profile-specific implementations. This enables `sc install claude-history` to automatically resolve to the correct variant based on `SYNAPTIC_AGENTS`.
 
 ```sql
 CREATE TABLE package_variants (
@@ -219,12 +220,18 @@ CREATE TABLE package_variants (
 | claude-history | codex | claude-history-codex |
 | claude-history | codex+claude | claude-history-dual |
 
-When a user runs `synaptic install claude-history`, the resolver:
+When a user runs `sc install claude-history`, the resolver:
 1. Reads `SYNAPTIC_AGENTS` (e.g., `claude`)
 2. Looks up `package_variants WHERE logical_id = 'claude-history' AND agent_profile = 'claude'`
 3. Resolves to `claude-history-claude` as the concrete package to install
 
 If no variant mapping exists, the `logical_id` is treated as the concrete `package_id` directly.
+
+`logical_id` is an abstract identifier rather than a foreign key to
+`packages.id`. That keeps variant lookup flexible, but it means orphaned
+variant mappings are possible if authors remove or rename logical package
+families without updating `package_variants`. Import and validation tooling
+should check for that condition.
 
 ### `package_hooks`
 
@@ -542,4 +549,4 @@ The marketplace export pipeline (Dolt → Claude Code format) should produce out
 - **Download counts / telemetry:** Separate from the core schema; could be a DoltHub API integration
 - **Deprecation flags:** `deprecated BOOLEAN`, `successor_id VARCHAR` on packages
 - **Changelogs:** Dolt commit messages serve as the changelog for now; a dedicated `package_changelog` table may be warranted later
-- **Rating/reviews:** Out of scope for v1; the quality signal is promotion, not user ratings
+- **Rating/reviews:** Out of scope for v1; rollout status is tracked through branch promotion, while automated verification and future evals remain separate concerns

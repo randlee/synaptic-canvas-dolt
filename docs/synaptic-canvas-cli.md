@@ -67,29 +67,33 @@ This means any repo immediately has both the CLI and Claude's ability to use it.
 Available to all users. These commands interact with installed packages and the Dolt database as a consumer.
 
 ```
-sc list [--channel <channel>] [--tags <tag,...>]
-    List available packages. Defaults to main channel.
+sc list [--branch <branch>] [--tags <tag,...>]
+    List available packages. Defaults to the `main` branch.
 
 sc info <package>
     Show package details: version, description, dependencies, file count, SHA.
 
-sc install <package> [--global] [--channel <channel>]
+sc init
+    Initialize `.synaptic/` state for the current repository.
+
+sc install <package> [--global] [--branch <branch>] [--dry-run]
     Install a package from Dolt.
     --global    Install to ~/.claude/ (default: .claude/ in current repo)
-    --channel   Install from specific channel (default: main)
+    --branch    Install from specific branch (default: main)
+    --dry-run   Show the install plan and template preview without side effects
 
 sc upgrade <package> [--all]
-    Upgrade installed package(s) to latest version on their channel.
+    Upgrade installed package(s) to latest version on their branch.
 
 sc uninstall <package>
     Remove an installed package.
 
 sc validate [<package>] [--all]
     Verify installed files match Dolt SHA256 hashes.
-    Reports: OK, MODIFIED (local edits), MISSING, EXTRA (untracked files).
+    Reports: OK, MODIFIED (local edits), MISSING, UNREADABLE (permission denied or I/O error), EXTRA (untracked files).
 
 sc status
-    Show installed packages, their versions, channels, and validation state.
+    Show installed packages, their versions, branches, and validation state.
 ```
 
 ### Admin Commands (opt-in)
@@ -122,15 +126,29 @@ sc admin diff <package> --branch1 <b1> --branch2 <b2>
     Show differences between package versions across branches.
 ```
 
-### Global Flags
+### Global Flags / Environment
 
 ```
 --dolt-dir <path>     Path to Dolt database directory (default: auto-detect)
 --remote <url>        DoltHub remote URL (for remote operations)
+--branch <branch>     Read/query branch override (default: SC_DOLT_BRANCH or main)
 --json                Output as JSON (for scripting/skill integration)
 --quiet               Suppress non-essential output
 --verbose             Detailed output including SHA hashes
 ```
+
+Read-path branch resolution order:
+
+1. `--branch`
+2. `SC_DOLT_BRANCH`
+3. `main`
+
+The CLI should ignore the current Dolt session branch for read behavior and use
+the resolved branch explicitly on each read operation.
+
+There is no separate user-facing `--channel` abstraction in MVP. End-user and
+admin flows both use `--branch`, and those values map directly to Dolt branch
+names.
 
 ---
 
@@ -171,12 +189,19 @@ This is a Merkle-like construction — changing any file changes the package SHA
 
 ### Validation Scenarios
 
+Per-file validation states:
+- `OK` — file exists and SHA matches
+- `MODIFIED` — file exists but SHA does not match
+- `MISSING` — file does not exist
+- `UNREADABLE` — file exists but cannot be read (permission denied or I/O error); `Err` field contains the underlying cause
+- `EXTRA` — file exists on disk but has no entry in the package
+
 **`sc validate <package>`** (end-user):
 ```
 For each installed file:
   local_sha = SHA256(read file from disk)
   expected_sha = query package_files.sha256 from Dolt
-  Compare → OK | MODIFIED | MISSING
+  Compare → OK | MODIFIED | MISSING | UNREADABLE
 
 For extra files in package directory not in Dolt:
   Report → EXTRA (untracked)
@@ -245,7 +270,7 @@ Following the `claude-history` conventions:
 synaptic-canvas-dolt/
 ├── src/                          # Go source root
 │   ├── main.go                   # Entry point, version injection
-│   ├── go.mod                    # Module: github.com/randlee/synaptic-canvas
+│   ├── go.mod                    # Module: github.com/randlee/synaptic-canvas-dolt
 │   ├── cmd/                      # Cobra commands
 │   │   ├── root.go               # Root command, global flags
 │   │   ├── list.go               # sc list
@@ -379,7 +404,7 @@ ALTER TABLE packages ADD COLUMN signed_by VARCHAR(256) AFTER signature;
 
 1. **Remote vs local Dolt:** MVP uses local Dolt database. When does DoltHub remote come into play? Read-only pull for end users? Push for admins?
 
-2. **Channel defaults:** Should `sc install` default to `main` channel, or should users configure a preferred channel?
+2. ~~**Channel defaults:**~~ **Resolved.** Read-path commands resolve branches using `--branch`, then `SC_DOLT_BRANCH`, then `main`. The CLI ignores the current Dolt session branch.
 
 3. **Dependency resolution:** When installing a package with dependencies, should `sc` auto-install deps? Or just warn?
 
