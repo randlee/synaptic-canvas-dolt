@@ -162,6 +162,33 @@ Scaffold the Go project, establish patterns, connect to Dolt.
 - All helper scripts have passing unit tests
 - Sprint artifacts include explicit traceability from requirements to tests/QA checks
 
+### Sprint 1.5: Phase 1 Gap Closure
+
+**Goal:** Close Phase 1 implementation gaps discovered after the Phase 1
+foundation work was completed.
+
+**Deliverables:**
+- Branch-safe read-path Dolt access that does not rely on session branch
+  switching for correctness
+- Consistent structured logging context across CLI layers, including
+  `component` and `operation`
+- Explicit handling of file-logging degradation so missing file logging is
+  visible and testable
+- Deterministic fixes for Phase 1 Python log-script tests
+- Updated tests covering the fixed branch-resolution, logging, and script
+  behavior
+
+**Acceptance Criteria:**
+- Read-path Dolt queries are correct under connection pooling and parallel
+  branch reads
+- Phase 1 logging output includes the documented context fields consistently
+- File logging failure or degradation is surfaced explicitly rather than failing
+  silently
+- Python log-script tests pass deterministically without dependence on time of
+  day or real user state
+- Gap-closure changes trace back to the documented Phase 1 review findings and
+  have corresponding tests or explicit QA checks
+
 ---
 
 ## Phase 2: Admin Commands
