@@ -60,7 +60,7 @@ explicit and deterministic.
   branch when determining read behavior.
 - BR-005 Read operations shall not rely on session mutation such as `USE
   database/branch` for correctness.
-- BR-006 Read operations should use explicit branch-qualified reads so multiple
+- BR-006 Read operations shall use explicit branch-qualified reads so multiple
   readers can query different branches safely in parallel.
 - BR-007 Admin or write-path operations may still target explicit branches, but
   those behaviors shall be documented independently in the relevant command

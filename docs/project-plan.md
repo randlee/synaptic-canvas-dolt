@@ -361,7 +361,8 @@ The read path. These commands never write to Dolt.
 
 **Acceptance Criteria:**
 - Validate reports per-file: OK, MODIFIED, MISSING
-- Validate reports extra files: EXTRA (untracked)
+- Validate reports extra files inside the package's managed install paths as
+  EXTRA (untracked)
 - Validate computes and checks aggregate SHA
 - Status shows installed packages, versions, branches, validation state
 - Both support `--json` output

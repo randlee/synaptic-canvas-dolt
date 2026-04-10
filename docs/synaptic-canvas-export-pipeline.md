@@ -2,9 +2,17 @@
 
 ## Overview
 
-This document describes the pipeline that exports skill packages from the Dolt database (on the `main` branch) into the directory structure expected by the Synaptic Canvas installer (`sc-install.py`) and the Claude Code marketplace.
+This document describes the marketplace export pipeline that exports packages
+from the Dolt database (on the `main` branch) into the directory structure
+expected by the Synaptic Canvas installer (`sc-install.py`) and the Claude Code
+marketplace.
 
 **Direction:** Dolt `main` branch → filesystem packages → marketplace repo
+
+This document is scoped to marketplace publication from `main`. It is not the
+full specification for the branch-selectable `sc admin export` CLI command,
+which supports targeted package export from an explicitly selected effective
+branch.
 
 The export pipeline is the inverse of ingestion: the Dolt database is the source of truth, and the marketplace repo is a materialized view.
 

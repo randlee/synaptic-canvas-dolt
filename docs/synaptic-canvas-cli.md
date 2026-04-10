@@ -91,6 +91,8 @@ sc uninstall <package>
 sc validate [<package>] [--all]
     Verify installed files match Dolt SHA256 hashes.
     Reports: OK, MODIFIED (local edits), MISSING, UNREADABLE (permission denied or I/O error), EXTRA (untracked files).
+    `EXTRA` is limited to files inside the installed package's managed target
+    paths that are not tracked by that package manifest.
 
 sc status
     Show installed packages, their versions, branches, and validation state.
@@ -209,7 +211,7 @@ For each installed file:
   expected_sha = query package_files.sha256 from Dolt
   Compare → OK | MODIFIED | MISSING | UNREADABLE
 
-For extra files in package directory not in Dolt:
+For extra files in the installed package's managed target paths that are not in Dolt:
   Report → EXTRA (untracked)
 
 Compute aggregate from local file SHAs:

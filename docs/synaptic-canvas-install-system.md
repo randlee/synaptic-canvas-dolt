@@ -304,6 +304,10 @@ Use conventional commits: `type(scope): description`
 No files written. No dependencies installed.
 ```
 
+`--dry-run` performs read-only probing of the local environment, such as
+checking installed tool versions, but it does not write files, install
+dependencies, or mutate local or remote state.
+
 ---
 
 ## Phase 5: Lockfile Recording
@@ -373,6 +377,8 @@ When `sc upgrade` runs:
    a. Check if new questions were added → prompt user
    b. Check if repo profile changed since install → re-render templates
    c. Check if dependencies changed → verify new requirements
+   d. Re-resolve variant selection; if no matching variant exists for the
+      current `SYNAPTIC_AGENTS` profile, fail with a clear error
 4. Present upgrade plan (same format as install)
 5. On approval: re-materialize changed files, update lockfile
 6. Unchanged skills: no action, no re-verification

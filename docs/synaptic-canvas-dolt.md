@@ -284,7 +284,9 @@ python3>=3.11 required — found 3.9.2. Install a newer Python before proceeding
 
 ### Tier 2 — Agent Capabilities
 
-Soft requirements that drive variant selection rather than blocking install. The installer detects the agent environment and selects the best matching variant automatically.
+Soft requirements that drive variant selection rather than blocking install. The
+installer detects the agent environment and selects the best matching variant
+automatically.
 
 ```bash
 SYNAPTIC_AGENTS=codex+claude   # claude | codex | codex+claude
@@ -301,6 +303,8 @@ claude-history/
 
 The installed variant is recorded in the lockfile. If `SYNAPTIC_AGENTS`
 changes, `sc upgrade` can swap variants automatically.
+If no matching variant exists for the detected agent profile, installation fails
+with a clear error rather than silently falling back to a different variant.
 
 ### Tier 3 — External CLI Dependencies
 

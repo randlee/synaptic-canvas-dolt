@@ -227,7 +227,10 @@ echo "$(date -u +%FT%TZ) [$HOOK_TOOL] $INPUT" >> "$LOG_FILE"
 # echo '{"action": "approve"}'
 ```
 
-Non-blocking hooks can exit with any code — the dispatcher ignores it. Blocking hooks should exit 0 and emit a JSON decision, or exit non-zero to signal an unexpected error (treated as approve-with-warning to avoid over-blocking).
+Non-blocking hooks can exit with any code — the dispatcher ignores it. Blocking
+hooks must exit 0 and emit a JSON decision. A non-zero exit is treated as an
+unexpected error and results in approve-with-warning behavior to avoid
+over-blocking.
 
 ---
 
@@ -283,7 +286,9 @@ The Synaptic Canvas bootstrap sequence runs once per machine and is idempotent:
 4. Add ~/.synaptic/bin to PATH in shell profile if absent
 ```
 
-Bootstrap is triggered automatically on the first `sc install` command, or can be run explicitly with `sc admin bootstrap`.
+Bootstrap is triggered automatically on the first `sc install` command. A
+dedicated recovery command may be added later, but it is not part of the MVP
+CLI surface.
 
 ---
 
