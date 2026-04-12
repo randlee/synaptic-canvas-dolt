@@ -1,0 +1,4 @@
+git:
+  protected_branches:
+    - "main"
+    - "develop"
