@@ -34,6 +34,16 @@ agents:
     path: .claude/agents/quality-mgr.md
 
 skills:
+  team-lead:
+    depends_on:
+      codex-orchestration: "1.x"
+      quality-management-gh: "1.x"
+      sprint-report: "1.x"
+  codex-orchestration:
+    depends_on:
+      quality-mgr: "1.x"
+      sc-git-worktree: "0.9.x"
+      quality-management-gh: "1.x"
   sc-git-worktree:
     depends_on:
       sc-worktree-create: "0.9.x"
