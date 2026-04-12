@@ -1,35 +1,35 @@
 ---
 name: codex-orchestration
-description: Orchestrate multi-sprint phases where arch-ctm (Codex) is the sole developer, with pipelined QA via quality-mgr teammate. Team-lead tracks findings and schedules fix passes.
+description: Orchestrate multi-sprint phases where csc (Codex) is the sole developer, with pipelined QA via quality-mgr teammate. Team-lead tracks findings and schedules fix passes.
 ---
 
 # Codex Orchestration
 
-This skill defines how the team-lead (ARCH-ATM) orchestrates phases where **arch-ctm (Codex)** is the sole developer, executing sprints sequentially while QA runs in parallel via a dedicated **quality-mgr** teammate.
+This skill defines how the team-lead (ARCH-ATM) orchestrates phases where **csc (Codex)** is the sole developer, executing sprints sequentially while QA runs in parallel via a dedicated **quality-mgr** teammate.
 
 **Audience**: Team-lead only.
 
-**When to use**: When a phase's implementation is done entirely by arch-ctm (a Codex agent communicating via ATM CLI), not by Claude Code scrum-masters. This pattern was proven in Phase M (8 sprints) and Phase O.
+**When to use**: When a phase's implementation is done entirely by csc (a Codex agent communicating via ATM CLI), not by Claude Code scrum-masters. This pattern was proven in Phase M (8 sprints) and Phase O.
 
 ## Prerequisites
 
 Before starting a phase:
 1. Phase plan document exists with sprint specs and dependencies
 2. Integration branch `integrate/phase-{P}` created off `develop`
-3. ATM team (`$ATM_TEAM`) is active with team-lead and arch-ctm as members
-4. arch-ctm is running and reachable via ATM CLI (`atm send arch-ctm "ping"`)
+3. ATM team (`$ATM_TEAM`) is active with team-lead and csc as members
+4. csc is running and reachable via ATM CLI (`atm send csc "ping"`)
 
 ## Architecture
 
 ```
 team-lead (ARCH-ATM)
-  ├── arch-ctm (Codex) ──── sole developer, sequential sprints
+  ├── csc (Codex) ──── sole developer, sequential sprints
   │     communicates via ATM CLI only
   └── quality-mgr (Claude Code) ──── QA coordinator teammate
         spawns go-qa-agent + req-qa-agent + arch-qa-agent as background agents
 ```
 
-Key principle: **arch-ctm does NOT wait for QA**. He proceeds to the next sprint as soon as he completes one, unless there are outstanding fix requests from earlier sprints.
+Key principle: **csc does NOT wait for QA**. He proceeds to the next sprint as soon as he completes one, unless there are outstanding fix requests from earlier sprints.
 
 ## Phase Setup
 
@@ -64,10 +64,10 @@ Use the Task tool with `name` parameter to spawn as a named teammate:
 }
 ```
 
-### 4. Send O.1 Assignment to arch-ctm
+### 4. Send O.1 Assignment to csc
 
 ```bash
-atm send arch-ctm "Phase {P} Sprint {P}.1 assignment: {title}
+atm send csc "Phase {P} Sprint {P}.1 assignment: {title}
 
 Worktree: /path/to/worktree
 Branch: feature/p{P}-s1-{slug}
@@ -88,14 +88,14 @@ When complete: commit, push, then notify me via atm send with branch + commit SH
 
 ```
 Timeline:
-  arch-ctm:     [── S.1 ──]──fixes──[── S.2 ──]──fixes──[── S.3 ──]
+  csc:     [── S.1 ──]──fixes──[── S.2 ──]──fixes──[── S.3 ──]
   quality-mgr:         [── QA S.1 ──]      [── QA S.2 ──]     [── QA S.3 ──]
   team-lead:    assign S.1 → track → assign S.2 → track → assign S.3 → track
 ```
 
-### When arch-ctm Completes Sprint S
+### When csc Completes Sprint S
 
-1. **arch-ctm sends completion message** via ATM CLI with branch + commit SHA after commit/push.
+1. **csc sends completion message** via ATM CLI with branch + commit SHA after commit/push.
 2. **Team-lead creates PR** targeting `integrate/phase-{P}` and immediately starts CI monitoring:
    ```bash
    atm gh monitor pr <PR_NUMBER>
@@ -105,29 +105,29 @@ Timeline:
    /sc-git-worktree --create feature/p{P}-s{N+1}-{slug} feature/p{P}-s{N}-{slug}
    ```
    All worktrees chain: S+1 bases on S, so later sprints include earlier work.
-4. **Team-lead sends next sprint assignment** to arch-ctm (use Jinja2 task template + ATM send).
+4. **Team-lead sends next sprint assignment** to csc (use Jinja2 task template + ATM send).
 5. **Team-lead assigns QA to quality-mgr** via SendMessage (use Jinja2 QA template):
    ```
    "Run QA on Sprint {P}.{S}. Worktree: {path}. Sprint deliverables: {summary}.
     Design docs: {list}. PR: #{N}."
    ```
 6. **If QA findings exist**, queue fixes ahead of new sprint dev tasks:
-   - If findings are on an active codex worktree, send ATM fix assignment to arch-ctm.
+   - If findings are on an active codex worktree, send ATM fix assignment to csc.
    - Otherwise schedule merge/conflict remediation via a background agent.
 7. **Merge gate**: merge only when QA is PASS and CI is GREEN.
 8. **After merge**, verify remaining open PRs for merge conflicts and schedule fixes immediately.
 
-### When arch-ctm Has Outstanding Findings
+### When csc Has Outstanding Findings
 
-Priority order for arch-ctm:
+Priority order for csc:
 1. Fix findings on oldest sprint first (S-2 before S-1)
 2. Merge fixes forward into later sprint worktrees
 3. Then proceed to next sprint
 
 Fix workflow:
 ```bash
-# arch-ctm fixes on the sprint's original worktree
-# arch-ctm pushes fix commits to same PR branch
+# csc fixes on the sprint's original worktree
+# csc pushes fix commits to same PR branch
 # team-lead asks quality-mgr to re-run QA on the fixed worktree
 # If QA passes, team-lead merges PR to integration branch
 ```
@@ -135,7 +135,7 @@ Fix workflow:
 ### Merge Forward Protocol
 
 After fixes merge to `integrate/phase-{P}`:
-- arch-ctm must merge integration branch into any active sprint worktree before continuing:
+- csc must merge integration branch into any active sprint worktree before continuing:
   ```bash
   git fetch origin
   git merge origin/integrate/phase-{P}
@@ -175,7 +175,7 @@ quality-mgr reports PASS/FAIL with finding IDs. Team-lead tracks:
 ### Finding Lifecycle
 
 ```
-OPEN → assigned to arch-ctm → FIXED (arch-ctm pushes) → re-QA → VERIFIED (QA passes)
+OPEN → assigned to csc → FIXED (csc pushes) → re-QA → VERIFIED (QA passes)
                              → WONTFIX (team-lead approves deviation)
 ```
 
@@ -184,16 +184,16 @@ OPEN → assigned to arch-ctm → FIXED (arch-ctm pushes) → re-QA → VERIFIED
 - **All PRs target `integrate/phase-{P}`** (never develop directly)
 - **Merge order**: Sprint PRs merge in order (S.1 before S.2)
 - **Merge gate**: QA pass + CI green
-- **Team-lead merges** (not arch-ctm)
+- **Team-lead merges** (not csc)
 - After all sprints merge: one final PR `integrate/phase-{P} → develop`
 
 ## ATM Communication Protocol
 
-All arch-ctm communication is via ATM CLI. Follow the dogfooding protocol (ACK → work → complete → ACK).
+All csc communication is via ATM CLI. Follow the dogfooding protocol (ACK → work → complete → ACK).
 
 ### Sending assignments
 ```bash
-atm send arch-ctm "message"
+atm send csc "message"
 ```
 
 ### Checking for replies
@@ -204,12 +204,12 @@ atm read
 ### Nudging (if no reply in 2+ minutes)
 Use ATM first:
 ```bash
-atm send arch-ctm "You have unread ATM messages. Run: atm read --team $ATM_TEAM"
+atm send csc "You have unread ATM messages. Run: atm read --team $ATM_TEAM"
 ```
 If your local runtime uses tmux pane orchestration, tmux nudges are optional and environment-specific.
 
-### Advise arch-ctm to poll with timeout
-When arch-ctm is waiting for assignments, tell him:
+### Advise csc to poll with timeout
+When csc is waiting for assignments, tell him:
 ```
 "Standing by? Use: atm read --team $ATM_TEAM --timeout 60"
 ```
@@ -227,11 +227,11 @@ After all sprints pass QA and merge to integration branch:
 
 ## Anti-Patterns
 
-- Do NOT tell arch-ctm to wait for QA before starting the next sprint
+- Do NOT tell csc to wait for QA before starting the next sprint
 - Do NOT skip QA on any sprint — quality-mgr runs both agents every time
 - Do NOT merge PRs without QA pass + CI green
 - Do NOT let findings accumulate — schedule fixes before assigning new sprints
 - Do NOT create worktrees off `develop` — chain from previous sprint or integration branch
-- Do NOT communicate with arch-ctm via SendMessage — use ATM CLI only
+- Do NOT communicate with csc via SendMessage — use ATM CLI only
 - Do NOT reuse quality-mgr across phases — spawn fresh per phase
 - Do NOT clean up worktrees without user approval

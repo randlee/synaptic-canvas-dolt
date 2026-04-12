@@ -1,7 +1,7 @@
 ---
 name: review-task
 version: 1.0.0
-description: arch-ctm phase-ending code review template for codex-orchestration phases.
+description: csc phase-ending code review template for codex-orchestration phases.
 format: xml
 required_variables:
   - task_id
@@ -13,7 +13,7 @@ required_variables:
   - review_questions
   - references
 ---
-<atm-review id="{{ task_id }}" phase="{{ phase }}" assignee="arch-ctm">
+<atm-review id="{{ task_id }}" phase="{{ phase }}" assignee="csc">
   <description>Phase-ending code review. Read-only analysis — no code changes.</description>
 
   <branch>{{ branch }}</branch>

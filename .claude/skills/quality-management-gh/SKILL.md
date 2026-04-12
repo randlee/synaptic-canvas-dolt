@@ -46,7 +46,7 @@ Use fenced JSON for machine-readable status payloads:
   },
   "blocking_ids": ["QA-001"],
   "next_action": "Fix CI rollup neutral handling",
-  "owner": "arch-ctm",
+  "owner": "csc",
   "merge_readiness": "not ready",
   "merge_reason": "Blocking findings remain"
 }
@@ -122,7 +122,7 @@ Fallback when `sc-compose render` is unavailable or fails:
   "merge_readiness": "not ready",
   "merge_reason": "Blocking findings remain",
   "next_action": "Patch rollup logic and rerun QA",
-  "action_owner": "arch-ctm"
+  "action_owner": "csc"
 }
 ```
 

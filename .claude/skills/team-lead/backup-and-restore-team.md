@@ -77,7 +77,7 @@ import os
 team = os.environ['ATM_TEAM']
 path = f'/Users/randlee/.claude/teams/{team}/config.json'
 with open(path) as f: cfg = json.load(f)
-keep = ['team-lead', 'arch-ctm', 'arch-gtm', 'arch-ctask']
+keep = ['team-lead', 'csc', 'arch-gtm', 'arch-ctask']
 cfg['members'] = [m for m in cfg['members'] if m['name'] in keep]
 with open(path, 'w') as f: json.dump(cfg, f, indent=2)
 print('Members:', [m['name'] for m in cfg['members']])
@@ -135,7 +135,7 @@ atm gh pr list       # open PRs and CI status
 ## Step 9 — Notify Teammates
 
 ```bash
-atm send arch-ctm "New session (session-id: <SESSION_ID>). Team $ATM_TEAM restored. Please acknowledge and confirm status."
+atm send csc "New session (session-id: <SESSION_ID>). Team $ATM_TEAM restored. Please acknowledge and confirm status."
 ```
 
 If no response within ~60s, nudge via tmux:
