@@ -1,8 +1,11 @@
 [core]
 default_team = "sc-dev"
 identity = "team-lead"
+
+[atm]
 post_send_hook = ["/Users/randlee/Documents/github/synaptic-canvas-dolt/.claude/scripts/atm-nudge.sh"]
-post_send_hook_members = ["csc"]
+post_send_hook_senders = ["*"]
+post_send_hook_recipients = ["csc"]
 
 [plugins.gh_monitor]
 team = "sc-dev"

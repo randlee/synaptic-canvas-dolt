@@ -8,8 +8,14 @@ set -euo pipefail
 TEAM="${ATM_TEAM:-sc-dev}"
 CONFIG="$HOME/.claude/teams/$TEAM/config.json"
 
-# Determine recipient — use first arg if provided, else no-op
-RECIPIENT="${1:-}"
+# Extract recipient name from ATM_POST_SEND env var (JSON, e.g. "csc@sc-dev")
+RECIPIENT=$(python3 -c "
+import json, os
+data = json.loads(os.environ.get('ATM_POST_SEND', '{}'))
+to = data.get('to', '')
+print(to.split('@')[0] if '@' in to else to)
+" 2>/dev/null || true)
+
 if [ -z "$RECIPIENT" ]; then
   exit 0
 fi
