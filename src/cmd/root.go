@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/randlee/synaptic-canvas-dolt/cmd/admin"
 	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/internal/logging"
 	"github.com/spf13/cobra"
@@ -65,6 +66,8 @@ stored in a Dolt database.`,
 	pf.Bool("json", false, "output as JSON")
 	pf.Bool("quiet", false, "suppress non-essential output")
 	pf.Bool("verbose", false, "enable debug logging")
+
+	rootCmd.AddCommand(admin.NewAdminCmd())
 
 	return rootCmd
 }
