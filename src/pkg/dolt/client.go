@@ -112,6 +112,11 @@ func (c *SQLClient) Close() error {
 	return c.db.Close()
 }
 
+// UseBranch switches the connection to the requested Dolt branch.
+func (c *SQLClient) UseBranch(ctx context.Context, branch string) error {
+	return c.switchBranch(ctx, branch)
+}
+
 // switchBranch executes a USE statement to switch to the specified Dolt branch.
 // If branch is empty, this is a no-op.
 func (c *SQLClient) switchBranch(ctx context.Context, branch string) error {

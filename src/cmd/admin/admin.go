@@ -9,6 +9,7 @@ func NewAdminCmd() *cobra.Command {
 		Short: "Admin commands for package authors and maintainers",
 	}
 
+	cmd.AddCommand(NewExportCmd())
 	cmd.AddCommand(NewImportCmd())
 	return cmd
 }
