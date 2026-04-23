@@ -13,6 +13,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type exportReadClient interface {
+	exporter.Reader
+	Close() error
+}
+
 // NewExportCmd creates the sc admin export command.
 func NewExportCmd() *cobra.Command {
 	var branch string
@@ -89,8 +94,10 @@ func resolveReadBranch(flagValue string) string {
 	return "main"
 }
 
-func openReadClient(doltDir, branch string) (*dolt.SQLClient, error) {
+func openReadClient(doltDir, branch string) (exportReadClient, error) {
+	if doltDir != "" {
+		return dolt.NewCLIReader(doltDir, branch), nil
+	}
 	cfg := dolt.DefaultConfig()
-	_ = doltDir
 	return dolt.OpenForBranch(cfg, branch)
 }

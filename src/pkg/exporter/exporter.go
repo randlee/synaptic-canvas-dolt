@@ -93,7 +93,7 @@ func (s Service) Export(ctx context.Context, req ExportRequest) (*Summary, error
 	}
 
 	packageDir := filepath.Join(req.OutputDir, pkg.ID)
-	if err := os.MkdirAll(packageDir, 0o755); err != nil {
+	if err := os.MkdirAll(packageDir, 0o755); err != nil { //nolint:gosec // G301: export output dir is operator-controlled.
 		return nil, fmt.Errorf("creating output dir: %w", err)
 	}
 
@@ -156,10 +156,10 @@ func (s Service) Export(ctx context.Context, req ExportRequest) (*Summary, error
 }
 
 func writeTextFile(path string, content string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // G301: export output dir is operator-controlled.
 		return fmt.Errorf("creating parent dir for %s: %w", path, err)
 	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil { //nolint:gosec // G306: writing exported package file to validated output path.
 		return fmt.Errorf("writing %s: %w", path, err)
 	}
 	return nil

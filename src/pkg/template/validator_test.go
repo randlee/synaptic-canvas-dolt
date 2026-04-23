@@ -4,7 +4,7 @@ import "testing"
 
 func TestValidateKnownGoodTemplate(t *testing.T) {
 	report := Validate(map[string]string{
-		"skills/example.md.j2": `{{ repo.name }} {% if answers.style == "x" %}{{ env.sc_dolt_branch }}{% endif %}`,
+		"skills/example.md.j2": `{{ repo.name }} {% if answers.style == "x" %}{{ env.synaptic_channel }}{% endif %}`,
 	}, []string{"style"})
 
 	if len(report.Errors) != 0 {
