@@ -2,10 +2,10 @@ package admin
 
 import (
 	"context"
-	"fmt"
 	"os"
 
 	"github.com/randlee/synaptic-canvas-dolt/pkg/dolt"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
 )
 
 func resolveReadBranch(flagValue string) string {
@@ -18,15 +18,19 @@ func resolveReadBranch(flagValue string) string {
 	return "main"
 }
 
-func openReadClient(_ string, branch string) (*dolt.SQLClient, error) {
+type readClient interface {
+	GetPackage(context.Context, string) (*models.Package, error)
+	GetPackageFiles(context.Context, string) ([]models.PackageFile, error)
+	GetPackageDeps(context.Context, string) ([]models.PackageDep, error)
+	GetPackageHooks(context.Context, string) ([]models.PackageHook, error)
+	GetPackageQuestions(context.Context, string) ([]models.PackageQuestion, error)
+	Close() error
+}
+
+func openReadClient(doltDir string, branch string) (readClient, error) {
+	if doltDir != "" {
+		return dolt.NewCLIReader(doltDir, branch), nil
+	}
 	cfg := dolt.DefaultConfig()
-	client, err := dolt.Open(cfg)
-	if err != nil {
-		return nil, err
-	}
-	if err := client.UseBranch(context.Background(), branch); err != nil {
-		_ = client.Close()
-		return nil, fmt.Errorf("switching read client to %s: %w", branch, err)
-	}
-	return client, nil
+	return dolt.OpenForBranch(cfg, branch)
 }

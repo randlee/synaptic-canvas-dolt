@@ -30,7 +30,6 @@ type cliPackageFile struct {
 	FMModel       *string            `json:"fm_model,omitempty"`
 }
 
-// CLIReader reads package data through the local dolt CLI against a specific repo.
 type CLIReader struct {
 	DoltDir string
 	Branch  string
@@ -40,6 +39,9 @@ func NewCLIReader(doltDir, branch string) *CLIReader {
 	return &CLIReader{DoltDir: doltDir, Branch: branch}
 }
 
+func (r *CLIReader) Close() error {
+	return nil
+}
 func (r *CLIReader) GetPackage(ctx context.Context, id string) (*models.Package, error) {
 	rows, err := runCLIQuery[models.Package](ctx, r.DoltDir, r.Branch, fmt.Sprintf(
 		"SELECT id, name, version, description, agent_variant, author, license, tags, install_scope, variables, options, sha256, min_claude_version FROM packages WHERE id = %s",
@@ -82,6 +84,19 @@ func (r *CLIReader) GetPackageFiles(ctx context.Context, packageID string) ([]mo
 	return files, nil
 }
 
+func (r *CLIReader) GetPackageDeps(ctx context.Context, packageID string) ([]models.PackageDep, error) {
+	return runCLIQuery[models.PackageDep](ctx, r.DoltDir, r.Branch, fmt.Sprintf(
+		"SELECT package_id, dep_type, dep_name, dep_spec, install_cmd, cmd_sha256 FROM package_deps WHERE package_id = %s ORDER BY dep_name",
+		sqlString(packageID),
+	))
+}
+
+func (r *CLIReader) GetPackageHooks(ctx context.Context, packageID string) ([]models.PackageHook, error) {
+	return runCLIQuery[models.PackageHook](ctx, r.DoltDir, r.Branch, fmt.Sprintf(
+		"SELECT package_id, event, matcher, script_path, priority, blocking FROM package_hooks WHERE package_id = %s ORDER BY event, priority",
+		sqlString(packageID),
+	))
+}
 func (r *CLIReader) GetPackageQuestions(ctx context.Context, packageID string) ([]models.PackageQuestion, error) {
 	return runCLIQuery[models.PackageQuestion](ctx, r.DoltDir, r.Branch, fmt.Sprintf(
 		"SELECT package_id, question_id, prompt, type, default_val, choices, sort_order FROM package_questions WHERE package_id = %s ORDER BY sort_order, question_id",

@@ -23,9 +23,9 @@ func TestReconstruct(t *testing.T) {
 		Tags:        "management,packages",
 	}
 	files := []models.PackageFile{
-		{DestPath: "commands/sc-manage.md", FileType: models.FileTypeCommand},
-		{DestPath: "agents/sc-packages-list.md", FileType: models.FileTypeAgent},
-		{DestPath: "skills/managing-sc-packages/SKILL.md", FileType: models.FileTypeSkill},
+		{DestPath: "commands/sc-manage.md", FileType: models.FileTypeCommand, FMName: stringPtr("sc-manage"), FMDescription: stringPtr("Manage packages")},
+		{DestPath: "agents/sc-packages-list.md", FileType: models.FileTypeAgent, FMName: stringPtr("sc-packages-list"), FMDescription: stringPtr("List packages")},
+		{DestPath: "skills/managing-sc-packages/SKILL.md", FileType: models.FileTypeSkill, FMName: stringPtr("managing-sc-packages"), FMDescription: stringPtr("Skill docs")},
 	}
 
 	got, err := Reconstruct(pkg, files)
@@ -41,12 +41,19 @@ func TestReconstruct(t *testing.T) {
 	if decoded["name"] != "sc-manage" {
 		t.Fatalf("name = %v", decoded["name"])
 	}
-	authorMap, ok := decoded["author"].(map[string]any)
-	if !ok || authorMap["name"] != "randlee" {
+	if decoded["author"] != "randlee" {
 		t.Fatalf("author = %#v", decoded["author"])
 	}
 	commands, ok := decoded["commands"].([]any)
-	if !ok || len(commands) != 1 || commands[0] != "./commands/sc-manage.md" {
+	if !ok || len(commands) != 1 {
 		t.Fatalf("commands = %#v", decoded["commands"])
 	}
+	command, ok := commands[0].(map[string]any)
+	if !ok || command["name"] != "sc-manage" || command["description"] != "Manage packages" {
+		t.Fatalf("command = %#v", commands[0])
+	}
+}
+
+func stringPtr(v string) *string {
+	return &v
 }

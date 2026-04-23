@@ -9,15 +9,20 @@ import (
 )
 
 type pluginManifest struct {
-	Name        string            `json:"name"`
-	Description string            `json:"description,omitempty"`
-	Version     string            `json:"version"`
-	Author      map[string]string `json:"author"`
-	License     string            `json:"license,omitempty"`
-	Keywords    []string          `json:"keywords,omitempty"`
-	Commands    []string          `json:"commands,omitempty"`
-	Agents      []string          `json:"agents,omitempty"`
-	Skills      []string          `json:"skills,omitempty"`
+	Name        string       `json:"name"`
+	Description string       `json:"description,omitempty"`
+	Version     string       `json:"version"`
+	Author      string       `json:"author,omitempty"`
+	License     string       `json:"license,omitempty"`
+	Keywords    []string     `json:"keywords,omitempty"`
+	Commands    []PluginItem `json:"commands,omitempty"`
+	Agents      []PluginItem `json:"agents,omitempty"`
+	Skills      []PluginItem `json:"skills,omitempty"`
+}
+
+type PluginItem struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
 }
 
 // Reconstruct renders plugin.json content from package metadata and file rows.
@@ -29,13 +34,13 @@ func Reconstruct(pkg *models.Package, files []models.PackageFile) (string, error
 	manifest := pluginManifest{
 		Name:    pkg.Name,
 		Version: pkg.Version,
-		Author:  map[string]string{"name": "synaptic-canvas"},
+		Author:  "synaptic-canvas",
 	}
 	if pkg.Description != nil {
 		manifest.Description = *pkg.Description
 	}
 	if pkg.Author != nil && *pkg.Author != "" {
-		manifest.Author = map[string]string{"name": *pkg.Author}
+		manifest.Author = *pkg.Author
 	}
 	if pkg.License != nil {
 		manifest.License = *pkg.License
@@ -43,24 +48,41 @@ func Reconstruct(pkg *models.Package, files []models.PackageFile) (string, error
 	manifest.Keywords = pkg.TagsList()
 
 	for _, file := range files {
-		path := "./" + file.DestPath
+		item := PluginItem{
+			Name:        pluginItemName(file),
+			Description: pluginItemDescription(file),
+		}
 		switch file.FileType {
 		case models.FileTypeCommand:
-			manifest.Commands = append(manifest.Commands, path)
+			manifest.Commands = append(manifest.Commands, item)
 		case models.FileTypeAgent:
-			manifest.Agents = append(manifest.Agents, path)
+			manifest.Agents = append(manifest.Agents, item)
 		case models.FileTypeSkill:
-			manifest.Skills = append(manifest.Skills, path)
+			manifest.Skills = append(manifest.Skills, item)
 		}
 	}
 
-	sort.Strings(manifest.Commands)
-	sort.Strings(manifest.Agents)
-	sort.Strings(manifest.Skills)
+	sort.Slice(manifest.Commands, func(i, j int) bool { return manifest.Commands[i].Name < manifest.Commands[j].Name })
+	sort.Slice(manifest.Agents, func(i, j int) bool { return manifest.Agents[i].Name < manifest.Agents[j].Name })
+	sort.Slice(manifest.Skills, func(i, j int) bool { return manifest.Skills[i].Name < manifest.Skills[j].Name })
 
 	data, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("rendering plugin json: %w", err)
 	}
 	return string(data) + "\n", nil
+}
+
+func pluginItemName(file models.PackageFile) string {
+	if file.FMName != nil && *file.FMName != "" {
+		return *file.FMName
+	}
+	return file.DestPath
+}
+
+func pluginItemDescription(file models.PackageFile) string {
+	if file.FMDescription != nil {
+		return *file.FMDescription
+	}
+	return ""
 }

@@ -119,7 +119,7 @@ func TestBranchQualifiedFrom(t *testing.T) {
 		}
 	})
 
-	t.Run("non-empty branch returns USE statement", func(t *testing.T) {
+	t.Run("non-empty branch returns qualified table", func(t *testing.T) {
 		t.Parallel()
 		got := BranchQualifiedFrom("synaptic_canvas", "staging", "packages")
 		want := "`synaptic_canvas/staging`.packages"
