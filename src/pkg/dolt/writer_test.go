@@ -69,7 +69,7 @@ func TestCLIWriterImportPackageInvokesDolt(t *testing.T) {
 		"    ;;\n" +
 		"esac\n" +
 		"exit 0\n"
-	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil { //nolint:gosec // G306: test helper script permissions are intentional.
 		t.Fatal(err)
 	}
 
@@ -93,7 +93,7 @@ func TestCLIWriterImportPackageInvokesDolt(t *testing.T) {
 		t.Fatalf("ImportPackage() error = %v", err)
 	}
 
-	logData, err := os.ReadFile(logPath)
+	logData, err := os.ReadFile(logPath) //nolint:gosec // G304: test log path is controlled by the test harness.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestCLIWriterImportPackageInvokesDolt(t *testing.T) {
 		}
 	}
 
-	sqlData, err := os.ReadFile(sqlPath)
+	sqlData, err := os.ReadFile(sqlPath) //nolint:gosec // G304: test SQL path is controlled by the test harness.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +158,7 @@ func TestCLIWriterBranchExists(t *testing.T) {
 					"  " + tt.scriptBody + "\n" +
 					"fi\n"
 			}
-			if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+			if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil { //nolint:gosec // G306: test helper script permissions are intentional.
 				t.Fatal(err)
 			}
 

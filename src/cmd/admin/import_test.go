@@ -13,7 +13,7 @@ func TestNewImportCmdRequiresBranch(t *testing.T) {
 	t.Parallel()
 
 	tempDir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(tempDir, ".dolt"), 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(tempDir, ".dolt"), 0o755); err != nil { //nolint:gosec // G301: test directory permissions are intentional.
 		t.Fatal(err)
 	}
 	cmd := NewImportCmd()
