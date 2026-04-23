@@ -265,6 +265,12 @@ func scanPackage(dir string) (*scannedPackage, []string, error) {
 	}, warnings, nil
 }
 
+// ScanForTest exposes package scanning to exporter tests without expanding the
+// public import API.
+func ScanForTest(dir string) (*scannedPackage, []string, error) {
+	return scanPackage(dir)
+}
+
 func scanArtifacts(root, packageID string, artifacts map[string][]string) ([]models.PackageFile, map[string]string, error) {
 	var files []models.PackageFile
 	templateContents := map[string]string{}
