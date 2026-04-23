@@ -91,11 +91,11 @@ func TestExportFailsOnAggregateMismatch(t *testing.T) {
 
 func compareTextFile(t *testing.T, src, dst string) {
 	t.Helper()
-	srcData, err := os.ReadFile(src)
+	srcData, err := os.ReadFile(src) //nolint:gosec // G304: test reads fixture path controlled by the test.
 	if err != nil {
 		t.Fatalf("ReadFile(%s): %v", src, err)
 	}
-	dstData, err := os.ReadFile(dst)
+	dstData, err := os.ReadFile(dst) //nolint:gosec // G304: test reads exported path produced by the test.
 	if err != nil {
 		t.Fatalf("ReadFile(%s): %v", dst, err)
 	}
@@ -106,7 +106,7 @@ func compareTextFile(t *testing.T, src, dst string) {
 
 func loadYAMLMap(t *testing.T, path string) map[string]any {
 	t.Helper()
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // G304: test reads a manifest path assembled by the test.
 	if err != nil {
 		t.Fatalf("ReadFile(%s): %v", path, err)
 	}
