@@ -2,21 +2,13 @@ package admin
 
 import (
 	"context"
-	"os"
+	"fmt"
 
+	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/dolt"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
+	"github.com/spf13/cobra"
 )
-
-func resolveReadBranch(flagValue string) string {
-	if flagValue != "" {
-		return flagValue
-	}
-	if env := os.Getenv("SC_DOLT_BRANCH"); env != "" {
-		return env
-	}
-	return "main"
-}
 
 type readClient interface {
 	GetPackage(context.Context, string) (*models.Package, error)
@@ -33,4 +25,52 @@ func openReadClient(doltDir string, branch string) (readClient, error) {
 	}
 	cfg := dolt.DefaultConfig()
 	return dolt.OpenForBranch(cfg, branch)
+}
+
+func loadConfigAndDoltDir(cmd *cobra.Command) (*config.Config, string, error) {
+	cfg, err := config.NewConfigFromFlags(cmd)
+	if err != nil {
+		return nil, "", fmt.Errorf("reading config flags: %w", err)
+	}
+	doltDir, err := detectDoltDir(cfg.DoltDirExpanded())
+	if err != nil {
+		return nil, "", err
+	}
+	return cfg, doltDir, nil
+}
+
+func withReadClient(cmd *cobra.Command, branch string, fn func(*config.Config, readClient) error) error {
+	cfg, doltDir, err := loadConfigAndDoltDir(cmd)
+	if err != nil {
+		return err
+	}
+
+	client, err := openReadClient(doltDir, branch)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = client.Close() }()
+
+	return fn(cfg, client)
+}
+
+func withReadClients(cmd *cobra.Command, branch1, branch2 string, fn func(*config.Config, readClient, readClient) error) error {
+	cfg, doltDir, err := loadConfigAndDoltDir(cmd)
+	if err != nil {
+		return err
+	}
+
+	client1, err := openReadClient(doltDir, branch1)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = client1.Close() }()
+
+	client2, err := openReadClient(doltDir, branch2)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = client2.Close() }()
+
+	return fn(cfg, client1, client2)
 }
