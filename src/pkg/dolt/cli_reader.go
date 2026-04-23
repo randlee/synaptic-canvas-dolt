@@ -42,7 +42,6 @@ func NewCLIReader(doltDir, branch string) *CLIReader {
 func (r *CLIReader) Close() error {
 	return nil
 }
-
 func (r *CLIReader) GetPackage(ctx context.Context, id string) (*models.Package, error) {
 	rows, err := runCLIQuery[models.Package](ctx, r.DoltDir, r.Branch, fmt.Sprintf(
 		"SELECT id, name, version, description, agent_variant, author, license, tags, install_scope, variables, options, sha256, min_claude_version FROM packages WHERE id = %s",
@@ -98,7 +97,6 @@ func (r *CLIReader) GetPackageHooks(ctx context.Context, packageID string) ([]mo
 		sqlString(packageID),
 	))
 }
-
 func (r *CLIReader) GetPackageQuestions(ctx context.Context, packageID string) ([]models.PackageQuestion, error) {
 	return runCLIQuery[models.PackageQuestion](ctx, r.DoltDir, r.Branch, fmt.Sprintf(
 		"SELECT package_id, question_id, prompt, type, default_val, choices, sort_order FROM package_questions WHERE package_id = %s ORDER BY sort_order, question_id",

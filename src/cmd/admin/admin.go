@@ -12,6 +12,7 @@ func NewAdminCmd() *cobra.Command {
 	cmd.AddCommand(NewDiffCmd())
 	cmd.AddCommand(NewExportCmd())
 	cmd.AddCommand(NewImportCmd())
+	cmd.AddCommand(NewPublishCmd())
 	cmd.AddCommand(NewVerifyCmd())
 	return cmd
 }
