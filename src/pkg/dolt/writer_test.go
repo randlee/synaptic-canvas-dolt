@@ -59,19 +59,12 @@ func TestCLIWriterImportPackageInvokesDolt(t *testing.T) {
 		"case \"$1\" in\n" +
 		"  branch)\n" +
 		"    if [ \"$2\" = \"--list\" ]; then echo \"$3\"; exit 0; fi\n" +
-		"    if [ \"$2\" = \"--show-current\" ]; then echo \"main\"; exit 0; fi\n" +
 		"    ;;\n" +
-		"  checkout)\n" +
-		"    exit 0\n" +
+		"  --branch)\n" +
+		"    if [ \"$3\" = \"sql\" ]; then cat > \"" + sqlPath + "\"; exit 0; fi\n" +
 		"    ;;\n" +
 		"  sql)\n" +
 		"    cat > \"" + sqlPath + "\"\n" +
-		"    exit 0\n" +
-		"    ;;\n" +
-		"  add)\n" +
-		"    exit 0\n" +
-		"    ;;\n" +
-		"  commit)\n" +
 		"    exit 0\n" +
 		"    ;;\n" +
 		"esac\n" +
@@ -105,7 +98,7 @@ func TestCLIWriterImportPackageInvokesDolt(t *testing.T) {
 		t.Fatal(err)
 	}
 	logText := string(logData)
-	for _, needle := range []string{"branch --show-current", "checkout develop", "sql", "add -A", "commit -m Import package sample 1.0.0"} {
+	for _, needle := range []string{"--branch develop sql"} {
 		if !strings.Contains(logText, needle) {
 			t.Fatalf("call log missing %q\n%s", needle, logText)
 		}
@@ -117,5 +110,74 @@ func TestCLIWriterImportPackageInvokesDolt(t *testing.T) {
 	}
 	if !strings.Contains(string(sqlData), "INSERT INTO packages") {
 		t.Fatalf("expected package insert in SQL, got:\n%s", string(sqlData))
+	}
+	for _, needle := range []string{"CALL DOLT_ADD('-A')", "CALL DOLT_COMMIT('-m', 'Import package sample 1.0.0')"} {
+		if !strings.Contains(string(sqlData), needle) {
+			t.Fatalf("expected SQL to contain %q, got:\n%s", needle, string(sqlData))
+		}
+	}
+}
+
+func TestCLIWriterBranchExists(t *testing.T) {
+	tests := []struct {
+		name          string
+		scriptBody    string
+		wantExists    bool
+		wantErrSubstr string
+	}{
+		{
+			name:       "branch exists",
+			scriptBody: "echo \"$3\"",
+			wantExists: true,
+		},
+		{
+			name:       "branch absent",
+			scriptBody: "echo \"main\"",
+			wantExists: false,
+		},
+		{
+			name:          "dolt error",
+			scriptBody:    "echo boom >&2; exit 1",
+			wantErrSubstr: "boom",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tempDir := t.TempDir()
+			scriptPath := filepath.Join(tempDir, "dolt")
+			script := "#!/bin/sh\n" +
+				"if [ \"$1\" = \"branch\" ] && [ \"$2\" = \"--list\" ]; then\n" +
+				"  " + tt.scriptBody + "\n" +
+				"  exit 0\n" +
+				"fi\n" +
+				"exit 0\n"
+			if tt.wantErrSubstr != "" {
+				script = "#!/bin/sh\n" +
+					"if [ \"$1\" = \"branch\" ] && [ \"$2\" = \"--list\" ]; then\n" +
+					"  " + tt.scriptBody + "\n" +
+					"fi\n"
+			}
+			if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+				t.Fatal(err)
+			}
+
+			oldPath := os.Getenv("PATH")
+			t.Setenv("PATH", tempDir+string(os.PathListSeparator)+oldPath)
+
+			exists, err := NewCLIWriter(tempDir).BranchExists(context.Background(), "develop")
+			if tt.wantErrSubstr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErrSubstr) {
+					t.Fatalf("expected error containing %q, got %v", tt.wantErrSubstr, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("BranchExists() error = %v", err)
+			}
+			if exists != tt.wantExists {
+				t.Fatalf("BranchExists() = %v, want %v", exists, tt.wantExists)
+			}
+		})
 	}
 }

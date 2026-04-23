@@ -21,6 +21,7 @@ func newTestCmd() *cobra.Command {
 	pf := cmd.PersistentFlags()
 	pf.String("dolt-dir", "", "Dolt database directory (default: auto-detect)")
 	pf.String("remote", "", "DoltHub remote name")
+	pf.String("branch", "", "Branch override (default: SC_DOLT_BRANCH or main)")
 	pf.Bool("json", false, "output as JSON")
 	pf.Bool("quiet", false, "suppress non-essential output")
 	pf.Bool("verbose", false, "enable debug logging")
@@ -34,6 +35,7 @@ func TestNewConfigFromFlags(t *testing.T) {
 	cmd.SetArgs([]string{
 		"--dolt-dir", "/tmp/dolt",
 		"--remote", "origin",
+		"--branch", "develop",
 		"--json",
 		"--verbose",
 	})
@@ -52,6 +54,9 @@ func TestNewConfigFromFlags(t *testing.T) {
 	if cfg.Remote != "origin" {
 		t.Errorf("Remote = %q, want %q", cfg.Remote, "origin")
 	}
+	if cfg.Branch != "develop" {
+		t.Errorf("Branch = %q, want %q", cfg.Branch, "develop")
+	}
 	if !cfg.JSON {
 		t.Error("JSON should be true")
 	}
@@ -60,6 +65,23 @@ func TestNewConfigFromFlags(t *testing.T) {
 	}
 	if cfg.Quiet {
 		t.Error("Quiet should be false")
+	}
+}
+
+func TestEffectiveBranch(t *testing.T) {
+	t.Setenv("SC_DOLT_BRANCH", "")
+	if got := (&Config{Branch: "beta"}).EffectiveBranch(); got != "beta" {
+		t.Fatalf("EffectiveBranch(flag) = %q", got)
+	}
+
+	t.Setenv("SC_DOLT_BRANCH", "develop")
+	if got := (&Config{}).EffectiveBranch(); got != "develop" {
+		t.Fatalf("EffectiveBranch(env) = %q", got)
+	}
+
+	t.Setenv("SC_DOLT_BRANCH", "")
+	if got := (&Config{}).EffectiveBranch(); got != "main" {
+		t.Fatalf("EffectiveBranch(default) = %q", got)
 	}
 }
 
