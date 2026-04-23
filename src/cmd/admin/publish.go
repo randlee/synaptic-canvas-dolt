@@ -25,6 +25,10 @@ func NewPublishCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("reading config flags: %w", err)
 			}
+			if fromBranch == "" || toBranch == "" {
+				return fmt.Errorf("--from and --to are required")
+			}
+
 			doltDir, err := detectDoltDir(cfg.DoltDirExpanded())
 			if err != nil {
 				return err
