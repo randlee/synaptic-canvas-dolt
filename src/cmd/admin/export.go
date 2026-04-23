@@ -3,12 +3,10 @@ package admin
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
-	"github.com/randlee/synaptic-canvas-dolt/pkg/dolt"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/exporter"
 	"github.com/spf13/cobra"
 )
@@ -77,25 +75,4 @@ func NewExportCmd() *cobra.Command {
 	cmd.Flags().StringVar(&branch, "branch", "", "Branch to export from")
 	cmd.Flags().StringVar(&outputDir, "output", "", "Output directory for exported package")
 	return cmd
-}
-
-func resolveReadBranch(flagValue string) string {
-	if flagValue != "" {
-		return flagValue
-	}
-	if env := os.Getenv("SC_DOLT_BRANCH"); env != "" {
-		return env
-	}
-	return "main"
-}
-
-func openReadClient(doltDir, branch string) (interface {
-	exporter.Reader
-	Close() error
-}, error) {
-	if doltDir != "" {
-		return dolt.NewCLIReader(doltDir, branch), nil
-	}
-	cfg := dolt.DefaultConfig()
-	return dolt.OpenForBranch(cfg, branch)
 }
