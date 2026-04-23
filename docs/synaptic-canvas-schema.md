@@ -20,7 +20,7 @@ Channels are **branches, not data**. The `develop`, `beta`, and `main` branches 
 -- No WHERE channel = 'main' — the branch IS the channel
 ```
 
-This eliminates data duplication and makes promotion a pure `dolt_merge`, not a data update.
+This eliminates data duplication and makes promotion a targeted SQL operation (DELETE + INSERT ... SELECT for the specific package) followed by a Dolt commit — not a full branch merge.
 
 ### 2. Text + JSON storage in `package_files`
 
@@ -507,7 +507,7 @@ The `content` column always contains the exact original file — the frontmatter
 | `beta` | Validated, needs broader testing | Promoted from develop | Early adopters |
 | `main` | Proven, stable | Promoted from beta | All users, marketplace export |
 
-**Promotion:** `dolt_merge('develop')` on the beta branch; `dolt_merge('beta')` on main. Each merge is a Dolt commit with author and message — full audit trail.
+**Promotion:** `sc admin publish <package> --from develop --to beta` (and `--from beta --to main`). Copies the specific package rows via targeted SQL and creates a Dolt commit — full audit trail without merging unrelated changes.
 
 **Rollback:** `dolt_reset('--hard', 'HEAD~1')` on any branch reverts the last promotion.
 
