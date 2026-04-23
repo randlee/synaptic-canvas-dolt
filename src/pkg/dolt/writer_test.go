@@ -3,6 +3,7 @@ package dolt
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -49,6 +50,10 @@ func TestBuildImportSQLIncludesCoreRows(t *testing.T) {
 }
 
 func TestCLIWriterImportPackageInvokesDolt(t *testing.T) {
+	if _, err := exec.LookPath("dolt"); err != nil {
+		t.Skip("dolt binary not found in PATH")
+	}
+
 	tempDir := t.TempDir()
 	logPath := filepath.Join(tempDir, "calls.log")
 	sqlPath := filepath.Join(tempDir, "sql.log")
@@ -119,6 +124,10 @@ func TestCLIWriterImportPackageInvokesDolt(t *testing.T) {
 }
 
 func TestCLIWriterBranchExists(t *testing.T) {
+	if _, err := exec.LookPath("dolt"); err != nil {
+		t.Skip("dolt binary not found in PATH")
+	}
+
 	tests := []struct {
 		name          string
 		scriptBody    string
