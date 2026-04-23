@@ -31,10 +31,7 @@ func NewImportCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("resolving import path: %w", err)
 			}
-			branch := cfg.Branch
-			if branch == "" {
-				return fmt.Errorf("--branch is required")
-			}
+			branch := cfg.EffectiveBranch()
 
 			doltDir, err := detectDoltDir(cfg.DoltDirExpanded())
 			if err != nil {

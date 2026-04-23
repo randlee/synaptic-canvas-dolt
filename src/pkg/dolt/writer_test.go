@@ -3,6 +3,7 @@ package dolt
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -49,6 +50,10 @@ func TestBuildImportSQLIncludesCoreRows(t *testing.T) {
 }
 
 func TestCLIWriterImportPackageInvokesDolt(t *testing.T) {
+	if _, err := exec.LookPath("dolt"); err != nil {
+		t.Skip("dolt binary not found in PATH")
+	}
+
 	tempDir := t.TempDir()
 	logPath := filepath.Join(tempDir, "calls.log")
 	sqlPath := filepath.Join(tempDir, "sql.log")
@@ -69,7 +74,7 @@ func TestCLIWriterImportPackageInvokesDolt(t *testing.T) {
 		"    ;;\n" +
 		"esac\n" +
 		"exit 0\n"
-	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil { //nolint:gosec // G306: test helper script permissions are intentional.
 		t.Fatal(err)
 	}
 
@@ -93,7 +98,7 @@ func TestCLIWriterImportPackageInvokesDolt(t *testing.T) {
 		t.Fatalf("ImportPackage() error = %v", err)
 	}
 
-	logData, err := os.ReadFile(logPath)
+	logData, err := os.ReadFile(logPath) //nolint:gosec // G304: test log path is controlled by the test harness.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +109,7 @@ func TestCLIWriterImportPackageInvokesDolt(t *testing.T) {
 		}
 	}
 
-	sqlData, err := os.ReadFile(sqlPath)
+	sqlData, err := os.ReadFile(sqlPath) //nolint:gosec // G304: test SQL path is controlled by the test harness.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,6 +124,10 @@ func TestCLIWriterImportPackageInvokesDolt(t *testing.T) {
 }
 
 func TestCLIWriterBranchExists(t *testing.T) {
+	if _, err := exec.LookPath("dolt"); err != nil {
+		t.Skip("dolt binary not found in PATH")
+	}
+
 	tests := []struct {
 		name          string
 		scriptBody    string
@@ -158,7 +167,7 @@ func TestCLIWriterBranchExists(t *testing.T) {
 					"  " + tt.scriptBody + "\n" +
 					"fi\n"
 			}
-			if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+			if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil { //nolint:gosec // G306: test helper script permissions are intentional.
 				t.Fatal(err)
 			}
 

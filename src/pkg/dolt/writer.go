@@ -54,7 +54,7 @@ func (w *CLIWriter) ImportPackage(ctx context.Context, req ImportPackageRequest)
 }
 
 func (w *CLIWriter) runSQL(ctx context.Context, branch, sql, commitMessage string) error {
-	cmd := exec.CommandContext(ctx, doltCommand, "--branch", branch, "sql")
+	cmd := exec.CommandContext(ctx, doltCommand, "--branch", branch, "sql") //nolint:gosec // G204: dolt binary is a hardcoded constant; branch is validated by BranchExists before writes.
 	cmd.Dir = w.DoltDir
 	cmd.Stdin = strings.NewReader(sql + "\n" + buildCommitSQL(commitMessage))
 	var stderr bytes.Buffer
@@ -66,7 +66,7 @@ func (w *CLIWriter) runSQL(ctx context.Context, branch, sql, commitMessage strin
 }
 
 func (w *CLIWriter) run(ctx context.Context, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, doltCommand, args...)
+	cmd := exec.CommandContext(ctx, doltCommand, args...) //nolint:gosec // G204: dolt binary is a hardcoded constant; args are fixed subcommands and validated inputs.
 	cmd.Dir = w.DoltDir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

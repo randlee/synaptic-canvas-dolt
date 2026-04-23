@@ -64,9 +64,7 @@ func (p *CLIPublisher) currentDatabase(ctx context.Context, branch string) (stri
 	}
 	name := strings.TrimSpace(records[1][0])
 	suffix := "/" + branch
-	if strings.HasSuffix(name, suffix) {
-		name = strings.TrimSuffix(name, suffix)
-	}
+	name = strings.TrimSuffix(name, suffix)
 	return name, nil
 }
 
