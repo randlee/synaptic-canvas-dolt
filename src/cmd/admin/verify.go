@@ -47,6 +47,13 @@ func NewVerifyCmd() *cobra.Command {
 			if cfg.JSON {
 				return formatter.WriteJSON(summary)
 			}
+			for _, result := range summary.FileResults {
+				if result.Status == verifier.StatusOK {
+					formatter.Success(fmt.Sprintf("OK: %s", result.DestPath))
+					continue
+				}
+				formatter.Success(fmt.Sprintf("CORRUPT: %s (expected %s, got %s)", result.DestPath, result.ExpectedSHA, result.ActualSHA))
+			}
 			formatter.Success(fmt.Sprintf("Verified %s %s on %s", summary.PackageID, summary.Version, summary.Branch))
 			formatter.Success(fmt.Sprintf("Files checked: %d  Corrupt files: %d", summary.FilesChecked, summary.CorruptFiles))
 			formatter.Success(fmt.Sprintf("Aggregate status: %s", summary.AggregateStatus))

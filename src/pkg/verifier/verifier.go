@@ -91,7 +91,7 @@ func (s Service) Verify(ctx context.Context, req VerifyRequest) (*Summary, error
 			ActualSHA:   actual,
 			Status:      status,
 		})
-		aggregateParts = append(aggregateParts, file.DestPath+":"+actual)
+		aggregateParts = append(aggregateParts, file.DestPath+":"+file.SHA256)
 	}
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].DestPath < results[j].DestPath

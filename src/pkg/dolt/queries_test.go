@@ -7,7 +7,7 @@ import (
 
 func TestListPackagesQuery(t *testing.T) {
 	t.Parallel()
-	q := ListPackagesQuery()
+	q := ListPackagesQuery("synaptic_canvas", "")
 	if !strings.Contains(q, "SELECT") {
 		t.Error("expected SELECT in query")
 	}
@@ -26,7 +26,7 @@ func TestListPackagesQuery(t *testing.T) {
 
 func TestGetPackageQuery(t *testing.T) {
 	t.Parallel()
-	q := GetPackageQuery()
+	q := GetPackageQuery("synaptic_canvas", "")
 	if !strings.Contains(q, "WHERE id = ?") {
 		t.Error("expected parameterized WHERE clause")
 	}
@@ -40,7 +40,7 @@ func TestGetPackageQuery(t *testing.T) {
 
 func TestGetPackageFilesQuery(t *testing.T) {
 	t.Parallel()
-	q := GetPackageFilesQuery()
+	q := GetPackageFilesQuery("synaptic_canvas", "")
 	if !strings.Contains(q, "FROM package_files") {
 		t.Error("expected FROM package_files")
 	}
@@ -60,7 +60,7 @@ func TestGetPackageFilesQuery(t *testing.T) {
 
 func TestGetPackageDepsQuery(t *testing.T) {
 	t.Parallel()
-	q := GetPackageDepsQuery()
+	q := GetPackageDepsQuery("synaptic_canvas", "")
 	if !strings.Contains(q, "FROM package_deps") {
 		t.Error("expected FROM package_deps")
 	}
@@ -74,7 +74,7 @@ func TestGetPackageDepsQuery(t *testing.T) {
 
 func TestGetPackageHooksQuery(t *testing.T) {
 	t.Parallel()
-	q := GetPackageHooksQuery()
+	q := GetPackageHooksQuery("synaptic_canvas", "")
 	if !strings.Contains(q, "FROM package_hooks") {
 		t.Error("expected FROM package_hooks")
 	}
@@ -85,7 +85,7 @@ func TestGetPackageHooksQuery(t *testing.T) {
 
 func TestGetPackageQuestionsQuery(t *testing.T) {
 	t.Parallel()
-	q := GetPackageQuestionsQuery()
+	q := GetPackageQuestionsQuery("synaptic_canvas", "")
 	if !strings.Contains(q, "FROM package_questions") {
 		t.Error("expected FROM package_questions")
 	}
@@ -96,7 +96,7 @@ func TestGetPackageQuestionsQuery(t *testing.T) {
 
 func TestResolveVariantQuery(t *testing.T) {
 	t.Parallel()
-	q := ResolveVariantQuery()
+	q := ResolveVariantQuery("synaptic_canvas", "")
 	if !strings.Contains(q, "FROM package_variants") {
 		t.Error("expected FROM package_variants")
 	}
@@ -108,21 +108,21 @@ func TestResolveVariantQuery(t *testing.T) {
 	}
 }
 
-func TestUseBranchQuery(t *testing.T) {
+func TestBranchQualifiedFrom(t *testing.T) {
 	t.Parallel()
 
 	t.Run("empty branch returns empty", func(t *testing.T) {
 		t.Parallel()
-		got := UseBranchQuery("synaptic_canvas", "")
-		if got != "" {
-			t.Errorf("got %q, want empty string", got)
+		got := BranchQualifiedFrom("synaptic_canvas", "", "packages")
+		if got != "packages" {
+			t.Errorf("got %q, want %q", got, "packages")
 		}
 	})
 
-	t.Run("non-empty branch returns USE statement", func(t *testing.T) {
+	t.Run("non-empty branch returns qualified table", func(t *testing.T) {
 		t.Parallel()
-		got := UseBranchQuery("synaptic_canvas", "staging")
-		want := "USE `synaptic_canvas/staging`"
+		got := BranchQualifiedFrom("synaptic_canvas", "staging", "packages")
+		want := "`synaptic_canvas/staging`.packages"
 		if got != want {
 			t.Errorf("got %q, want %q", got, want)
 		}
