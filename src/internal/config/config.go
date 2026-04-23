@@ -13,6 +13,7 @@ import (
 type Config struct {
 	DoltDir string
 	Remote  string
+	Branch  string
 	JSON    bool
 	Quiet   bool
 	Verbose bool
@@ -30,6 +31,10 @@ func NewConfigFromFlags(cmd *cobra.Command) (*Config, error) {
 	remote, err := flags.GetString("remote")
 	if err != nil {
 		return nil, fmt.Errorf("reading --remote: %w", err)
+	}
+	branch, err := flags.GetString("branch")
+	if err != nil {
+		return nil, fmt.Errorf("reading --branch: %w", err)
 	}
 
 	jsonMode, err := flags.GetBool("json")
@@ -50,6 +55,7 @@ func NewConfigFromFlags(cmd *cobra.Command) (*Config, error) {
 	return &Config{
 		DoltDir: doltDir,
 		Remote:  remote,
+		Branch:  branch,
 		JSON:    jsonMode,
 		Quiet:   quiet,
 		Verbose: verbose,
@@ -78,4 +84,16 @@ func (c *Config) DoltDirExpanded() string {
 		return filepath.Join(home, c.DoltDir[2:])
 	}
 	return c.DoltDir
+}
+
+// EffectiveBranch resolves the branch flag using flag, then environment, then
+// the default main branch.
+func (c *Config) EffectiveBranch() string {
+	if c.Branch != "" {
+		return c.Branch
+	}
+	if env := os.Getenv("SC_DOLT_BRANCH"); env != "" {
+		return env
+	}
+	return "main"
 }
