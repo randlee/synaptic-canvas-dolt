@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
@@ -29,6 +28,8 @@ type CLIWriter struct {
 	DoltDir string
 }
 
+const doltCommand = "dolt"
+
 // NewCLIWriter returns a CLI-backed Dolt writer.
 func NewCLIWriter(doltDir string) *CLIWriter {
 	return &CLIWriter{DoltDir: doltDir}
@@ -36,7 +37,7 @@ func NewCLIWriter(doltDir string) *CLIWriter {
 
 // BranchExists reports whether the target branch exists.
 func (w *CLIWriter) BranchExists(ctx context.Context, branch string) (bool, error) {
-	out, err := w.run(ctx, "dolt", "branch", "--list", branch)
+	out, err := w.run(ctx, "branch", "--list", branch)
 	if err != nil {
 		return false, err
 	}
@@ -45,38 +46,17 @@ func (w *CLIWriter) BranchExists(ctx context.Context, branch string) (bool, erro
 
 // ImportPackage writes all package rows and creates a Dolt commit.
 func (w *CLIWriter) ImportPackage(ctx context.Context, req ImportPackageRequest) error {
-	currentBranchOutput, err := w.run(ctx, "dolt", "branch", "--show-current")
-	if err != nil {
-		return fmt.Errorf("reading current branch: %w", err)
-	}
-	currentBranch := strings.TrimSpace(currentBranchOutput)
-
-	if _, err := w.run(ctx, "dolt", "checkout", req.Branch); err != nil {
-		return fmt.Errorf("checking out branch %q: %w", req.Branch, err)
-	}
-	defer func() {
-		if currentBranch != "" && currentBranch != req.Branch {
-			_, _ = w.run(context.Background(), "dolt", "checkout", currentBranch)
-		}
-	}()
-
 	sql := buildImportSQL(req)
-	if err := w.runSQL(ctx, sql); err != nil {
+	if err := w.runSQL(ctx, req.Branch, sql, req.CommitMessage); err != nil {
 		return err
-	}
-	if _, err := w.run(ctx, "dolt", "add", "-A"); err != nil {
-		return fmt.Errorf("staging Dolt changes: %w", err)
-	}
-	if _, err := w.run(ctx, "dolt", "commit", "-m", req.CommitMessage); err != nil {
-		return fmt.Errorf("creating Dolt commit: %w", err)
 	}
 	return nil
 }
 
-func (w *CLIWriter) runSQL(ctx context.Context, sql string) error {
-	cmd := exec.CommandContext(ctx, "dolt", "sql")
+func (w *CLIWriter) runSQL(ctx context.Context, branch, sql, commitMessage string) error {
+	cmd := exec.CommandContext(ctx, doltCommand, "--branch", branch, "sql") //nolint:gosec // G204: dolt binary is a hardcoded constant; branch is validated by BranchExists before writes.
 	cmd.Dir = w.DoltDir
-	cmd.Stdin = strings.NewReader(sql)
+	cmd.Stdin = strings.NewReader(sql + "\n" + buildCommitSQL(commitMessage))
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -85,16 +65,20 @@ func (w *CLIWriter) runSQL(ctx context.Context, sql string) error {
 	return nil
 }
 
-func (w *CLIWriter) run(ctx context.Context, name string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
+func (w *CLIWriter) run(ctx context.Context, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, doltCommand, args...) //nolint:gosec // G204: dolt binary is a hardcoded constant; args are fixed subcommands and validated inputs.
 	cmd.Dir = w.DoltDir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+		return "", fmt.Errorf("%s %s: %w: %s", doltCommand, strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 	}
 	return stdout.String(), nil
+}
+
+func buildCommitSQL(commitMessage string) string {
+	return fmt.Sprintf("CALL DOLT_ADD('-A');\nCALL DOLT_COMMIT('-m', %s);", sqlString(commitMessage))
 }
 
 func buildImportSQL(req ImportPackageRequest) string {
@@ -206,8 +190,4 @@ func sqlJSON(raw json.RawMessage) string {
 		return "NULL"
 	}
 	return sqlString(string(raw))
-}
-
-func repoRootFromDoltDir(doltDir string) string {
-	return filepath.Clean(doltDir)
 }

@@ -17,8 +17,6 @@ import (
 
 // NewImportCmd creates the sc admin import command.
 func NewImportCmd() *cobra.Command {
-	var branch string
-
 	cmd := &cobra.Command{
 		Use:   "import <path>",
 		Short: "Import a package directory into Dolt on a specific branch",
@@ -33,9 +31,7 @@ func NewImportCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("resolving import path: %w", err)
 			}
-			if branch == "" {
-				return fmt.Errorf("--branch is required")
-			}
+			branch := cfg.EffectiveBranch()
 
 			doltDir, err := detectDoltDir(cfg.DoltDirExpanded())
 			if err != nil {
@@ -78,7 +74,6 @@ func NewImportCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&branch, "branch", "", "Branch to import into")
 	return cmd
 }
 

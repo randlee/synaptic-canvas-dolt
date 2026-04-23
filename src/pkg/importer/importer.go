@@ -144,7 +144,7 @@ type scannedPackage struct {
 
 func scanPackage(dir string) (*scannedPackage, []string, error) {
 	manifestPath := filepath.Join(dir, "manifest.yaml")
-	rawManifest, err := os.ReadFile(manifestPath)
+	rawManifest, err := os.ReadFile(manifestPath) //nolint:gosec // G304: path is operator-supplied admin input, not user-controlled.
 	if err != nil {
 		return nil, nil, fmt.Errorf("reading manifest.yaml: %w", err)
 	}
@@ -277,7 +277,7 @@ func scanArtifacts(root, packageID string, artifacts map[string][]string) ([]mod
 	for _, paths := range artifacts {
 		for _, rel := range paths {
 			full := filepath.Join(root, rel)
-			content, err := os.ReadFile(full)
+			content, err := os.ReadFile(full) //nolint:gosec // G304: path is operator-supplied admin input, not user-controlled.
 			if err != nil {
 				return nil, nil, fmt.Errorf("reading artifact %s: %w", rel, err)
 			}
@@ -309,7 +309,7 @@ func scanArtifacts(root, packageID string, artifacts map[string][]string) ([]mod
 	}
 
 	pluginPath := filepath.Join(root, ".claude-plugin", "plugin.json")
-	if content, err := os.ReadFile(pluginPath); err == nil {
+	if content, err := os.ReadFile(pluginPath); err == nil { //nolint:gosec // G304: path is operator-supplied admin input, not user-controlled.
 		sha := sha256.Sum256(content)
 		files = append(files, models.PackageFile{
 			PackageID:   packageID,
