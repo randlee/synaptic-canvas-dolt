@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/randlee/synaptic-canvas-dolt/cmd/admin"
 	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/internal/logging"
 	"github.com/spf13/cobra"
@@ -47,6 +48,7 @@ stored in a Dolt database.`,
 			logger.Debug("configuration loaded",
 				"dolt_dir", doltDirDisplay,
 				"remote", cfg.Remote,
+				"branch", cfg.EffectiveBranch(),
 				"json", cfg.JSON,
 				"verbose", cfg.Verbose,
 				"quiet", cfg.Quiet,
@@ -62,9 +64,12 @@ stored in a Dolt database.`,
 	pf := rootCmd.PersistentFlags()
 	pf.String("dolt-dir", "", "Dolt database directory (default: auto-detect)")
 	pf.String("remote", "", "DoltHub remote name")
+	pf.String("branch", "", "Branch override (default: SC_DOLT_BRANCH or main)")
 	pf.Bool("json", false, "output as JSON")
 	pf.Bool("quiet", false, "suppress non-essential output")
 	pf.Bool("verbose", false, "enable debug logging")
+
+	rootCmd.AddCommand(admin.NewAdminCmd())
 
 	return rootCmd
 }

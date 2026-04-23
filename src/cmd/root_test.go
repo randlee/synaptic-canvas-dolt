@@ -72,6 +72,7 @@ func TestHelpContainsExpectedText(t *testing.T) {
 		"package management system",
 		"--dolt-dir",
 		"--remote",
+		"--branch",
 		"--json",
 		"--quiet",
 		"--verbose",
