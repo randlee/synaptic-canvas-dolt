@@ -27,3 +27,13 @@ func TestValidateKnownBadTemplate(t *testing.T) {
 		t.Fatalf("expected 1 warning for unused question, got %d", len(report.Warnings))
 	}
 }
+
+func TestValidateIgnoresDottedIdentifiersOutsideTemplateBlocks(t *testing.T) {
+	report := Validate(map[string]string{
+		"skills/example.md.j2": "fmt.Println(repo.unknown)\n{{ repo.name }}\nos.Exit(1)\n",
+	}, nil)
+
+	if len(report.Errors) != 0 {
+		t.Fatalf("expected no errors from non-template dotted identifiers, got %+v", report.Errors)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"sort"
 )
 
+var templateBlockPattern = regexp.MustCompile(`(?s)\{\{.*?\}\}|\{%.*?%\}`)
 var refPattern = regexp.MustCompile(`\b([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\b`)
 
 var knownRepoKeys = map[string]struct{}{
@@ -49,52 +50,54 @@ func Validate(files map[string]string, questionIDs []string) Report {
 
 	for _, path := range paths {
 		seen := map[string]struct{}{}
-		for _, match := range refPattern.FindAllStringSubmatch(files[path], -1) {
-			full := match[0]
-			if _, ok := seen[full]; ok {
-				continue
-			}
-			seen[full] = struct{}{}
-			namespace := match[1]
-			key := match[2]
-
-			switch namespace {
-			case "answers":
-				if _, ok := questionSet[key]; !ok {
-					report.Errors = append(report.Errors, Finding{
-						Severity: "error",
-						File:     path,
-						Variable: full,
-						Message:  fmt.Sprintf("answers.%s has no matching package question", key),
-					})
+		for _, block := range templateBlockPattern.FindAllString(files[path], -1) {
+			for _, match := range refPattern.FindAllStringSubmatch(block, -1) {
+				full := match[0]
+				if _, ok := seen[full]; ok {
 					continue
 				}
-				usedQuestions[key] = struct{}{}
-			case "repo":
-				if _, ok := knownRepoKeys[key]; !ok {
+				seen[full] = struct{}{}
+				namespace := match[1]
+				key := match[2]
+
+				switch namespace {
+				case "answers":
+					if _, ok := questionSet[key]; !ok {
+						report.Errors = append(report.Errors, Finding{
+							Severity: "error",
+							File:     path,
+							Variable: full,
+							Message:  fmt.Sprintf("answers.%s has no matching package question", key),
+						})
+						continue
+					}
+					usedQuestions[key] = struct{}{}
+				case "repo":
+					if _, ok := knownRepoKeys[key]; !ok {
+						report.Errors = append(report.Errors, Finding{
+							Severity: "error",
+							File:     path,
+							Variable: full,
+							Message:  fmt.Sprintf("repo.%s is not in the known repo schema", key),
+						})
+					}
+				case "env":
+					if _, ok := knownEnvKeys[key]; !ok {
+						report.Errors = append(report.Errors, Finding{
+							Severity: "error",
+							File:     path,
+							Variable: full,
+							Message:  fmt.Sprintf("env.%s is not in the known env schema", key),
+						})
+					}
+				default:
 					report.Errors = append(report.Errors, Finding{
 						Severity: "error",
 						File:     path,
 						Variable: full,
-						Message:  fmt.Sprintf("repo.%s is not in the known repo schema", key),
+						Message:  fmt.Sprintf("unknown variable namespace %q", namespace),
 					})
 				}
-			case "env":
-				if _, ok := knownEnvKeys[key]; !ok {
-					report.Errors = append(report.Errors, Finding{
-						Severity: "error",
-						File:     path,
-						Variable: full,
-						Message:  fmt.Sprintf("env.%s is not in the known env schema", key),
-					})
-				}
-			default:
-				report.Errors = append(report.Errors, Finding{
-					Severity: "error",
-					File:     path,
-					Variable: full,
-					Message:  fmt.Sprintf("unknown variable namespace %q", namespace),
-				})
 			}
 		}
 	}

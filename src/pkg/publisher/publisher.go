@@ -19,17 +19,15 @@ type Reader interface {
 	GetPackageQuestions(ctx context.Context, packageID string) ([]models.PackageQuestion, error)
 }
 
-// Merger promotes one branch into another.
-type Merger interface {
-	Merge(ctx context.Context, fromBranch, toBranch string) (*MergeResult, error)
+// Promoter copies one package from one branch into another.
+type Promoter interface {
+	PublishPackage(ctx context.Context, packageID, fromBranch, toBranch string) (*PublishResult, error)
 }
 
-// MergeResult captures Dolt merge metadata.
-type MergeResult struct {
-	Hash        string `json:"hash,omitempty"`
-	FastForward bool   `json:"fast_forward"`
-	Conflicts   int    `json:"conflicts"`
-	Message     string `json:"message,omitempty"`
+// PublishResult captures targeted publish metadata.
+type PublishResult struct {
+	Hash    string `json:"hash,omitempty"`
+	Message string `json:"message,omitempty"`
 }
 
 // PublishRequest defines one publish operation.
@@ -48,7 +46,7 @@ type Summary struct {
 	Verify                   *VerifySummary     `json:"verify"`
 	TemplateValidationErrors []template.Finding `json:"template_validation_errors,omitempty"`
 	TemplateWarnings         []template.Finding `json:"template_validation_warnings,omitempty"`
-	Merge                    *MergeResult       `json:"merge,omitempty"`
+	Publish                  *PublishResult     `json:"publish,omitempty"`
 }
 
 type FileResult struct {
@@ -72,17 +70,17 @@ type VerifySummary struct {
 
 // Service publishes a package from one branch to another.
 type Service struct {
-	Reader Reader
-	Merger Merger
+	Reader   Reader
+	Promoter Promoter
 }
 
-// Publish validates and merges a package promotion.
+// Publish validates and promotes a package into the target branch.
 func (s Service) Publish(ctx context.Context, req PublishRequest) (*Summary, error) {
 	if s.Reader == nil {
 		return nil, fmt.Errorf("publish reader is required")
 	}
-	if s.Merger == nil {
-		return nil, fmt.Errorf("publish merger is required")
+	if s.Promoter == nil {
+		return nil, fmt.Errorf("publish promoter is required")
 	}
 	if strings.TrimSpace(req.PackageID) == "" {
 		return nil, fmt.Errorf("package id is required")
@@ -148,7 +146,7 @@ func (s Service) Publish(ctx context.Context, req PublishRequest) (*Summary, err
 		}, fmt.Errorf("publish blocked: template validation failed")
 	}
 
-	mergeResult, err := s.Merger.Merge(ctx, req.FromBranch, req.ToBranch)
+	publishResult, err := s.Promoter.PublishPackage(ctx, req.PackageID, req.FromBranch, req.ToBranch)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +159,7 @@ func (s Service) Publish(ctx context.Context, req PublishRequest) (*Summary, err
 		Verify:                   verifySummary,
 		TemplateValidationErrors: report.Errors,
 		TemplateWarnings:         report.Warnings,
-		Merge:                    mergeResult,
+		Publish:                  publishResult,
 	}, nil
 }
 
@@ -172,6 +170,9 @@ func verifyPackage(ctx context.Context, reader Reader, packageID, branch string)
 	}
 	if pkg == nil {
 		return nil, fmt.Errorf("package %q not found", packageID)
+	}
+	if pkg.SHA256 == nil || strings.TrimSpace(*pkg.SHA256) == "" {
+		return nil, fmt.Errorf("package %s has no aggregate SHA256 - integrity check required before publish", packageID)
 	}
 	files, err := reader.GetPackageFiles(ctx, packageID)
 	if err != nil {
@@ -194,7 +195,7 @@ func verifyPackage(ctx context.Context, reader Reader, packageID, branch string)
 			ActualSHA:   actual,
 			Status:      status,
 		})
-		aggregateParts = append(aggregateParts, file.DestPath+":"+actual)
+		aggregateParts = append(aggregateParts, file.DestPath+":"+file.SHA256)
 	}
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].DestPath < results[j].DestPath
@@ -202,11 +203,8 @@ func verifyPackage(ctx context.Context, reader Reader, packageID, branch string)
 
 	aggregateSHA := computePackageSHA(aggregateParts)
 	aggregateStatus := "OK"
-	expectedSHA := ""
-	if pkg.SHA256 != nil {
-		expectedSHA = *pkg.SHA256
-	}
-	if expectedSHA != "" && expectedSHA != aggregateSHA {
+	expectedSHA := *pkg.SHA256
+	if expectedSHA != aggregateSHA {
 		aggregateStatus = "CORRUPT"
 	}
 

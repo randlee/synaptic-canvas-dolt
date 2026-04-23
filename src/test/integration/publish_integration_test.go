@@ -24,8 +24,8 @@ func TestPublishPromotesBranch(t *testing.T) {
 	importFixtureToBranch(t, repoDir, "develop", filepath.Join("..", "..", "pkg", "importer", "testdata", "basic-package"))
 
 	svc := publisher.Service{
-		Reader: dolt.NewCLIReader(repoDir, "develop"),
-		Merger: dolt.NewCLIPublisher(repoDir),
+		Reader:   dolt.NewCLIReader(repoDir, "develop"),
+		Promoter: dolt.NewCLIPublisher(repoDir),
 	}
 	summary, err := svc.Publish(context.Background(), publisher.PublishRequest{
 		PackageID:  "sample-skill",
@@ -35,8 +35,8 @@ func TestPublishPromotesBranch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Publish() error = %v", err)
 	}
-	if summary.Merge == nil {
-		t.Fatalf("expected merge result")
+	if summary.Publish == nil {
+		t.Fatalf("expected publish result")
 	}
 	rows := runQuery(t, repoDir, "beta", "select id from packages where id = 'sample-skill';")
 	if !strings.Contains(rows, "sample-skill") {
@@ -59,8 +59,8 @@ func TestPublishBlocksInvalidTemplate(t *testing.T) {
 	importFixtureToBranch(t, repoDir, "develop", fixtureDir)
 
 	svc := publisher.Service{
-		Reader: dolt.NewCLIReader(repoDir, "develop"),
-		Merger: dolt.NewCLIPublisher(repoDir),
+		Reader:   dolt.NewCLIReader(repoDir, "develop"),
+		Promoter: dolt.NewCLIPublisher(repoDir),
 	}
 	summary, err := svc.Publish(context.Background(), publisher.PublishRequest{
 		PackageID:  "sample-skill",

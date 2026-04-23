@@ -31,8 +31,8 @@ func NewPublishCmd() *cobra.Command {
 			}
 
 			service := publisher.Service{
-				Reader: dolt.NewCLIReader(doltDir, fromBranch),
-				Merger: dolt.NewCLIPublisher(doltDir),
+				Reader:   dolt.NewCLIReader(doltDir, fromBranch),
+				Promoter: dolt.NewCLIPublisher(doltDir),
 			}
 			summary, err := service.Publish(context.Background(), publisher.PublishRequest{
 				PackageID:  args[0],
@@ -54,8 +54,8 @@ func NewPublishCmd() *cobra.Command {
 			if summary != nil {
 				formatter.Success(fmt.Sprintf("Published %s %s from %s to %s", summary.PackageID, summary.Version, summary.FromBranch, summary.ToBranch))
 				formatter.Success(fmt.Sprintf("Template warnings: %d  Template errors: %d", len(summary.TemplateWarnings), len(summary.TemplateValidationErrors)))
-				if summary.Merge != nil {
-					formatter.Success(fmt.Sprintf("Merge: %s", summary.Merge.Message))
+				if summary.Publish != nil {
+					formatter.Success(fmt.Sprintf("Publish: %s", summary.Publish.Message))
 				}
 			}
 			return err
