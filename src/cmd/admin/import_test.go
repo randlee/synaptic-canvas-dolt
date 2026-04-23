@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"os/exec"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,10 @@ import (
 )
 
 func TestNewImportCmdUsesEffectiveBranch(t *testing.T) {
+	if _, err := exec.LookPath("dolt"); err != nil {
+		t.Skip("dolt binary not found in PATH")
+	}
+
 	tempDir := t.TempDir()
 	if err := os.Mkdir(filepath.Join(tempDir, ".dolt"), 0o755); err != nil { //nolint:gosec // G301: test directory permissions are intentional.
 		t.Fatal(err)
