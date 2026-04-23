@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS packages (
     name                VARCHAR(256)  NOT NULL,
     version             VARCHAR(64)   NOT NULL,
     description         TEXT,
+    sha256              TEXT,
     agent_variant       VARCHAR(64)   NOT NULL DEFAULT 'claude',
 
     -- Metadata

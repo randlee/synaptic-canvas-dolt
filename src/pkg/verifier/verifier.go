@@ -14,6 +14,7 @@ import (
 const (
 	StatusOK      = "OK"
 	StatusCorrupt = "CORRUPT"
+	StatusMissing = "MISSING_SHA"
 )
 
 // Reader loads package data from Dolt.
@@ -98,12 +99,13 @@ func (s Service) Verify(ctx context.Context, req VerifyRequest) (*Summary, error
 	})
 
 	aggregateSHA := computePackageSHA(aggregateParts)
-	aggregateStatus := StatusOK
-	expectedSHA := ""
-	if pkg.SHA256 != nil {
-		expectedSHA = *pkg.SHA256
+	if pkg.SHA256 == nil || strings.TrimSpace(*pkg.SHA256) == "" {
+		return nil, fmt.Errorf("package %s is missing aggregate SHA256", req.PackageID)
 	}
-	if expectedSHA != "" && expectedSHA != aggregateSHA {
+
+	expectedSHA := *pkg.SHA256
+	aggregateStatus := StatusOK
+	if expectedSHA != aggregateSHA {
 		aggregateStatus = StatusCorrupt
 	}
 

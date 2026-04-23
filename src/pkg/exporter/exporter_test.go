@@ -9,6 +9,7 @@ import (
 
 	"github.com/randlee/synaptic-canvas-dolt/pkg/dolt"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/importer"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
 	"gopkg.in/yaml.v3"
 )
 
@@ -86,6 +87,119 @@ func TestExportFailsOnAggregateMismatch(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "aggregate sha mismatch") {
 		t.Fatalf("expected aggregate mismatch, got %v", err)
+	}
+}
+
+func TestExportFailsOnPerFileMismatch(t *testing.T) {
+	t.Parallel()
+
+	scanned, _, err := importer.ScanForTest(filepath.Join("..", "importer", "testdata", "basic-package"))
+	if err != nil {
+		t.Fatalf("ScanForTest() error = %v", err)
+	}
+
+	tamperedFiles := append([]models.PackageFile(nil), scanned.Files...)
+	tamperedFiles[0].SHA256 = "deadbeef"
+
+	mock := dolt.NewMockClient()
+	mock.AddPackage(&scanned.Package)
+	mock.AddFiles(scanned.Package.ID, tamperedFiles)
+	mock.AddDeps(scanned.Package.ID, scanned.Deps)
+	mock.AddHooks(scanned.Package.ID, scanned.Hooks)
+	mock.AddQuestions(scanned.Package.ID, scanned.Questions)
+
+	_, err = Service{Reader: mock}.Export(context.Background(), ExportRequest{
+		PackageID: scanned.Package.ID,
+		OutputDir: t.TempDir(),
+		Branch:    "main",
+	})
+	if err == nil || !strings.Contains(err.Error(), "sha mismatch for "+tamperedFiles[0].DestPath) {
+		t.Fatalf("expected per-file mismatch, got %v", err)
+	}
+}
+
+func TestExportFailsWhenPackageSHAIsMissing(t *testing.T) {
+	t.Parallel()
+
+	scanned, _, err := importer.ScanForTest(filepath.Join("..", "importer", "testdata", "basic-package"))
+	if err != nil {
+		t.Fatalf("ScanForTest() error = %v", err)
+	}
+	scanned.Package.SHA256 = nil
+
+	mock := dolt.NewMockClient()
+	mock.AddPackage(&scanned.Package)
+	mock.AddFiles(scanned.Package.ID, scanned.Files)
+	mock.AddDeps(scanned.Package.ID, scanned.Deps)
+	mock.AddHooks(scanned.Package.ID, scanned.Hooks)
+	mock.AddQuestions(scanned.Package.ID, scanned.Questions)
+
+	_, err = Service{Reader: mock}.Export(context.Background(), ExportRequest{
+		PackageID: scanned.Package.ID,
+		OutputDir: t.TempDir(),
+		Branch:    "main",
+	})
+	if err == nil || !strings.Contains(err.Error(), "missing aggregate SHA256") {
+		t.Fatalf("expected missing-sha error, got %v", err)
+	}
+}
+
+func TestExportFailsWhenMkdirAllFails(t *testing.T) {
+	t.Parallel()
+
+	scanned, _, err := importer.ScanForTest(filepath.Join("..", "importer", "testdata", "basic-package"))
+	if err != nil {
+		t.Fatalf("ScanForTest() error = %v", err)
+	}
+
+	mock := dolt.NewMockClient()
+	mock.AddPackage(&scanned.Package)
+	mock.AddFiles(scanned.Package.ID, scanned.Files)
+	mock.AddDeps(scanned.Package.ID, scanned.Deps)
+	mock.AddHooks(scanned.Package.ID, scanned.Hooks)
+	mock.AddQuestions(scanned.Package.ID, scanned.Questions)
+
+	blocker := filepath.Join(t.TempDir(), "blocker")
+	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil { //nolint:gosec // G306: test fixture file permissions are intentional.
+		t.Fatalf("WriteFile(blocker): %v", err)
+	}
+
+	_, err = Service{Reader: mock}.Export(context.Background(), ExportRequest{
+		PackageID: scanned.Package.ID,
+		OutputDir: blocker,
+		Branch:    "main",
+	})
+	if err == nil || !strings.Contains(err.Error(), "creating output dir") {
+		t.Fatalf("expected mkdir failure, got %v", err)
+	}
+}
+
+func TestWriteTextFile(t *testing.T) {
+	t.Parallel()
+
+	target := filepath.Join(t.TempDir(), "nested", "file.txt")
+	if err := writeTextFile(target, "alpha"); err != nil {
+		t.Fatalf("writeTextFile() error = %v", err)
+	}
+	data, err := os.ReadFile(target) //nolint:gosec // G304: test reads back a path it just wrote.
+	if err != nil {
+		t.Fatalf("ReadFile(%s): %v", target, err)
+	}
+	if string(data) != "alpha" {
+		t.Fatalf("file content = %q, want alpha", string(data))
+	}
+}
+
+func TestWriteTextFileFailsWhenParentCannotBeCreated(t *testing.T) {
+	t.Parallel()
+
+	blocker := filepath.Join(t.TempDir(), "blocker")
+	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil { //nolint:gosec // G306: test fixture file permissions are intentional.
+		t.Fatalf("WriteFile(blocker): %v", err)
+	}
+	err := writeTextFile(filepath.Join(blocker, "child.txt"), "alpha")
+	if err == nil || !strings.Contains(err.Error(), "creating parent dir") {
+		t.Fatalf("expected parent-dir error, got %v", err)
 	}
 }
 

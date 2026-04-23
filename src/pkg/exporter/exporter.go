@@ -139,7 +139,10 @@ func (s Service) Export(ctx context.Context, req ExportRequest) (*Summary, error
 	}
 
 	aggregate := computePackageSHA(aggregateParts)
-	if pkg.SHA256 != nil && *pkg.SHA256 != "" && aggregate != *pkg.SHA256 {
+	if pkg.SHA256 == nil || strings.TrimSpace(*pkg.SHA256) == "" {
+		return nil, fmt.Errorf("package %s is missing aggregate SHA256", pkg.ID)
+	}
+	if aggregate != *pkg.SHA256 {
 		return nil, fmt.Errorf("aggregate sha mismatch for %s: expected %s got %s", pkg.ID, *pkg.SHA256, aggregate)
 	}
 

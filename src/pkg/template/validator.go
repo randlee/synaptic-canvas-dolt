@@ -15,7 +15,8 @@ var knownRepoKeys = map[string]struct{}{
 }
 
 var knownEnvKeys = map[string]struct{}{
-	"synaptic_root": {}, "synaptic_channel": {}, "synaptic_agents": {},
+	"synaptic_root": {}, "sc_dolt_branch": {}, "synaptic_agents": {},
+	"synaptic_shared": {}, "synaptic_skills": {}, "synaptic_project_root": {},
 }
 
 // Finding represents one validator result.

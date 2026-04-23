@@ -77,3 +77,24 @@ func TestVerifyCorruptFileAndAggregate(t *testing.T) {
 		t.Fatalf("AggregateStatus = %q, want %q", summary.AggregateStatus, StatusCorrupt)
 	}
 }
+
+func TestVerifyFailsWhenPackageSHAIsMissing(t *testing.T) {
+	t.Parallel()
+
+	mock := dolt.NewMockClient()
+	mock.AddPackage(&models.Package{ID: "pkg-1", Version: "1.0.0"})
+	mock.AddFiles("pkg-1", []models.PackageFile{{
+		PackageID: "pkg-1",
+		DestPath:  "agents/a.md",
+		Content:   "alpha",
+		SHA256:    shaText("alpha"),
+	}})
+
+	_, err := Service{Reader: mock}.Verify(context.Background(), VerifyRequest{
+		PackageID: "pkg-1",
+		Branch:    "main",
+	})
+	if err == nil || err.Error() != "package pkg-1 is missing aggregate SHA256" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
