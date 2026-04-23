@@ -91,14 +91,6 @@ func resolveReadBranch(flagValue string) string {
 
 func openReadClient(doltDir, branch string) (*dolt.SQLClient, error) {
 	cfg := dolt.DefaultConfig()
-	client, err := dolt.Open(cfg)
-	if err != nil {
-		return nil, err
-	}
-	if err := client.UseBranch(context.Background(), branch); err != nil {
-		_ = client.Close()
-		return nil, err
-	}
 	_ = doltDir
-	return client, nil
+	return dolt.OpenForBranch(cfg, branch)
 }
