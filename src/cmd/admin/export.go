@@ -11,6 +11,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type exportReadClient interface {
+	exporter.Reader
+	Close() error
+}
+
 // NewExportCmd creates the sc admin export command.
 func NewExportCmd() *cobra.Command {
 	var branch string

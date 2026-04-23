@@ -97,6 +97,7 @@ func Open(cfg Config) (*SQLClient, error) {
 	return OpenForBranch(cfg, "")
 }
 
+// OpenForBranch creates a SQLClient configured to read from one Dolt branch.
 func OpenForBranch(cfg Config, branch string) (*SQLClient, error) {
 	db, err := sql.Open("mysql", cfg.DSN())
 	if err != nil {
