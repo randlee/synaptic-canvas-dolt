@@ -9,6 +9,7 @@ import (
 
 	"github.com/randlee/synaptic-canvas-dolt/pkg/dolt"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/importer"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
 	"gopkg.in/yaml.v3"
 )
 
@@ -86,6 +87,34 @@ func TestExportFailsOnAggregateMismatch(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "aggregate sha mismatch") {
 		t.Fatalf("expected aggregate mismatch, got %v", err)
+	}
+}
+
+func TestExportFailsOnPerFileMismatch(t *testing.T) {
+	t.Parallel()
+
+	scanned, _, err := importer.ScanForTest(filepath.Join("..", "importer", "testdata", "basic-package"))
+	if err != nil {
+		t.Fatalf("ScanForTest() error = %v", err)
+	}
+
+	tamperedFiles := append([]models.PackageFile(nil), scanned.Files...)
+	tamperedFiles[0].SHA256 = "deadbeef"
+
+	mock := dolt.NewMockClient()
+	mock.AddPackage(&scanned.Package)
+	mock.AddFiles(scanned.Package.ID, tamperedFiles)
+	mock.AddDeps(scanned.Package.ID, scanned.Deps)
+	mock.AddHooks(scanned.Package.ID, scanned.Hooks)
+	mock.AddQuestions(scanned.Package.ID, scanned.Questions)
+
+	_, err = Service{Reader: mock}.Export(context.Background(), ExportRequest{
+		PackageID: scanned.Package.ID,
+		OutputDir: t.TempDir(),
+		Branch:    "main",
+	})
+	if err == nil || !strings.Contains(err.Error(), "sha mismatch for "+tamperedFiles[0].DestPath) {
+		t.Fatalf("expected per-file mismatch, got %v", err)
 	}
 }
 

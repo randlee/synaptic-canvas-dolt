@@ -257,6 +257,55 @@ func TestRunExportUsesEffectiveBranch(t *testing.T) {
 	}
 }
 
+func TestRunExportCmdUsesEffectiveBranchForReader(t *testing.T) {
+	repoDir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(repoDir, ".dolt"), 0o755); err != nil { //nolint:gosec // G301: test temp directory permissions are intentional.
+		t.Fatalf("Mkdir(.dolt): %v", err)
+	}
+
+	cmd := NewExportCmd()
+	cmd.Root().PersistentFlags().String("dolt-dir", "", "")
+	cmd.Root().PersistentFlags().String("remote", "", "")
+	cmd.Root().PersistentFlags().String("branch", "", "")
+	cmd.Root().PersistentFlags().Bool("json", false, "")
+	cmd.Root().PersistentFlags().Bool("quiet", false, "")
+	cmd.Root().PersistentFlags().Bool("verbose", false, "")
+	if err := cmd.Root().PersistentFlags().Set("dolt-dir", repoDir); err != nil {
+		t.Fatalf("Set(dolt-dir): %v", err)
+	}
+	t.Setenv("SC_DOLT_BRANCH", "develop")
+
+	fileSHA := shaTextForAdmin("alpha")
+	pkgSHA := computePackageSHAForAdmin([]string{"agents/a.md:" + fileSHA})
+
+	originalOpener := readClientOpener
+	t.Cleanup(func() { readClientOpener = originalOpener })
+
+	var openedBranch string
+	readClientOpener = func(_ string, branch string) (readClient, error) {
+		openedBranch = branch
+		mock := dolt.NewMockClient()
+		mock.AddPackage(&models.Package{ID: "pkg", Name: "pkg", Version: "1.0.0", SHA256: &pkgSHA})
+		mock.AddFiles("pkg", []models.PackageFile{{
+			PackageID: "pkg",
+			DestPath:  "agents/a.md",
+			Content:   "alpha",
+			SHA256:    fileSHA,
+		}})
+		mock.AddDeps("pkg", nil)
+		mock.AddHooks("pkg", nil)
+		mock.AddQuestions("pkg", nil)
+		return mock, nil
+	}
+
+	if err := runExportCmd(cmd, []string{"pkg"}, t.TempDir()); err != nil {
+		t.Fatalf("runExportCmd() error = %v", err)
+	}
+	if openedBranch != "develop" {
+		t.Fatalf("openedBranch = %q, want develop", openedBranch)
+	}
+}
+
 func TestWriteExportResultHuman(t *testing.T) {
 	formatter := output.NewFormatter(false, false)
 	var out bytes.Buffer
@@ -300,6 +349,54 @@ func TestRunVerifyUsesEffectiveBranch(t *testing.T) {
 	}
 	if summary.Branch != "develop" {
 		t.Fatalf("summary.Branch = %q, want develop", summary.Branch)
+	}
+}
+
+func TestRunVerifyCmdUsesEffectiveBranchForReader(t *testing.T) {
+	repoDir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(repoDir, ".dolt"), 0o755); err != nil { //nolint:gosec // G301: test temp directory permissions are intentional.
+		t.Fatalf("Mkdir(.dolt): %v", err)
+	}
+
+	cmd := NewVerifyCmd()
+	cmd.Root().PersistentFlags().String("dolt-dir", "", "")
+	cmd.Root().PersistentFlags().String("remote", "", "")
+	cmd.Root().PersistentFlags().String("branch", "", "")
+	cmd.Root().PersistentFlags().Bool("json", false, "")
+	cmd.Root().PersistentFlags().Bool("quiet", false, "")
+	cmd.Root().PersistentFlags().Bool("verbose", false, "")
+	if err := cmd.Root().PersistentFlags().Set("dolt-dir", repoDir); err != nil {
+		t.Fatalf("Set(dolt-dir): %v", err)
+	}
+	t.Setenv("SC_DOLT_BRANCH", "develop")
+
+	fileSHA := shaTextForAdmin("alpha")
+	pkg := dolt.NewTestPackage("pkg", "pkg", "1.0.0", nil)
+	agg := computePackageSHAForAdmin([]string{"agents/a.md:" + fileSHA})
+	pkg.SHA256 = &agg
+
+	originalOpener := readClientOpener
+	t.Cleanup(func() { readClientOpener = originalOpener })
+
+	var openedBranch string
+	readClientOpener = func(_ string, branch string) (readClient, error) {
+		openedBranch = branch
+		mock := dolt.NewMockClient()
+		mock.AddPackage(pkg)
+		mock.AddFiles("pkg", []models.PackageFile{{
+			PackageID: "pkg",
+			DestPath:  "agents/a.md",
+			Content:   "alpha",
+			SHA256:    fileSHA,
+		}})
+		return mock, nil
+	}
+
+	if err := runVerifyCmd(cmd, []string{"pkg"}); err != nil {
+		t.Fatalf("runVerifyCmd() error = %v", err)
+	}
+	if openedBranch != "develop" {
+		t.Fatalf("openedBranch = %q, want develop", openedBranch)
 	}
 }
 

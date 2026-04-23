@@ -32,7 +32,11 @@ func runExportCmd(cmd *cobra.Command, args []string, outputDir string) error {
 	if outputDir == "" {
 		return fmt.Errorf("--output is required")
 	}
-	return withReadClient(cmd, "", func(cfg *config.Config, client readClient) error {
+	branch, err := resolveReadBranch(cmd)
+	if err != nil {
+		return err
+	}
+	return withReadClient(cmd, branch, func(cfg *config.Config, client readClient) error {
 		summary, err := runExport(context.Background(), cfg, args[0], outputDir, client)
 		if err != nil {
 			return err

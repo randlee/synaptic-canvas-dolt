@@ -25,7 +25,11 @@ func NewVerifyCmd() *cobra.Command {
 }
 
 func runVerifyCmd(cmd *cobra.Command, args []string) error {
-	return withReadClient(cmd, "", func(cfg *config.Config, client readClient) error {
+	branch, err := resolveReadBranch(cmd)
+	if err != nil {
+		return err
+	}
+	return withReadClient(cmd, branch, func(cfg *config.Config, client readClient) error {
 		summary, err := runVerify(context.Background(), cfg, args[0], client)
 		if err != nil {
 			return err
