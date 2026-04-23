@@ -1,0 +1,106 @@
+package dolt
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"os/exec"
+	"strings"
+
+	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
+)
+
+type cliQueryResult[T any] struct {
+	Rows []T `json:"rows"`
+}
+
+type cliPackageFile struct {
+	PackageID     string             `json:"package_id"`
+	DestPath      string             `json:"dest_path"`
+	Content       string             `json:"content"`
+	SHA256        string             `json:"sha256"`
+	FileType      models.FileType    `json:"file_type"`
+	ContentType   models.ContentType `json:"content_type"`
+	IsTemplateRaw int                `json:"is_template"`
+	Frontmatter   json.RawMessage    `json:"frontmatter,omitempty"`
+	FMName        *string            `json:"fm_name,omitempty"`
+	FMDescription *string            `json:"fm_description,omitempty"`
+	FMVersion     *string            `json:"fm_version,omitempty"`
+	FMModel       *string            `json:"fm_model,omitempty"`
+}
+
+// CLIReader reads package data through the local dolt CLI against a specific repo.
+type CLIReader struct {
+	DoltDir string
+	Branch  string
+}
+
+func NewCLIReader(doltDir, branch string) *CLIReader {
+	return &CLIReader{DoltDir: doltDir, Branch: branch}
+}
+
+func (r *CLIReader) GetPackage(ctx context.Context, id string) (*models.Package, error) {
+	rows, err := runCLIQuery[models.Package](ctx, r.DoltDir, r.Branch, fmt.Sprintf(
+		"SELECT id, name, version, description, agent_variant, author, license, tags, install_scope, variables, options, sha256, min_claude_version FROM packages WHERE id = %s",
+		sqlString(id),
+	))
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	return &rows[0], nil
+}
+
+func (r *CLIReader) GetPackageFiles(ctx context.Context, packageID string) ([]models.PackageFile, error) {
+	rows, err := runCLIQuery[cliPackageFile](ctx, r.DoltDir, r.Branch, fmt.Sprintf(
+		"SELECT package_id, dest_path, content, sha256, file_type, content_type, is_template, frontmatter, fm_name, fm_description, fm_version, fm_model FROM package_files WHERE package_id = %s ORDER BY dest_path",
+		sqlString(packageID),
+	))
+	if err != nil {
+		return nil, err
+	}
+	files := make([]models.PackageFile, 0, len(rows))
+	for _, row := range rows {
+		files = append(files, models.PackageFile{
+			PackageID:     row.PackageID,
+			DestPath:      row.DestPath,
+			Content:       row.Content,
+			SHA256:        row.SHA256,
+			FileType:      row.FileType,
+			ContentType:   row.ContentType,
+			IsTemplate:    row.IsTemplateRaw != 0,
+			Frontmatter:   row.Frontmatter,
+			FMName:        row.FMName,
+			FMDescription: row.FMDescription,
+			FMVersion:     row.FMVersion,
+			FMModel:       row.FMModel,
+		})
+	}
+	return files, nil
+}
+
+func (r *CLIReader) GetPackageQuestions(ctx context.Context, packageID string) ([]models.PackageQuestion, error) {
+	return runCLIQuery[models.PackageQuestion](ctx, r.DoltDir, r.Branch, fmt.Sprintf(
+		"SELECT package_id, question_id, prompt, type, default_val, choices, sort_order FROM package_questions WHERE package_id = %s ORDER BY sort_order, question_id",
+		sqlString(packageID),
+	))
+}
+
+func runCLIQuery[T any](ctx context.Context, doltDir, branch, query string) ([]T, error) {
+	cmd := exec.CommandContext(ctx, doltCommand, "--branch", branch, "sql", "-q", query, "-r", "json") //nolint:gosec // G204: dolt binary is hardcoded constant.
+	cmd.Dir = doltDir
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("running dolt query on %s: %w: %s", branch, err, strings.TrimSpace(stderr.String()))
+	}
+	var result cliQueryResult[T]
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		return nil, fmt.Errorf("decoding dolt query json: %w", err)
+	}
+	return result.Rows, nil
+}

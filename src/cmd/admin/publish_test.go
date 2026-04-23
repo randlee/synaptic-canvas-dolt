@@ -2,10 +2,10 @@ package admin
 
 import "testing"
 
-func TestNewDiffCmdRequiresBranches(t *testing.T) {
+func TestPublishRequiresBranches(t *testing.T) {
 	t.Parallel()
 
-	cmd := NewDiffCmd()
+	cmd := NewPublishCmd()
 	cmd.Root().PersistentFlags().String("dolt-dir", "", "")
 	cmd.Root().PersistentFlags().String("remote", "", "")
 	cmd.Root().PersistentFlags().String("branch", "", "")
@@ -14,7 +14,7 @@ func TestNewDiffCmdRequiresBranches(t *testing.T) {
 	cmd.Root().PersistentFlags().Bool("verbose", false, "")
 	cmd.SetArgs([]string{"pkg"})
 	err := cmd.Execute()
-	if err == nil || err.Error() != "--branch1 and --branch2 are required" {
+	if err == nil || err.Error() != "--from and --to are required" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
