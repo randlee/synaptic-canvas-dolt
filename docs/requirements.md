@@ -60,7 +60,7 @@ explicit and deterministic.
   branch when determining read behavior.
 - BR-005 Read operations shall not rely on session mutation such as `USE
   database/branch` for correctness.
-- BR-006 Read operations should use explicit branch-qualified reads so multiple
+- BR-006 Read operations shall use explicit branch-qualified reads so multiple
   readers can query different branches safely in parallel.
 - BR-007 Admin or write-path operations may still target explicit branches, but
   those behaviors shall be documented independently in the relevant command
@@ -96,7 +96,22 @@ The CLI is expected to be used by both humans and AI wrappers.
 - AG-005 Agent and script behavior required by a sprint shall be documented in
   the sprint plan and verified by tests or explicit QA steps.
 
-## 6. Verification Traceability
+## 6. Install Targets And Product State
+
+- FS-001 For MVP, package artifacts for Claude Code shall be materialized into
+  `.claude/` for local installs or `~/.claude/` for global installs.
+- FS-002 Synaptic Canvas product-managed state shall live under `.synaptic/`
+  locally or `~/.synaptic/` for machine-level state as applicable.
+- FS-003 `.synaptic/` is reserved for lockfiles, generated configuration,
+  metadata, caches, logs, temporary files, and other Synaptic-managed state; it
+  is not the primary runtime artifact root for Claude-targeted packages.
+- FS-004 Future runtime targets such as `.codex/` and `.agents/` may be added
+  later, but they are not part of the MVP package-install target surface.
+- FS-005 Package install-scope enforcement shall be explicit. If a package is
+  marked `local-only`, `sc install --global` shall fail with a clear error and
+  shall not perform a partial install.
+
+## 7. Verification Traceability
 
 - VER-001 Requirements shall be testable or otherwise verifiable.
 - VER-002 Sprint acceptance criteria shall map to one or more concrete

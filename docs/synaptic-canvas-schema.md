@@ -20,7 +20,7 @@ Channels are **branches, not data**. The `develop`, `beta`, and `main` branches 
 -- No WHERE channel = 'main' — the branch IS the channel
 ```
 
-This eliminates data duplication and makes promotion a targeted SQL operation (DELETE + INSERT ... SELECT for the specific package) followed by a Dolt commit — not a full branch merge.
+This eliminates data duplication and makes promotion a pure `dolt_merge`, not a data update.
 
 ### 2. Text + JSON storage in `package_files`
 
@@ -89,6 +89,7 @@ CREATE TABLE packages (
 - `tags` is comma-separated for simplicity; a join table is over-engineering at this scale
 - `version` is semver (e.g., `1.3.0`). The Dolt commit hash provides the immutable snapshot reference; semver provides the human-readable version
 - `install_scope`: `any` (default, can install globally or locally) or `local-only` (repo `.claude` only)
+- Enforcement rule: a `local-only` package must be rejected if the user requests a global install
 - `variables`: JSON object for Tier 1 token expansion, e.g. `{"REPO_NAME": {"auto": "git-repo-basename", "description": "..."}}`
 - `options`: JSON object for install-time boolean/string options, e.g. `{"no-tracking": {"type": "boolean", "default": false}}`
 
@@ -168,7 +169,7 @@ WHERE file_type = 'agent'
   AND JSON_EXTRACT(frontmatter, '$.hooks') IS NOT NULL;
 ```
 
-**`is_template`:** When `TRUE`, the `content` column contains Jinja2 template source. The installer renders it at install time using repo profile + user answers, then stores the rendered output. The lockfile records the hash of the rendered output, not the template source.
+**`is_template`:** When `TRUE`, the `content` column contains Jinja2 template source. The installer renders it at install time using repo profile + user answers, then stores the rendered output. The lockfile records the hash of the rendered output, not the template source. On upgrade, the installer re-fetches the template source from Dolt and re-renders it with the current repo profile and stored answers.
 
 ### `package_deps`
 
@@ -199,7 +200,7 @@ CREATE TABLE package_deps (
 
 ### `package_variants`
 
-Maps a logical package name to agent-profile-specific implementations. This enables `synaptic install claude-history` to automatically resolve to the correct variant based on `SYNAPTIC_AGENTS`.
+Maps a logical package name to agent-profile-specific implementations. This enables `sc install claude-history` to automatically resolve to the correct variant based on `SYNAPTIC_AGENTS`.
 
 ```sql
 CREATE TABLE package_variants (
@@ -219,12 +220,18 @@ CREATE TABLE package_variants (
 | claude-history | codex | claude-history-codex |
 | claude-history | codex+claude | claude-history-dual |
 
-When a user runs `synaptic install claude-history`, the resolver:
+When a user runs `sc install claude-history`, the resolver:
 1. Reads `SYNAPTIC_AGENTS` (e.g., `claude`)
 2. Looks up `package_variants WHERE logical_id = 'claude-history' AND agent_profile = 'claude'`
 3. Resolves to `claude-history-claude` as the concrete package to install
 
 If no variant mapping exists, the `logical_id` is treated as the concrete `package_id` directly.
+
+`logical_id` is an abstract identifier rather than a foreign key to
+`packages.id`. That keeps variant lookup flexible, but it means orphaned
+variant mappings are possible if authors remove or rename logical package
+families without updating `package_variants`. Import and validation tooling
+should check for that condition.
 
 ### `package_hooks`
 
@@ -507,7 +514,7 @@ The `content` column always contains the exact original file — the frontmatter
 | `beta` | Validated, needs broader testing | Promoted from develop | Early adopters |
 | `main` | Proven, stable | Promoted from beta | All users, marketplace export |
 
-**Promotion:** `sc admin publish <package> --from develop --to beta` (and `--from beta --to main`). Copies the specific package rows via targeted SQL and creates a Dolt commit — full audit trail without merging unrelated changes.
+**Promotion:** `dolt_merge('develop')` on the beta branch; `dolt_merge('beta')` on main. Each merge is a Dolt commit with author and message — full audit trail.
 
 **Rollback:** `dolt_reset('--hard', 'HEAD~1')` on any branch reverts the last promotion.
 

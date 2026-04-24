@@ -21,6 +21,8 @@ The system has three main layers:
    - source of truth for packages and metadata
    - branches represent release channels
 
+The CLI executable name is `sc`. `Synaptic Canvas` remains the product name,
+but `synaptic` is not a separate supported command surface.
 ## 2. Dolt As The Source Of Truth
 
 Dolt remains the package system database because it provides:
@@ -96,7 +98,23 @@ Architecture guidance:
 This keeps machine access explicit and avoids ambiguity caused by environment
 state.
 
-## 6. Agent And Script Architecture
+## 6. Install Targets And State Layout
+
+Synaptic Canvas separates package artifact targets from product-managed state.
+
+Architecture rules:
+
+- `.claude/` is the MVP runtime artifact root for installed Claude Code
+  packages
+- `.synaptic/` stores lockfiles, generated config, metadata, cache, logs, temp
+  directories, hook registry state, and similar product-owned files
+- future target roots such as `.codex/` and `.agents/` are compatible with this
+  model but remain post-MVP
+
+This keeps runtime-facing files aligned with the host tool while allowing
+Synaptic Canvas to own its own operational state cleanly.
+
+## 7. Agent And Script Architecture
 
 Repository-local agent definitions and helper scripts are part of the product
 surface for Claude-facing workflows.
@@ -109,7 +127,7 @@ Architecture rules:
 - helper scripts must be unit-tested
 - sprint plans must define how agent/script behavior is verified
 
-## 7. Detailed Design Documents
+## 8. Detailed Design Documents
 
 This architecture overview is intentionally high level. The detailed subsystem
 documents remain:

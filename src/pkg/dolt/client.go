@@ -56,6 +56,7 @@ type Client interface {
 type SQLClient struct {
 	db       *sql.DB
 	database string
+	branch   string
 }
 
 // Config holds connection parameters for the Dolt SQL server.
@@ -86,13 +87,18 @@ func (c Config) DSN() string {
 
 // NewSQLClient creates a new SQLClient connected to the Dolt SQL server.
 // The caller must call Close() when done.
-func NewSQLClient(db *sql.DB, database string) *SQLClient {
-	return &SQLClient{db: db, database: database}
+func NewSQLClient(db *sql.DB, database, branch string) *SQLClient {
+	return &SQLClient{db: db, database: database, branch: branch}
 }
 
 // Open creates a new SQLClient by opening a database connection using the
 // provided Config. The caller must call Close() when done.
 func Open(cfg Config) (*SQLClient, error) {
+	return OpenForBranch(cfg, "")
+}
+
+// OpenForBranch creates a SQLClient configured to read from one Dolt branch.
+func OpenForBranch(cfg Config, branch string) (*SQLClient, error) {
 	db, err := sql.Open("mysql", cfg.DSN())
 	if err != nil {
 		return nil, fmt.Errorf("opening dolt connection: %w", err)
@@ -101,7 +107,7 @@ func Open(cfg Config) (*SQLClient, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("pinging dolt server: %w", err)
 	}
-	return NewSQLClient(db, cfg.Database), nil
+	return NewSQLClient(db, cfg.Database, branch), nil
 }
 
 // Close releases the database connection.
@@ -112,28 +118,10 @@ func (c *SQLClient) Close() error {
 	return c.db.Close()
 }
 
-// switchBranch executes a USE statement to switch to the specified Dolt branch.
-// If branch is empty, this is a no-op.
-func (c *SQLClient) switchBranch(ctx context.Context, branch string) error {
-	stmt := UseBranchQuery(c.database, branch)
-	if stmt == "" {
-		return nil
-	}
-	slog.Debug("switching dolt branch", "branch", branch)
-	if _, err := c.db.ExecContext(ctx, stmt); err != nil {
-		return fmt.Errorf("switching to branch %q: %w", branch, err)
-	}
-	return nil
-}
-
 // ListPackages returns all packages, optionally filtered by branch.
 func (c *SQLClient) ListPackages(ctx context.Context, opts ListOptions) ([]models.Package, error) {
-	if err := c.switchBranch(ctx, opts.Branch); err != nil {
-		return nil, err
-	}
-
 	slog.Debug("listing packages", "branch", opts.Branch)
-	rows, err := c.db.QueryContext(ctx, ListPackagesQuery())
+	rows, err := c.db.QueryContext(ctx, ListPackagesQuery(c.database, opts.Branch))
 	if err != nil {
 		return nil, fmt.Errorf("listing packages: %w", err)
 	}
@@ -158,7 +146,7 @@ func (c *SQLClient) ListPackages(ctx context.Context, opts ListOptions) ([]model
 func (c *SQLClient) GetPackage(ctx context.Context, id string) (*models.Package, error) {
 	slog.Debug("getting package", "id", id)
 	var p models.Package
-	err := c.db.QueryRowContext(ctx, GetPackageQuery(), id).Scan(
+	err := c.db.QueryRowContext(ctx, GetPackageQuery(c.database, c.branch), id).Scan(
 		&p.ID, &p.Name, &p.Version, &p.Description, &p.AgentVariant,
 		&p.Author, &p.License, &p.Tags, &p.InstallScope,
 		&p.Variables, &p.Options, &p.SHA256, &p.MinClaudeVer,
@@ -176,7 +164,7 @@ func (c *SQLClient) GetPackage(ctx context.Context, id string) (*models.Package,
 // GetPackageFiles retrieves all files belonging to a package.
 func (c *SQLClient) GetPackageFiles(ctx context.Context, packageID string) ([]models.PackageFile, error) {
 	slog.Debug("getting package files", "package_id", packageID)
-	rows, err := c.db.QueryContext(ctx, GetPackageFilesQuery(), packageID)
+	rows, err := c.db.QueryContext(ctx, GetPackageFilesQuery(c.database, c.branch), packageID)
 	if err != nil {
 		return nil, fmt.Errorf("getting files for package %q: %w", packageID, err)
 	}
@@ -204,7 +192,7 @@ func (c *SQLClient) GetPackageFiles(ctx context.Context, packageID string) ([]mo
 // GetPackageDeps retrieves all dependencies for a package.
 func (c *SQLClient) GetPackageDeps(ctx context.Context, packageID string) ([]models.PackageDep, error) {
 	slog.Debug("getting package deps", "package_id", packageID)
-	rows, err := c.db.QueryContext(ctx, GetPackageDepsQuery(), packageID)
+	rows, err := c.db.QueryContext(ctx, GetPackageDepsQuery(c.database, c.branch), packageID)
 	if err != nil {
 		return nil, fmt.Errorf("getting deps for package %q: %w", packageID, err)
 	}
@@ -231,7 +219,7 @@ func (c *SQLClient) GetPackageDeps(ctx context.Context, packageID string) ([]mod
 // GetPackageHooks retrieves all hooks for a package.
 func (c *SQLClient) GetPackageHooks(ctx context.Context, packageID string) ([]models.PackageHook, error) {
 	slog.Debug("getting package hooks", "package_id", packageID)
-	rows, err := c.db.QueryContext(ctx, GetPackageHooksQuery(), packageID)
+	rows, err := c.db.QueryContext(ctx, GetPackageHooksQuery(c.database, c.branch), packageID)
 	if err != nil {
 		return nil, fmt.Errorf("getting hooks for package %q: %w", packageID, err)
 	}
@@ -258,7 +246,7 @@ func (c *SQLClient) GetPackageHooks(ctx context.Context, packageID string) ([]mo
 // GetPackageQuestions retrieves all questions for a package.
 func (c *SQLClient) GetPackageQuestions(ctx context.Context, packageID string) ([]models.PackageQuestion, error) {
 	slog.Debug("getting package questions", "package_id", packageID)
-	rows, err := c.db.QueryContext(ctx, GetPackageQuestionsQuery(), packageID)
+	rows, err := c.db.QueryContext(ctx, GetPackageQuestionsQuery(c.database, c.branch), packageID)
 	if err != nil {
 		return nil, fmt.Errorf("getting questions for package %q: %w", packageID, err)
 	}
@@ -287,7 +275,7 @@ func (c *SQLClient) GetPackageQuestions(ctx context.Context, packageID string) (
 func (c *SQLClient) ResolveVariant(ctx context.Context, logicalID, agentProfile string) (string, error) {
 	slog.Debug("resolving variant", "logical_id", logicalID, "agent_profile", agentProfile)
 	var variantID string
-	err := c.db.QueryRowContext(ctx, ResolveVariantQuery(), logicalID, agentProfile).Scan(&variantID)
+	err := c.db.QueryRowContext(ctx, ResolveVariantQuery(c.database, c.branch), logicalID, agentProfile).Scan(&variantID)
 	if errors.Is(err, sql.ErrNoRows) {
 		slog.Debug("variant not found", "logical_id", logicalID, "agent_profile", agentProfile)
 		return "", nil

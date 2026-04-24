@@ -70,8 +70,6 @@ sc install <package-id>
 
 ## Design Documents
 
-- [Requirements](docs/requirements.md) — Cross-cutting product requirements
-- [Architecture](docs/architecture.md) — Top-level system architecture
 - [CLI Design](docs/synaptic-canvas-cli.md) — Command surface and architecture
 - [Schema Spec](docs/synaptic-canvas-schema.md) — Dolt table definitions
 - [Export Pipeline](docs/synaptic-canvas-export-pipeline.md) — Database to filesystem reconstruction

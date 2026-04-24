@@ -1,8 +1,8 @@
-# Synaptic Canvas — Dolt-Backed Skills Platform
+# Synaptic Canvas — Dolt-Backed Package Platform
 
 ## Overview
 
-Synaptic Canvas uses Dolt as the **centralized authoring and management backbone** for skill storage, dependency management, and distribution. Dolt is server-side infrastructure — users never run Dolt locally. The system provides multiple distribution paths: direct pull for power users, Claude Code marketplace export, and lightweight local snapshots.
+Synaptic Canvas uses Dolt as the **centralized authoring and management backbone** for package storage, dependency management, and distribution. Dolt is server-side infrastructure — users never run Dolt locally. The system provides multiple distribution paths: direct pull for power users, Claude Code marketplace export, and lightweight local snapshots.
 
 Release promotion remains useful for staged rollout across `develop`, `beta`,
 and `main`, but it is not the full verification strategy. The long-term
@@ -36,7 +36,7 @@ agents.
 ```
 
 **Dolt is the server, not a client-side dependency.** Users interact via:
-- **`synaptic` CLI** — thin client that speaks to Dolt remote or REST API
+- **`sc` CLI** — thin client that speaks to Dolt remote or REST API
 - **Claude Code marketplace** — read-only projection exported from a Dolt branch
 - **Filtered snapshots** — lightweight local format for offline/CI use
 
@@ -94,22 +94,33 @@ unit tests, and future evals remain separate verification mechanisms.
 
 ---
 
-## Release Channels
+## Branch Selection
 
-A single environment variable can control which Dolt branch the resolver
-targets:
+Read-path commands resolve the effective Dolt branch in this order:
+
+1. `--branch`
+2. `SC_DOLT_BRANCH`
+3. `main`
+
+The CLI ignores the current checked-out Dolt branch or session branch state.
+For MVP, branch names map directly to Dolt branch names. There is no separate
+channel-to-branch translation layer.
+
+An environment variable can set the default branch for a caller or test
+harness:
 
 ```bash
 SC_DOLT_BRANCH=develop   # develop | beta | main
 ```
 
-| Channel | Branch | Purpose |
-|---------|--------|---------|
+| Release Channel | Branch | Purpose |
+|-----------------|--------|---------|
 | `main` | `main` | Stable, proven skills |
 | `beta` | `beta` | Validated but newly promoted |
 | `develop` | `develop` | Active development and backlog |
 
-Skills are promoted by merging branches on the Dolt server. No separate release tooling is required.
+Branches still provide the release-channel model for staged rollout, but the
+CLI reads from an explicit effective branch rather than mutable session state.
 
 ---
 
@@ -149,7 +160,7 @@ DOLT_DB=synaptic-canvas
 
 ### Core Queries (CLI → Server)
 
-**List available packages** (query the appropriate branch for the channel):
+**List available packages** (query the effective branch):
 ```sql
 SELECT id, name, version, description, agent_variant, tags
 FROM packages
@@ -167,7 +178,7 @@ WHERE p.id = ?;
 
 **Fetch files for a package:**
 ```sql
-SELECT dest_path, blob, sha256, file_type, is_template
+SELECT dest_path, content, sha256, file_type, is_template
 FROM package_files
 WHERE package_id = ?;
 ```
@@ -211,12 +222,12 @@ SELECT * FROM dolt_log ORDER BY date DESC LIMIT 20;
 
 ### 1. Direct Pull (CLI)
 
-The `synaptic` CLI queries Dolt directly, resolves dependencies, and materializes files locally. This is the primary workflow for skill authors and power users.
+The `sc` CLI queries Dolt directly, resolves dependencies, and materializes files locally. This is the primary workflow for skill authors and power users.
 
 ```bash
-synaptic install claude-history    # resolve, fetch, materialize
-synaptic upgrade                   # check all installed for updates
-synaptic list --available          # browse channel catalog
+sc install claude-history    # resolve, fetch, materialize
+sc upgrade                   # check all installed for updates
+sc list --available          # browse the selected branch catalog
 ```
 
 ### 2. Claude Code Marketplace Export
@@ -241,15 +252,27 @@ For offline development or CI environments, a filtered branch can be exported as
 - **SQLite export** — queryable offline, useful for validation testing
 
 ```bash
-synaptic snapshot --branch main --format files --output .synaptic/cache/
-synaptic snapshot --branch main --format sqlite --output skills.db
+sc admin export claude-history --branch main --output ./out/claude-history
 ```
 
-The SQLite export is particularly useful as a **validation artifact**: compare SQLite snapshot against Dolt to confirm export correctness.
+Branch-wide snapshot export remains part of the architecture direction for
+offline validation, but the MVP command surface standardizes first on package
+export. SQLite or other branch-level snapshot formats can be layered on top of
+the same export pipeline later.
 
 ---
 
 ## Dependency Tiers
+
+These tiers describe install behavior. They map onto schema `dep_type` values
+as follows:
+
+| Tier | Meaning | Schema mapping |
+|------|---------|----------------|
+| Tier 1 | Hard tool requirements | `dep_type = tool` |
+| Tier 2 | Agent capability selection | variant selection, not `package_deps` |
+| Tier 3 | External CLIs to install | `dep_type = cli` |
+| Tier 4 | Package dependencies | `dep_type = skill` |
 
 ### Tier 1 — Hard Tool Requirements
 
@@ -261,7 +284,9 @@ python3>=3.11 required — found 3.9.2. Install a newer Python before proceeding
 
 ### Tier 2 — Agent Capabilities
 
-Soft requirements that drive variant selection rather than blocking install. The installer detects the agent environment and selects the best matching variant automatically.
+Soft requirements that drive variant selection rather than blocking install. The
+installer detects the agent environment and selects the best matching variant
+automatically.
 
 ```bash
 SYNAPTIC_AGENTS=codex+claude   # claude | codex | codex+claude
@@ -276,11 +301,23 @@ claude-history/
   variant: codex+claude    # richer coordination between both agents
 ```
 
-The installed variant is recorded in the lockfile. If `SYNAPTIC_AGENTS` changes, `skill upgrade` can swap variants automatically.
+The installed variant is recorded in the lockfile. If `SYNAPTIC_AGENTS`
+changes, `sc upgrade` can swap variants automatically.
+If no matching variant exists for the detected agent profile, installation fails
+with a clear error rather than silently falling back to a different variant.
 
-### Tier 3 — Skill Dependencies
+### Tier 3 — External CLI Dependencies
 
-A package can declare `dep_type = skill` to pull in another skill as a prerequisite. Shared utility packages (type `script`, no slash command) materialize to `.synaptic/shared/` and are referenced by all dependents via absolute paths.
+External command-line tools declared as `dep_type = cli` are install-time
+dependencies rather than host environment prerequisites. They are shown to the
+user during install and may be installed through an explicit `install_cmd`.
+
+### Tier 4 — Package Dependencies
+
+A package can declare `dep_type = skill` to pull in another package as a
+prerequisite. Shared utility packages (type `script`, no slash command)
+materialize under `.claude/shared/` in MVP and are referenced by dependents via
+paths derived from `.synaptic/env.toml`.
 
 ---
 
@@ -290,61 +327,40 @@ All installation is **project-scoped by default**. Nothing is installed globally
 
 ```
 {repo-root}/
+  .claude/
+    skills/
+      claude-history/
+        main.md
+    agents/
+      my-agent.md
+    commands/
+      review.md
+    shared/
+      common-utils/
+        helpers.sh
   .synaptic/
     manifest.lock          # committed to git — source of truth
     env.toml               # generated at install time — gitignored
-    skills/
-      claude-history/      # materialized skill files
-        main.md
-        hooks/
-          pre-bash.sh
-    shared/                # shared script dependencies
-      common-utils/
-        helpers.sh
+    repo-profile.toml      # generated repo profile — gitignored
     hooks/
       registry.toml        # hook dispatcher registry
-      dispatch              # dispatcher binary or script
+    logs/
+    cache/
+    tmp/
 ```
 
-`manifest.lock` is committed. All other contents of `.synaptic/` are gitignored and regenerated by the installer from the lockfile on a new machine.
+`.claude/` contains installed runtime-facing package artifacts. `.synaptic/`
+contains Synaptic Canvas state, metadata, and temporary files. `manifest.lock`
+is committed. Other `.synaptic/` contents are gitignored and regenerated.
 
 ---
 
 ## The Lockfile (`manifest.lock`)
 
-The lockfile records the precise resolved state of every installed package. It is a reproducibility artifact — actual files are materialized locally from Dolt blobs.
-
-```toml
-[metadata]
-channel = "develop"
-dolt_remote = "dolthub/randlee/synaptic-canvas"
-resolved_at = "2026-02-21T14:32:00Z"
-
-[[skills]]
-id = "claude-history"
-logical_id = "claude-history"
-variant = "claude"
-version = "2.1.0"                    # Semver from packages.version
-dolt_commit = "a3f9c21"             # Dolt commit hash for reproducibility
-installed_at = "2026-02-21T14:32:00Z"
-install_scope = "project"
-
-  [skills.files]
-  "skills/claude-history/main.md" = "sha256:abc123..."
-  "skills/claude-history/hooks/pre-bash.sh" = "sha256:def456..."
-
-  [skills.requirements]
-  tools = ["python3>=3.11"]
-  agents = ["claude"]
-  cli_installed = ["agent-teams-mail"]
-  acknowledged_at = "2026-02-21T14:31:45Z"
-
-[[skills]]
-id = "common-utils"
-dep_of = "claude-history"
-install_scope = "shared"
-# ...
-```
+The lockfile records the precise resolved state of every installed package. It
+is a reproducibility artifact — actual files are materialized locally from Dolt
+blobs. The authoritative lockfile example and field-level behavior are defined
+in [Install System](./synaptic-canvas-install-system.md#phase-5-lockfile-recording).
 
 On startup, the installer checksums materialized files against the lockfile. Drift (missing, modified, or version-mismatched files) triggers a re-install or a warning depending on `SYNAPTIC_STARTUP_MODE`.
 
@@ -357,8 +373,8 @@ Generated at install time from the resolved repo root. Gitignored. Regenerated o
 ```toml
 # .synaptic/env.toml — machine-local, do not commit
 SYNAPTIC_ROOT = "/Users/rand/projects/myproject/.synaptic"
-SYNAPTIC_SHARED = "/Users/rand/projects/myproject/.synaptic/shared"
-SYNAPTIC_SKILLS = "/Users/rand/projects/myproject/.synaptic/skills"
+SYNAPTIC_SHARED = "/Users/rand/projects/myproject/.claude/shared"
+SYNAPTIC_SKILLS = "/Users/rand/projects/myproject/.claude/skills"
 SYNAPTIC_PROJECT_ROOT = "/Users/rand/projects/myproject"
 SC_DOLT_BRANCH = "develop"
 SYNAPTIC_AGENTS = "claude"
@@ -370,67 +386,62 @@ All skill scripts source this file. Absolute paths eliminate the fragility of re
 
 ## CLI Commands
 
-The `synaptic` CLI is a standalone binary (no skills dependency). It is the bootstrap entry point.
+The `sc` CLI is a standalone binary (no skills dependency). It is the bootstrap
+entry point.
 
 ### Package Management
 
 ```bash
-synaptic install <package>         # resolve, fetch, materialize
-synaptic remove <package>          # remove files, update lockfile
-synaptic upgrade [package]         # upgrade one or all packages
-synaptic list                      # installed packages
-synaptic list --available          # all packages on the effective branch
-synaptic list --deps <package>     # dependency tree for a package
-synaptic dry-run install <package> # show what files land where, no action
+sc install <package>               # resolve, fetch, materialize
+sc init                            # initialize repo-local .synaptic state
+sc uninstall <package>             # remove files, update lockfile
+sc upgrade [package]               # upgrade one or all packages
+sc list                            # browse packages on the effective branch
+sc list --available                # all packages on the effective branch
+sc validate [<package>] [--all]    # verify installed files and hashes
+sc status                          # show installed packages and validation state
+sc install --dry-run <package>     # show what files land where, no action
 ```
 
 ### Inspection
 
 ```bash
-synaptic info <package>            # metadata, version, description
-synaptic deps <package>            # full dependency graph
-synaptic deps --reverse <package>  # what depends on this package
-synaptic diff <package>            # changes between installed and latest
+sc info <package>                  # metadata, version, description
+sc admin diff <package> --branch1 develop --branch2 beta
 ```
 
-### Branch & Snapshot
+### Branch And Export
 
 ```bash
-synaptic list --branch beta        # read from a specific branch
-SC_DOLT_BRANCH=beta synaptic list  # set default branch for a caller/session
-synaptic snapshot --format files   # export to flat files
-synaptic snapshot --format sqlite  # export to SQLite
-```
-
-### Marketplace Export
-
-```bash
-synaptic export marketplace        # export main branch → Claude Code format
+sc list --branch beta              # read from a specific branch
+SC_DOLT_BRANCH=beta sc list        # set default branch for a caller/session
+sc admin export claude-history --branch main --output ./out/claude-history
 ```
 
 ---
 
-## Install Flow: `synaptic install claude-history`
+## Install Flow: `sc install claude-history`
 
 ```
-1. Query Dolt for 'claude-history' on SC_DOLT_BRANCH
-2. Detect SYNAPTIC_AGENTS → select variant (e.g., claude)
-3. Walk dependency graph:
+1. Resolve the effective branch using `--branch`, then `SC_DOLT_BRANCH`, then `main`
+2. Query Dolt for `claude-history` on that branch
+3. Detect `SYNAPTIC_AGENTS` → select variant (e.g., claude)
+4. Walk dependency graph:
      claude-history → common-utils (shared script)
                     → python3>=3.11 (tool)
                     → agent-teams-mail (cli, cargo install)
-4. Present acknowledgement summary:
+5. Present acknowledgement summary:
      Skills to install:  claude-history (claude variant), common-utils
      Tools required:     python3>=3.11 ✓ (found 3.11.4)
      CLIs to install:    agent-teams-mail  via: cargo install agent-teams-mail
      Hooks to register:  PreToolUse → pre-bash.sh
    [Proceed? y/N]
-5. Run CLI installs in declared order
-6. Materialize files from Dolt blobs to dest_path, verify sha256
-7. Register hooks in .synaptic/hooks/registry.toml
-8. Regenerate .synaptic/env.toml
-9. Write lockfile entries for all resolved packages
-10. Confirm: skill + CLI dropped and ready
+6. Run CLI installs in declared order
+7. Materialize files from Dolt blobs to `.claude/...`, verify sha256
+8. Register hooks in `.synaptic/hooks/registry.toml`
+9. Regenerate `.synaptic/env.toml`
+10. Write lockfile entries for all resolved packages
+11. Confirm: skill + CLI ready
 ```
 
 User acknowledgement is recorded once per install with a timestamp. Re-acknowledgement is only required if requirements change on upgrade.
@@ -451,7 +462,8 @@ SYNAPTIC_STARTUP_MODE=check   # check | auto | off
 | `check` | Compare lockfile against Dolt HEAD, report drift, prompt to upgrade |
 | `auto` | Pull and re-materialize automatically (recommended for `main`/`beta` only) |
 
-The `develop` channel should default to `check` to avoid silent behavior changes mid-session. `main` and `beta` are safer candidates for `auto`.
+The `develop` branch should default to `check` to avoid silent behavior changes
+mid-session. `main` and `beta` are safer candidates for `auto`.
 
 ---
 
@@ -459,19 +471,23 @@ The `develop` channel should default to `check` to avoid silent behavior changes
 
 The `/skills` slash command provides an interactive interface. Two rendering modes:
 
-**Fallback — Rich markdown output** when no TUI binary is present. Renders a status table with channel, version hash, variant, and requirement health for each installed skill.
+**Fallback — Rich markdown output** when no TUI binary is present. Renders a
+status table with branch, version hash, variant, and requirement health for
+each installed skill.
 
 **Primary — External TUI via `textual`** (Python). Features:
 
 - Arrow-key navigation across installed skills
 - Install / remove / upgrade actions per skill
-- Channel and variant display per entry
+- Branch and variant display per entry
 - Requirement status badges (tool present, CLI installed, agent match)
 - Dependency tree visualization
 - Dry-run preview before install/upgrade
 - Inline Dolt commit hash and last-updated timestamp
 
-The TUI itself is a Synaptic Canvas package — it installs via the same mechanism as any other skill. The CLI (`synaptic`) provides the bootstrap path that doesn't depend on any installed skills.
+The TUI itself is a Synaptic Canvas package — it installs via the same
+mechanism as any other skill. The CLI (`sc`) provides the bootstrap path that
+doesn't depend on any installed skills.
 
 ---
 

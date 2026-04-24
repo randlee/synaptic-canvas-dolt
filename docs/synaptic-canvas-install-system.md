@@ -16,7 +16,7 @@ All three happen once, at install time, with user approval.
 ## Install Flow
 
 ```
-synaptic install
+sc install
     │
     ├─ 1. Repo Detection (automatic)
     │     Scan repo for language, framework, structure
@@ -115,7 +115,7 @@ Skills can declare **install-time questions** in their package definition. Quest
 
 ```sql
 -- package_questions table
-| package_id | question_id | prompt                                    | type     | default        | choices                          |
+| package_id | question_id | prompt                                    | type     | default_val    | choices                          |
 |------------|-------------|-------------------------------------------|----------|----------------|----------------------------------|
 | commit-msg | lang        | What languages does this repo use?        | multi    | (auto-detect)  | python,typescript,go,rust,java   |
 | commit-msg | style       | Commit message style?                     | choice   | conventional   | conventional,freeform,gitmoji    |
@@ -213,17 +213,33 @@ context = {
     },
     "env": {
         "synaptic_root": "/Users/rand/projects/my-api/.synaptic",
-        "synaptic_channel": "main",
+        "sc_dolt_branch": "main",
         "synaptic_agents": "claude",
     },
 }
 ```
 
+The `env.*` template namespace uses normalized lowercase keys derived from the
+generated environment model. The backing `env.toml` file may use uppercase
+environment-variable names, but templates reference the normalized lowercase
+form such as `env.synaptic_root` and `env.sc_dolt_branch`.
+
+| `env.toml` key | Template key |
+|----------------|--------------|
+| `SYNAPTIC_ROOT` | `env.synaptic_root` |
+| `SYNAPTIC_SHARED` | `env.synaptic_shared` |
+| `SYNAPTIC_SKILLS` | `env.synaptic_skills` |
+| `SYNAPTIC_PROJECT_ROOT` | `env.synaptic_project_root` |
+| `SC_DOLT_BRANCH` | `env.sc_dolt_branch` |
+| `SYNAPTIC_AGENTS` | `env.synaptic_agents` |
+
 ### Rendering Rules
 
 1. Templates are rendered **before** file checksums are computed — the lockfile records the hash of the rendered output, not the template.
 2. Rendered output is shown to the user during the approval phase. They see what the skill will actually say, not the template source.
-3. Re-rendering happens on `synaptic upgrade` if answers or repo profile have changed. Unchanged templates produce identical output (deterministic rendering).
+3. Re-rendering happens on `sc upgrade` if answers or repo profile have changed. Unchanged templates produce identical output (deterministic rendering).
+   On upgrade, the installer re-fetches template source from Dolt and re-renders
+   it using the current repo profile and stored answers.
 4. Non-template files (`.md`, `.sh` without `.j2`) are materialized as-is.
 
 ---
@@ -235,21 +251,21 @@ Before any files are written, the installer presents a complete plan.
 ### Standard Install
 
 ```
-synaptic install commit-msg claude-history
+sc install commit-msg claude-history
 
 ═══ Install Plan ═══
 
 Skills to install:
   commit-msg v1.3.0 (claude variant)
-    → .synaptic/skills/commit-msg/main.md         (rendered from template)
-    → .synaptic/skills/commit-msg/hooks/pre-commit.sh
+    → .claude/skills/commit-msg/main.md           (rendered from template)
+    → .claude/skills/commit-msg/hooks/pre-commit.sh
 
   claude-history v2.1.0 (claude variant)
-    → .synaptic/skills/claude-history/main.md
-    → .synaptic/skills/claude-history/hooks/pre-bash.sh
+    → .claude/skills/claude-history/main.md
+    → .claude/skills/claude-history/hooks/pre-bash.sh
 
   common-utils v1.0.0 (dependency of claude-history)
-    → .synaptic/shared/common-utils/helpers.sh
+    → .claude/shared/common-utils/helpers.sh
 
 External dependencies:
   python3>=3.11     ✓ found 3.11.4
@@ -264,7 +280,7 @@ Hooks to register:
 
 ### Dry Run
 
-`synaptic dry-run install commit-msg` shows the same plan without executing. Useful for:
+`sc install --dry-run commit-msg` shows the same plan without executing. Useful for:
 - Previewing what a skill will install before committing
 - Verifying template rendering without side effects
 - Checking dependency status without installing anything
@@ -274,7 +290,7 @@ The dry-run output includes rendered template previews:
 ```
 ═══ Dry Run: commit-msg ═══
 
-Rendered: .synaptic/skills/commit-msg/main.md
+Rendered: .claude/skills/commit-msg/main.md
 ────────────────────────────────────────────
 # Commit Message Assistant
 
@@ -288,6 +304,10 @@ Use conventional commits: `type(scope): description`
 No files written. No dependencies installed.
 ```
 
+`--dry-run` performs read-only probing of the local environment, such as
+checking installed tool versions, but it does not write files, install
+dependencies, or mutate local or remote state.
+
 ---
 
 ## Phase 5: Lockfile Recording
@@ -299,15 +319,15 @@ After successful install, the lockfile captures everything needed to reproduce o
 id = "commit-msg"
 version = "1.3.0"
 dolt_commit = "a3f9c21"
-channel = "main"
+branch = "main"
 variant = "claude"
 installed_at = "2026-02-22T10:05:00Z"
 install_scope = "project"
 template_rendered = true
 
   [skills.files]
-  "skills/commit-msg/main.md" = "sha256:rendered_hash..."
-  "skills/commit-msg/hooks/pre-commit.sh" = "sha256:script_hash..."
+  ".claude/skills/commit-msg/main.md" = "sha256:rendered_hash..."
+  ".claude/skills/commit-msg/hooks/pre-commit.sh" = "sha256:script_hash..."
 
   [skills.answers]
   lang = ["python", "typescript"]
@@ -329,13 +349,27 @@ template_rendered = true
   languages_hash = "sha256:lang_list_hash..."
 ```
 
-**Key property**: after install, no skill invocation ever checks dependencies. The lockfile is the proof. Only `synaptic upgrade` or `SYNAPTIC_STARTUP_MODE=check` re-verifies.
+Lockfiles are part of Synaptic Canvas state, not Claude runtime artifacts. A
+project-local install writes the lockfile under `.synaptic/manifest.lock`; a
+global install writes it under `~/.synaptic/manifest.lock`.
+
+**Key property**: after install, no skill invocation ever checks dependencies. The lockfile is the proof. Only `sc upgrade` or `SYNAPTIC_STARTUP_MODE=check` re-verifies.
+
+### Install Scope Enforcement
+
+`install_scope` constrains where a package may be materialized:
+
+- `any` permits either local install (`.claude/`) or global install (`~/.claude/`)
+- `local-only` permits only project-local install
+
+If a user requests `sc install --global` for a `local-only` package, the CLI
+must fail with a clear error before writing files or changing lockfile state.
 
 ---
 
 ## Upgrade Behavior
 
-When `synaptic upgrade` runs:
+When `sc upgrade` runs:
 
 1. Fetch latest versions from Dolt for installed skills
 2. Compare against lockfile versions
@@ -343,9 +377,15 @@ When `synaptic upgrade` runs:
    a. Check if new questions were added → prompt user
    b. Check if repo profile changed since install → re-render templates
    c. Check if dependencies changed → verify new requirements
+   d. Re-resolve variant selection; if no matching variant exists for the
+      current `SYNAPTIC_AGENTS` profile, fail with a clear error
 4. Present upgrade plan (same format as install)
 5. On approval: re-materialize changed files, update lockfile
 6. Unchanged skills: no action, no re-verification
+
+`sc init` is idempotent. If `.synaptic/` state already exists, the command
+verifies or refreshes generated state rather than failing purely because the
+repo was already initialized.
 
 ### Answer Preservation
 
@@ -370,7 +410,7 @@ Updated answer:
 For a brand new repo with no `.synaptic/` directory:
 
 ```bash
-synaptic init
+sc init
 ```
 
 This runs the full flow:
@@ -379,7 +419,7 @@ This runs the full flow:
 3. User questionnaire for selected skills
 4. Full install with approval
 
-Alternatively, `synaptic install <specific-skill>` on an uninitialized repo triggers `init` automatically.
+Alternatively, `sc install <specific-skill>` on an uninitialized repo triggers `init` automatically.
 
 ---
 
@@ -459,7 +499,7 @@ Template variables come from three namespaces with well-defined schemas:
 |-----------|--------|--------|
 | `repo.*` | Auto-detected repo profile (Phase 1) | Fixed set: `name`, `root`, `primary_language`, `languages`, `frameworks`, `test_frameworks`, `ci_system`, `monorepo`, `git_conventions` |
 | `answers.*` | User answers to `package_questions` (Phase 2) | Dynamic: one variable per `question_id` in `package_questions` for this package |
-| `env.*` | Synaptic Canvas environment | Fixed set: `synaptic_root`, `synaptic_channel`, `synaptic_agents` |
+| `env.*` | Synaptic Canvas environment | Fixed set: `synaptic_root`, `sc_dolt_branch`, `synaptic_agents` |
 
 No new database table is needed — the mapping is implicit. `{{ answers.style }}` is satisfied by `package_questions WHERE question_id = 'style'`. The `repo.*` and `env.*` schemas are fixed and known to the validator.
 
@@ -480,7 +520,7 @@ For each `.j2` file in the package:
 
 ### Validation Points
 
-**1. Dry Run (`sc dry-run install <package>`)**
+**1. Dry Run (`sc install --dry-run <package>`)**
 
 Runs the full validation algorithm against all `.j2` files in the package. Reports any orphan variables or unknown namespaces. Does not write files or install anything.
 
@@ -523,8 +563,8 @@ After template rendering during install, the rendered output is scanned for unre
 ```
 Post-install template check:
   Scanning rendered output for unresolved variables...
-  ✓ skills/commit-msg/main.md    — clean (no unresolved variables)
-  ✗ skills/commit-msg/advanced.md — WARNING: contains "{{ answers.missing_var }}"
+  ✓ .claude/skills/commit-msg/main.md    — clean (no unresolved variables)
+  ✗ .claude/skills/commit-msg/advanced.md — WARNING: contains "{{ answers.missing_var }}"
 
 Install completed with warnings. Some template variables may not have been filled.
 ```
@@ -544,7 +584,7 @@ id = "commit-msg"
 
   [skills.template_validation]
   validated_at = "2026-02-22T10:05:00Z"
-  template_files = ["skills/commit-msg/main.md.j2"]
+  template_files = [".claude/skills/commit-msg/main.md.j2"]
   variables_resolved = ["repo.name", "repo.primary_language", "answers.style", "answers.lang"]
   unresolved = []           # empty = clean install
   warnings = []             # e.g., ["unused question: review_tone"]
