@@ -5,71 +5,65 @@ import "fmt"
 // SQL query constants for the Synaptic Canvas database.
 // These correspond to the schema defined in docs/synaptic-canvas-schema.md.
 
-// listPackagesQuery returns packages ordered by name.
-const listPackagesBaseQuery = `SELECT id, name, version, description, tags, install_scope FROM packages ORDER BY name`
-
-// getPackageQuery retrieves a single package by ID.
-const getPackageBaseQuery = `SELECT id, name, version, description, agent_variant, author, license, tags, install_scope, variables, options, sha256, min_claude_version FROM packages WHERE id = ?`
-
-// getPackageFilesQuery retrieves all files for a package.
-const getPackageFilesBaseQuery = `SELECT package_id, dest_path, content, sha256, file_type, content_type, is_template, frontmatter, fm_name, fm_description, fm_version, fm_model FROM package_files WHERE package_id = ? ORDER BY dest_path`
-
-// getPackageDepsQuery retrieves all dependencies for a package.
-const getPackageDepsBaseQuery = `SELECT package_id, dep_type, dep_name, dep_spec, install_cmd, cmd_sha256 FROM package_deps WHERE package_id = ? ORDER BY dep_name`
-
-// getPackageHooksQuery retrieves all hooks for a package.
-const getPackageHooksBaseQuery = `SELECT package_id, event, matcher, script_path, priority, blocking FROM package_hooks WHERE package_id = ? ORDER BY event, priority`
-
-// getPackageQuestionsQuery retrieves all questions for a package.
-const getPackageQuestionsBaseQuery = `SELECT package_id, question_id, prompt, type, default_val, choices, sort_order FROM package_questions WHERE package_id = ? ORDER BY sort_order, question_id`
-
-// resolveVariantQuery resolves a variant package ID from a logical ID and agent profile.
-const resolveVariantBaseQuery = `SELECT variant_package_id FROM package_variants WHERE logical_id = ? AND agent_profile = ?`
-
-// Branch switching is handled at the connection level via UseBranchQuery/switchBranch,
-// not via query modification.
-
-// UseBranchQuery returns a USE statement for switching to a Dolt branch.
-// Returns empty string if branch is empty (use default branch).
-func UseBranchQuery(database, branch string) string {
+func BranchQualifiedFrom(database, branch, table string) string {
 	if branch == "" {
-		return ""
+		return table
 	}
-	// Dolt branch syntax: USE `database/branch`
-	return fmt.Sprintf("USE `%s/%s`", database, branch)
+	return fmt.Sprintf("`%s/%s`.%s", database, branch, table)
 }
 
 // ListPackagesQuery returns the SQL for listing packages.
-func ListPackagesQuery() string {
-	return listPackagesBaseQuery
+func ListPackagesQuery(database, branch string) string {
+	return fmt.Sprintf(
+		"SELECT id, name, version, description, tags, install_scope FROM %s ORDER BY name",
+		BranchQualifiedFrom(database, branch, "packages"),
+	)
 }
 
 // GetPackageQuery returns the SQL for fetching a single package.
-func GetPackageQuery() string {
-	return getPackageBaseQuery
+func GetPackageQuery(database, branch string) string {
+	return fmt.Sprintf(
+		"SELECT id, name, version, description, agent_variant, author, license, tags, install_scope, variables, options, sha256, min_claude_version FROM %s WHERE id = ?",
+		BranchQualifiedFrom(database, branch, "packages"),
+	)
 }
 
 // GetPackageFilesQuery returns the SQL for fetching package files.
-func GetPackageFilesQuery() string {
-	return getPackageFilesBaseQuery
+func GetPackageFilesQuery(database, branch string) string {
+	return fmt.Sprintf(
+		"SELECT package_id, dest_path, content, sha256, file_type, content_type, is_template, frontmatter, fm_name, fm_description, fm_version, fm_model FROM %s WHERE package_id = ? ORDER BY dest_path",
+		BranchQualifiedFrom(database, branch, "package_files"),
+	)
 }
 
 // GetPackageDepsQuery returns the SQL for fetching package dependencies.
-func GetPackageDepsQuery() string {
-	return getPackageDepsBaseQuery
+func GetPackageDepsQuery(database, branch string) string {
+	return fmt.Sprintf(
+		"SELECT package_id, dep_type, dep_name, dep_spec, install_cmd, cmd_sha256 FROM %s WHERE package_id = ? ORDER BY dep_name",
+		BranchQualifiedFrom(database, branch, "package_deps"),
+	)
 }
 
 // GetPackageHooksQuery returns the SQL for fetching package hooks.
-func GetPackageHooksQuery() string {
-	return getPackageHooksBaseQuery
+func GetPackageHooksQuery(database, branch string) string {
+	return fmt.Sprintf(
+		"SELECT package_id, event, matcher, script_path, priority, blocking FROM %s WHERE package_id = ? ORDER BY event, priority",
+		BranchQualifiedFrom(database, branch, "package_hooks"),
+	)
 }
 
 // GetPackageQuestionsQuery returns the SQL for fetching package questions.
-func GetPackageQuestionsQuery() string {
-	return getPackageQuestionsBaseQuery
+func GetPackageQuestionsQuery(database, branch string) string {
+	return fmt.Sprintf(
+		"SELECT package_id, question_id, prompt, type, default_val, choices, sort_order FROM %s WHERE package_id = ? ORDER BY sort_order, question_id",
+		BranchQualifiedFrom(database, branch, "package_questions"),
+	)
 }
 
 // ResolveVariantQuery returns the SQL for resolving a variant.
-func ResolveVariantQuery() string {
-	return resolveVariantBaseQuery
+func ResolveVariantQuery(database, branch string) string {
+	return fmt.Sprintf(
+		"SELECT variant_package_id FROM %s WHERE logical_id = ? AND agent_profile = ?",
+		BranchQualifiedFrom(database, branch, "package_variants"),
+	)
 }

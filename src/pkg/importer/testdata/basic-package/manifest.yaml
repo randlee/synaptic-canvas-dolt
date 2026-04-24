@@ -1,0 +1,30 @@
+name: sample-skill
+version: 1.2.3
+description: Sample import fixture
+author: Fixture Author
+license: MIT
+tags:
+  - test
+  - fixture
+install:
+  scope: local-only
+artifacts:
+  skills:
+    - skills/sample-skill/SKILL.md.j2
+  agents:
+    - agents/sample-agent.md
+  commands:
+    - commands/sample-command.md
+requires:
+  - python3 >= 3.11
+questions:
+  - question_id: style
+    prompt: Pick a style
+    type: choice
+    default_val: concise
+    choices: [concise, detailed]
+    sort_order: 10
+  - question_id: unused
+    prompt: Unused question
+    type: text
+    sort_order: 20
