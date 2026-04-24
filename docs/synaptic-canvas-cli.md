@@ -48,7 +48,7 @@
 
 **Layer 2 — `sc:plugin` skill:** A Claude Code skill that wraps the `sc` CLI. Allows Claude to manage packages conversationally ("install the delay package"). Thin wrapper — delegates all logic to the CLI.
 
-**Layer 3 — Dolt Database:** Source of truth. Packages, files, dependencies, and metadata stored in relational tables. Branches (`develop`, `beta`, `main`) serve as release channels. Promotion is `dolt_merge`.
+**Layer 3 — Dolt Database:** Source of truth. Packages, files, dependencies, and metadata stored in relational tables. Branches (`develop`, `beta`, `main`) serve as release channels. Promotion copies specific package rows between branches via targeted SQL (DELETE + INSERT ... SELECT) followed by a Dolt commit — not a full branch merge.
 
 ### Installer
 
@@ -117,7 +117,7 @@ sc admin export <package> --output <dir> [--branch <branch>]
 
 sc admin publish <package> --from <branch> --to <branch>
     Promote a package between channels (e.g., develop → beta → main).
-    Executes a targeted dolt_merge for the package data.
+    Promotes a package by copying its rows (packages, package_files, deps, hooks, questions) from the source branch to the target branch via targeted SQL, then commits.
     Runs template variable validation as a BLOCKING gate — publish
     fails if any .j2 template references undeclared variables.
 
@@ -157,7 +157,6 @@ names.
 `--remote` is primarily for admin and explicit remote-read workflows. Local
 operations may rely on configured defaults; commands that require a non-default
 remote should document that requirement explicitly.
-
 ---
 
 ## Integrity Model
