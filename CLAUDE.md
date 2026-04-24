@@ -6,8 +6,10 @@ Synaptic Canvas is a Dolt-backed package management system for Claude Code skill
 
 ## Design Documents
 
-All design decisions are documented. Read before making changes:
+Requirements and architecture are documented. Read before making changes:
 
+- [Requirements](docs/requirements.md) — cross-cutting product requirements
+- [Architecture](docs/architecture.md) — top-level system architecture
 - [CLI Design](docs/synaptic-canvas-cli.md) — `sc` command surface, architecture, integrity model
 - [Schema Spec](docs/synaptic-canvas-schema.md) — Dolt table definitions and rationale
 - [Export Pipeline](docs/synaptic-canvas-export-pipeline.md) — Dolt → filesystem reconstruction
@@ -81,3 +83,27 @@ IF iteration > 3 and QA still FAIL:
 3. **Dolt database is read-only for end-user commands.** Only admin commands write to Dolt.
 4. **SHA integrity is non-negotiable.** Every file gets SHA256 at ingest. Every install verifies SHA. No exceptions.
 5. **Branches are channels.** No `channel` column in the database. The Dolt branch IS the channel.
+
+## Codex Orchestration Rules
+
+These rules apply whenever `/codex-orchestration` governs a phase (csc as sole developer). Violations cause process drift and missed ACKs.
+
+1. **QA runs parallel with CI — never wait for CI green first.** As soon as csc pushes and you create the PR, immediately assign QA to quality-mgr via `SendMessage`. The merge gate requires both QA PASS and CI green, but they must run concurrently.
+
+2. **All csc assignments MUST use sc-compose + Jinja2 templates.** Never send raw `atm send csc "..."` strings. Always:
+   ```bash
+   sc-compose render --file .claude/skills/codex-orchestration/dev-template.xml.j2 --var-file /tmp/vars.json | atm send csc
+   ```
+   Without the structured XML template, csc will not ACK.
+
+3. **Clear ATM inbox locks after every send and before every read.**
+   ```bash
+   rm -f ~/.claude/teams/sc-dev/inboxes/*.lock
+   ```
+   Locks reappear on every ATM write. Stale locks silently block context injection.
+
+4. **Prepare the next sprint worktree before csc finishes the current sprint.** Create S+1 worktree branching from S as soon as csc ACKs the current assignment. Do not wait for csc to complete.
+
+5. **Re-read `.claude/skills/codex-orchestration/SKILL.md` at the start of every session** where a phase is in progress. Context compaction causes process drift — re-reading is mandatory.
+
+6. **quality-mgr assignments use qa-template.xml.j2 via SendMessage.** Send the rendered template body as the SendMessage content, not a raw text summary.
