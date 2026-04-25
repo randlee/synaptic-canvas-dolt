@@ -16,9 +16,12 @@ import (
 type readClient interface {
 	ListPackages(context.Context, dolt.ListOptions) ([]models.Package, error)
 	GetPackageDetail(context.Context, string) (*models.Package, error)
+	GetPackage(context.Context, string) (*models.Package, error)
+	GetPackageFiles(context.Context, string) ([]models.PackageFile, error)
 	GetPackageDeps(context.Context, string) ([]models.PackageDep, error)
 	GetPackageHooks(context.Context, string) ([]models.PackageHook, error)
 	GetPackageQuestions(context.Context, string) ([]models.PackageQuestion, error)
+	ResolveVariant(context.Context, string, string) (string, error)
 	Close() error
 }
 
