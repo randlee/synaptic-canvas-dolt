@@ -2,6 +2,8 @@ package dolt
 
 import (
 	"context"
+	"slices"
+	"sort"
 	"strings"
 
 	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
@@ -73,15 +75,37 @@ func (m *MockClient) AddVariant(logicalID, agentProfile, variantPackageID string
 	m.Variants[key] = variantPackageID
 }
 
-// ListPackages returns all packages in the mock store.
-func (m *MockClient) ListPackages(_ context.Context, _ ListOptions) ([]models.Package, error) {
+// GetPackageDetail returns a package by ID with derived counts from the mock store.
+func (m *MockClient) GetPackageDetail(_ context.Context, id string) (*models.Package, error) {
+	if m.GetErr != nil {
+		return nil, m.GetErr
+	}
+	p, ok := m.Packages[id]
+	if !ok {
+		return nil, nil
+	}
+	cp := *p
+	cp.FileCount = len(m.Files[id])
+	cp.DepCount = len(m.Deps[id])
+	return &cp, nil
+}
+
+// ListPackages returns all packages in the mock store with tag filtering and stable ordering.
+func (m *MockClient) ListPackages(_ context.Context, opts ListOptions) ([]models.Package, error) {
 	if m.ListErr != nil {
 		return nil, m.ListErr
 	}
 	result := make([]models.Package, 0, len(m.Packages))
 	for _, p := range m.Packages {
-		result = append(result, *p)
+		if !matchesTags(p.TagsList(), opts.Tags) {
+			continue
+		}
+		cp := *p
+		cp.FileCount = len(m.Files[p.ID])
+		cp.DepCount = len(m.Deps[p.ID])
+		result = append(result, cp)
 	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
 	return result, nil
 }
 
@@ -136,6 +160,26 @@ func (m *MockClient) ResolveVariant(_ context.Context, logicalID, agentProfile s
 	}
 	key := logicalID + "/" + agentProfile
 	return m.Variants[key], nil
+}
+
+func matchesTags(have, want []string) bool {
+	if len(want) == 0 {
+		return true
+	}
+	normalized := make([]string, 0, len(have))
+	for _, tag := range have {
+		trimmed := strings.ToLower(strings.TrimSpace(tag))
+		if trimmed != "" {
+			normalized = append(normalized, trimmed)
+		}
+	}
+	for _, tag := range want {
+		trimmed := strings.ToLower(strings.TrimSpace(tag))
+		if trimmed != "" && slices.Contains(normalized, trimmed) {
+			return true
+		}
+	}
+	return false
 }
 
 // Close marks the mock client as closed.
