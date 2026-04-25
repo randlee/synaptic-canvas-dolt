@@ -20,6 +20,8 @@ type initResponse struct {
 	Refreshed []string `json:"refreshed"`
 }
 
+var initializeRepoFunc = initializeRepo
+
 func NewInitCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "init",
@@ -35,15 +37,24 @@ func runInitCmd(cmd *cobra.Command, _ []string) error {
 	}
 	root, err := os.Getwd()
 	if err != nil {
+		formatter := output.NewFormatter(cfg.JSON, cfg.Quiet)
+		formatter.Writer = cmd.OutOrStdout()
+		formatter.ErrW = cmd.ErrOrStderr()
+		if cfg.JSON {
+			return writeJSONError(formatter, "query_failed", err.Error())
+		}
 		return fmt.Errorf("getting current directory: %w", err)
 	}
-	resp, err := initializeRepo(root)
-	if err != nil {
-		return err
-	}
+	resp, err := initializeRepoFunc(root)
 	formatter := output.NewFormatter(cfg.JSON, cfg.Quiet)
 	formatter.Writer = cmd.OutOrStdout()
 	formatter.ErrW = cmd.ErrOrStderr()
+	if err != nil {
+		if cfg.JSON {
+			return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
+		}
+		return err
+	}
 	if cfg.JSON {
 		return formatter.WriteJSON(resp)
 	}

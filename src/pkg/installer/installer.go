@@ -62,9 +62,12 @@ type PlannedFile struct {
 type Service struct{}
 
 // Execute performs one install or dry-run operation.
-func (Service) Execute(_ context.Context, req Request) (Summary, error) {
+func (Service) Execute(ctx context.Context, req Request) (Summary, error) {
 	if req.Package == nil {
 		return Summary{}, fmt.Errorf("missing package")
+	}
+	if err := ctx.Err(); err != nil {
+		return Summary{}, err
 	}
 	if req.Now.IsZero() {
 		req.Now = time.Now().UTC()
@@ -77,6 +80,7 @@ func (Service) Execute(_ context.Context, req Request) (Summary, error) {
 	answers := questionnaire.CollectDefaults(req.Questions, profile)
 	scope := "project"
 	installBase := filepath.Join(req.RepoRoot, ".claude")
+	stateRoot := req.RepoRoot
 	if req.Global {
 		scope = "global"
 		home, err := os.UserHomeDir()
@@ -84,6 +88,7 @@ func (Service) Execute(_ context.Context, req Request) (Summary, error) {
 			return Summary{}, fmt.Errorf("getting home dir: %w", err)
 		}
 		installBase = filepath.Join(home, ".claude")
+		stateRoot = home
 	}
 	if req.Package.InstallScope == models.InstallScopeLocalOnly && req.Global {
 		return Summary{}, fmt.Errorf("package %s cannot be installed globally", req.Package.ID)
@@ -129,24 +134,43 @@ func (Service) Execute(_ context.Context, req Request) (Summary, error) {
 		return summary, nil
 	}
 
-	if err := ensureProjectState(req.RepoRoot); err != nil {
+	if err := ctx.Err(); err != nil {
+		return Summary{}, err
+	}
+	if err := ensureProjectState(stateRoot); err != nil {
 		return Summary{}, err
 	}
 
 	renderedFiles := make([]integrity.FileHash, 0, len(planned))
+	writtenPaths := make([]string, 0, len(planned))
 	for _, file := range planned {
-		if err := writeFileAtomic(filepath.FromSlash(file.DestPath), []byte(file.Rendered), file.Mode); err != nil {
+		if err := ctx.Err(); err != nil {
+			rollbackFiles(writtenPaths)
+			return Summary{}, err
+		}
+		if err := writeFileAtomic(ctx, filepath.FromSlash(file.DestPath), []byte(file.Rendered), file.Mode); err != nil {
+			rollbackFiles(writtenPaths)
 			return Summary{}, fmt.Errorf("writing %s: %w", file.DestPath, err)
 		}
+		writtenPaths = append(writtenPaths, filepath.FromSlash(file.DestPath))
 		actual := shaHex([]byte(file.Rendered))
 		if actual != file.Source.SHA256 && !file.Source.IsTemplate {
+			rollbackFiles(writtenPaths)
 			return Summary{}, fmt.Errorf("sha mismatch for %s", file.DestPath)
 		}
 		renderedFiles = append(renderedFiles, integrity.FileHash{DestPath: file.DestPath, SHA256: actual})
 	}
+	if req.Package.SHA256 != nil {
+		aggregate := integrity.ComputeAggregateSHA256(renderedFiles)
+		if aggregate != *req.Package.SHA256 {
+			rollbackFiles(writtenPaths)
+			return Summary{}, fmt.Errorf("aggregate sha mismatch for %s", req.Package.ID)
+		}
+	}
 
-	lock, err := LoadManifestLock(req.RepoRoot)
+	lock, err := LoadManifestLock(stateRoot)
 	if err != nil {
+		rollbackFiles(writtenPaths)
 		return Summary{}, err
 	}
 	record := InstallRecord{
@@ -188,16 +212,27 @@ func (Service) Execute(_ context.Context, req Request) (Summary, error) {
 		record.Files[hash.DestPath] = hash.SHA256
 	}
 	lock.UpsertInstall(record)
-	if err := SaveManifestLock(req.RepoRoot, lock); err != nil {
+	if err := ctx.Err(); err != nil {
+		rollbackFiles(writtenPaths)
+		return Summary{}, err
+	}
+	if err := SaveManifestLock(stateRoot, lock); err != nil {
+		rollbackFiles(writtenPaths)
 		return Summary{}, err
 	}
 
-	registry, err := LoadHookRegistry(req.RepoRoot)
+	registry, err := LoadHookRegistry(stateRoot)
 	if err != nil {
+		rollbackFiles(writtenPaths)
 		return Summary{}, err
 	}
 	registry.Hooks = append(registry.Hooks, summary.HooksRegistered...)
-	if err := SaveHookRegistry(req.RepoRoot, registry); err != nil {
+	if err := ctx.Err(); err != nil {
+		rollbackFiles(writtenPaths)
+		return Summary{}, err
+	}
+	if err := SaveHookRegistry(stateRoot, registry); err != nil {
+		rollbackFiles(writtenPaths)
 		return Summary{}, err
 	}
 
@@ -350,7 +385,10 @@ func dependencyWarnings(deps []models.PackageDep) []string {
 	return warnings
 }
 
-func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
+func writeFileAtomic(ctx context.Context, path string, data []byte, mode os.FileMode) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return err
 	}
@@ -364,6 +402,10 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 		_ = tmp.Close()
 		return err
 	}
+	if err := ctx.Err(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
 	if err := tmp.Chmod(mode); err != nil {
 		_ = tmp.Close()
 		return err
@@ -371,7 +413,12 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpName, path)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	cleanTmp := filepath.Clean(tmpName)
+	cleanPath := filepath.Clean(path)
+	return os.Rename(cleanTmp, cleanPath) //nolint:gosec // both paths are confined to the installer-created temp file and validated install destination.
 }
 
 func shaHex(data []byte) string {
@@ -386,6 +433,12 @@ func ensureProjectState(root string) error {
 		}
 	}
 	return nil
+}
+
+func rollbackFiles(paths []string) {
+	for i := len(paths) - 1; i >= 0; i-- {
+		_ = os.Remove(paths[i])
+	}
 }
 
 func hasTemplates(files []models.PackageFile) bool {

@@ -44,6 +44,35 @@ func TestInitCommandJSON(t *testing.T) {
 	}
 }
 
+func TestInitCommandErrorJSON(t *testing.T) {
+	root := t.TempDir()
+	restoreDir := chdirForTest(t, root)
+	defer restoreDir()
+
+	prev := initializeRepoFunc
+	initializeRepoFunc = func(string) (initResponse, error) {
+		return initResponse{}, errors.New("boom")
+	}
+	defer func() { initializeRepoFunc = prev }()
+
+	cmd := NewRootCmd("test", "abc", "2025-01-01")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"init", "--json"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	var resp jsonErrorEnvelope
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
+	}
+	if resp.OK || resp.Error.Code != "query_failed" || resp.Error.Message != "boom" {
+		t.Fatalf("unexpected response: %+v", resp)
+	}
+}
+
 func TestInstallCommandDryRunJSON(t *testing.T) {
 	root := t.TempDir()
 	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
@@ -112,6 +141,36 @@ func TestInstallCommandWritesFiles(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(resolvedRoot, ".claude", "skills", "team-lead", "SKILL.md")); err != nil {
 		t.Fatalf("installed file missing: %v", err)
+	}
+}
+
+func TestInstallCommandErrorJSON(t *testing.T) {
+	root := t.TempDir()
+	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
+	restoreDir := chdirForTest(t, root)
+	defer restoreDir()
+
+	mock := dolt.NewMockClient()
+	mock.GetErr = errors.New("boom")
+
+	cmd := NewRootCmd("test", "abc", "2025-01-01")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"install", "team-lead", "--json"})
+
+	restore := installReadTestHooks(mock)
+	defer restore()
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	var resp jsonErrorEnvelope
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
+	}
+	if resp.OK || resp.Error.Code != "query_failed" || resp.Error.Message != "boom" {
+		t.Fatalf("unexpected response: %+v", resp)
 	}
 }
 

@@ -179,7 +179,9 @@ func writeTOMLAtomic(path string, value any) error {
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("closing temp file: %w", err)
 	}
-	if err := os.Rename(tmpName, path); err != nil {
+	cleanTmp := filepath.Clean(tmpName)
+	cleanPath := filepath.Clean(path)
+	if err := os.Rename(cleanTmp, cleanPath); err != nil { //nolint:gosec // both paths are confined to Synaptic-managed state and an installer-created temp file.
 		return fmt.Errorf("atomic replace %s: %w", path, err)
 	}
 	return nil
