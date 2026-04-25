@@ -136,6 +136,29 @@ func TestInfoCommandNotFound(t *testing.T) {
 	}
 }
 
+func TestInfoCommandNotFoundJSON(t *testing.T) {
+	cmd := NewRootCmd("test", "abc", "2025-01-01")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"info", "missing", "--json"})
+
+	restore := installReadClientTestHooks(dolt.NewMockClient())
+	defer restore()
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	var resp jsonErrorEnvelope
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
+	}
+	if resp.OK || resp.Error.Code != "not_found" || !strings.Contains(resp.Error.Message, `package "missing" not found`) {
+		t.Fatalf("unexpected response: %+v", resp)
+	}
+}
+
 func TestListCommandPropagatesClientError(t *testing.T) {
 	mock := dolt.NewMockClient()
 	mock.ListErr = errors.New("boom")
@@ -149,6 +172,32 @@ func TestListCommandPropagatesClientError(t *testing.T) {
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("expected list error, got %v", err)
+	}
+}
+
+func TestListCommandErrorJSON(t *testing.T) {
+	mock := dolt.NewMockClient()
+	mock.ListErr = errors.New("boom")
+
+	cmd := NewRootCmd("test", "abc", "2025-01-01")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"list", "--json"})
+
+	restore := installReadClientTestHooks(mock)
+	defer restore()
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	var resp jsonErrorEnvelope
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
+	}
+	if resp.OK || resp.Error.Code != "query_failed" || resp.Error.Message != "boom" {
+		t.Fatalf("unexpected response: %+v", resp)
 	}
 }
 

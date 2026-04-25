@@ -55,11 +55,18 @@ func runListCmd(cmd *cobra.Command, _ []string) error {
 	tags := normalizeTagFilter(tagsValue)
 
 	return withReadClient(cmd, func(cfg *config.Config, client readClient) error {
+		formatter := output.NewFormatter(cfg.JSON, cfg.Quiet)
+		formatter.Writer = cmd.OutOrStdout()
+		formatter.ErrW = cmd.ErrOrStderr()
+
 		packages, err := client.ListPackages(cmd.Context(), dolt.ListOptions{
 			Branch: cfg.EffectiveBranch(),
 			Tags:   tags,
 		})
 		if err != nil {
+			if cfg.JSON {
+				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
+			}
 			return err
 		}
 
@@ -87,9 +94,6 @@ func runListCmd(cmd *cobra.Command, _ []string) error {
 			})
 		}
 
-		formatter := output.NewFormatter(cfg.JSON, cfg.Quiet)
-		formatter.Writer = cmd.OutOrStdout()
-		formatter.ErrW = cmd.ErrOrStderr()
 		if cfg.JSON {
 			return formatter.WriteJSON(resp)
 		}

@@ -44,9 +44,9 @@ func (r *CLIReader) Close() error {
 }
 
 func (r *CLIReader) ListPackages(ctx context.Context, opts ListOptions) ([]models.Package, error) {
-	rows, err := runCLIQuery[models.Package](ctx, r.DoltDir, opts.Branch, fmt.Sprintf(
+	rows, err := runCLIQuery[models.Package](ctx, r.DoltDir, opts.Branch,
 		"SELECT id, name, version, description, agent_variant, tags, install_scope, sha256 FROM packages ORDER BY name",
-	))
+	)
 	if err != nil {
 		return nil, err
 	}

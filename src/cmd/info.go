@@ -51,24 +51,44 @@ func runInfoCmd(cmd *cobra.Command, args []string) error {
 	packageID := args[0]
 
 	return withReadClient(cmd, func(cfg *config.Config, client readClient) error {
+		formatter := output.NewFormatter(cfg.JSON, cfg.Quiet)
+		formatter.Writer = cmd.OutOrStdout()
+		formatter.ErrW = cmd.ErrOrStderr()
+
 		pkg, err := client.GetPackageDetail(cmd.Context(), packageID)
 		if err != nil {
+			if cfg.JSON {
+				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
+			}
 			return err
 		}
 		if pkg == nil {
-			return fmt.Errorf("package %q not found", packageID)
+			err := fmt.Errorf("package %q not found", packageID)
+			if cfg.JSON {
+				return writeJSONError(formatter, "not_found", err.Error())
+			}
+			return err
 		}
 
 		deps, err := client.GetPackageDeps(cmd.Context(), packageID)
 		if err != nil {
+			if cfg.JSON {
+				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
+			}
 			return err
 		}
 		hooks, err := client.GetPackageHooks(cmd.Context(), packageID)
 		if err != nil {
+			if cfg.JSON {
+				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
+			}
 			return err
 		}
 		questions, err := client.GetPackageQuestions(cmd.Context(), packageID)
 		if err != nil {
+			if cfg.JSON {
+				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
+			}
 			return err
 		}
 
@@ -98,9 +118,6 @@ func runInfoCmd(cmd *cobra.Command, args []string) error {
 			})
 		}
 
-		formatter := output.NewFormatter(cfg.JSON, cfg.Quiet)
-		formatter.Writer = cmd.OutOrStdout()
-		formatter.ErrW = cmd.ErrOrStderr()
 		if cfg.JSON {
 			return formatter.WriteJSON(resp)
 		}
