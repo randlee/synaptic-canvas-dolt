@@ -90,6 +90,7 @@ func TestStatusCommandJSONMergedScopes(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	resolvedHome, err := os.UserHomeDir()
 	if err != nil {
 		t.Fatalf("UserHomeDir() error = %v", err)
@@ -231,5 +232,124 @@ func TestSnapshotCommandModifiedOnly(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(resp.OutputDir, "snapshot.toml")); err != nil {
 		t.Fatalf("snapshot.toml missing: %v", err)
+	}
+}
+
+func TestSnapshotCommandFull(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
+	restoreDir := chdirForTest(t, root)
+	defer restoreDir()
+
+	installRoot := filepath.Join(root, ".claude", "skills", "team-lead")
+	writeCmdFile(t, filepath.Join(installRoot, "good.txt"), "good")
+	writeCmdFile(t, filepath.Join(installRoot, "modified.txt"), "changed")
+	writeCmdFile(t, filepath.Join(installRoot, "extra.txt"), "extra")
+
+	lock := installer.ManifestLock{
+		Installs: []installer.InstallRecord{{
+			InstallID:    "pkg_team-lead_project",
+			Package:      "team-lead",
+			Version:      "1.2.0",
+			Branch:       "advanced",
+			InstallScope: "project",
+			InstallRoot:  installRoot,
+			InstallSite:  root,
+			Files: map[string]string{
+				"good.txt":     integrity.ComputeContentSHA256([]byte("good")),
+				"modified.txt": integrity.ComputeContentSHA256([]byte("original")),
+			},
+		}},
+	}
+	if err := installer.SaveManifestLock(root, lock); err != nil {
+		t.Fatalf("SaveManifestLock() error = %v", err)
+	}
+	snapshotNow = func() time.Time { return time.Date(2026, 4, 25, 13, 0, 0, 0, time.UTC) }
+	t.Cleanup(func() { snapshotNow = func() time.Time { return time.Now().UTC() } })
+	snapshotGitRemoteURL = func(string) string { return "https://example.com/repo.git" }
+	t.Cleanup(func() { snapshotGitRemoteURL = gitRemoteURL })
+
+	cmd := NewRootCmd("test", "abc", "2025-01-01")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"snapshot", "team-lead", "--scope", "project", "--full", "--json"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	var resp snapshotResponse
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
+	}
+	if len(resp.Files) != 3 {
+		t.Fatalf("expected 3 files (full snapshot), got %d: %+v", len(resp.Files), resp.Files)
+	}
+	for _, name := range []string{"good.txt", "modified.txt", "extra.txt"} {
+		if _, err := os.Stat(filepath.Join(resp.OutputDir, name)); err != nil {
+			t.Fatalf("file %s missing from full snapshot: %v", name, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(resp.OutputDir, "snapshot.toml")); err != nil {
+		t.Fatalf("snapshot.toml missing: %v", err)
+	}
+}
+
+func TestValidateCommandAllFlag(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
+	restoreDir := chdirForTest(t, root)
+	defer restoreDir()
+
+	installRoot := filepath.Join(root, ".claude", "skills", "team-lead")
+	writeCmdFile(t, filepath.Join(installRoot, "good.txt"), "good")
+
+	lock := installer.ManifestLock{
+		Installs: []installer.InstallRecord{{
+			InstallID:    "pkg_team-lead_project",
+			Package:      "team-lead",
+			Version:      "1.0.0",
+			Branch:       "main",
+			InstallScope: "project",
+			InstallRoot:  installRoot,
+			InstallSite:  root,
+			Files: map[string]string{
+				"good.txt": integrity.ComputeContentSHA256([]byte("good")),
+			},
+		}},
+	}
+	if err := installer.SaveManifestLock(root, lock); err != nil {
+		t.Fatalf("SaveManifestLock() error = %v", err)
+	}
+
+	cmd := NewRootCmd("test", "abc", "2025-01-01")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"validate", "--all", "--json"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	var resp validateResponse
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
+	}
+	if !resp.OK {
+		t.Fatalf("expected ok=true, got %+v", resp)
+	}
+	if !resp.Pass {
+		t.Fatalf("expected pass=true, got %+v", resp)
+	}
+	if len(resp.Packages) != 1 {
+		t.Fatalf("expected 1 package, got %d", len(resp.Packages))
 	}
 }

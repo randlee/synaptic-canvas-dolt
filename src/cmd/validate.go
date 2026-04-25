@@ -33,6 +33,10 @@ func runValidateCmd(cmd *cobra.Command, args []string) error {
 	if len(args) == 1 {
 		packageID = args[0]
 	}
+	all, err := cmd.Flags().GetBool("all")
+	if err != nil {
+		return fmt.Errorf("reading --all: %w", err)
+	}
 
 	cfg, err := config.NewConfigFromFlags(cmd)
 	if err != nil {
@@ -41,6 +45,14 @@ func runValidateCmd(cmd *cobra.Command, args []string) error {
 	formatter := output.NewFormatter(cfg.JSON, cfg.Quiet)
 	formatter.Writer = cmd.OutOrStdout()
 	formatter.ErrW = cmd.ErrOrStderr()
+
+	if packageID == "" && !all {
+		message := "specify a package name or use --all to validate all installs"
+		if cfg.JSON {
+			return writeJSONError(formatter, "invalid_args", message)
+		}
+		return errors.New(message)
+	}
 
 	repoRoot, err := currentRepoRoot()
 	if err != nil {
