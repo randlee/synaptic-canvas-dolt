@@ -58,7 +58,6 @@ func TestExecuteWritesFilesAndTracking(t *testing.T) {
 			Version:      "1.2.0",
 			InstallScope: models.InstallScopeAny,
 			AgentVariant: "claude",
-			SHA256:       ptr("pkgsha"),
 		},
 		Files: []models.PackageFile{
 			{DestPath: "SKILL.md", Content: content, SHA256: sum, FileType: models.FileTypeSkill},
@@ -93,6 +92,67 @@ func TestExecuteWritesFilesAndTracking(t *testing.T) {
 	}
 	if len(registry.Hooks) != 1 {
 		t.Fatalf("expected 1 hook, got %+v", registry)
+	}
+}
+
+func TestExecuteRollbackOnAggregateMismatch(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	content := "# static"
+	sum := shaHex([]byte(content))
+	_, err := (Service{}).Execute(context.Background(), Request{
+		Package: &models.Package{
+			ID:           "team-lead",
+			Version:      "1.2.0",
+			InstallScope: models.InstallScopeAny,
+			AgentVariant: "claude",
+			SHA256:       ptr("wrong-aggregate"),
+		},
+		Files: []models.PackageFile{
+			{DestPath: "SKILL.md", Content: content, SHA256: sum, FileType: models.FileTypeSkill},
+		},
+		Branch:   "main",
+		RepoRoot: root,
+		Now:      time.Date(2026, 4, 25, 0, 0, 0, 0, time.UTC),
+	})
+	if err == nil || !strings.Contains(err.Error(), "aggregate sha mismatch") {
+		t.Fatalf("expected aggregate mismatch, got %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, ".claude", "skills", "team-lead", "SKILL.md")); !os.IsNotExist(statErr) {
+		t.Fatalf("expected rollback to remove installed file, got err=%v", statErr)
+	}
+}
+
+func TestExecuteGlobalWritesTrackingUnderHome(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	content := "# static"
+	sum := shaHex([]byte(content))
+	_, err := (Service{}).Execute(context.Background(), Request{
+		Package: &models.Package{
+			ID:           "team-lead",
+			Version:      "1.2.0",
+			InstallScope: models.InstallScopeAny,
+			AgentVariant: "claude",
+		},
+		Files: []models.PackageFile{
+			{DestPath: "SKILL.md", Content: content, SHA256: sum, FileType: models.FileTypeSkill},
+		},
+		Global:   true,
+		Branch:   "main",
+		RepoRoot: root,
+		Now:      time.Date(2026, 4, 25, 0, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(home, ".synaptic", "manifest.lock")); statErr != nil {
+		t.Fatalf("expected global manifest.lock under home, got %v", statErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, ".synaptic", "manifest.lock")); !os.IsNotExist(statErr) {
+		t.Fatalf("did not expect project manifest.lock for global install, got %v", statErr)
 	}
 }
 

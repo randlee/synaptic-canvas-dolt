@@ -138,7 +138,7 @@ Skills can declare **install-time questions** in their package definition. Quest
 Answers are recorded in the lockfile under each skill:
 
 ```toml
-[[skills]]
+[[installs]]
 id = "commit-msg"
 
   [skills.answers]
@@ -315,7 +315,7 @@ dependencies, or mutate local or remote state.
 After successful install, the lockfile captures everything needed to reproduce or verify the install:
 
 ```toml
-[[skills]]
+[[installs]]
 id = "commit-msg"
 version = "1.3.0"
 dolt_commit = "a3f9c21"
@@ -579,7 +579,7 @@ The post-install check looks for literal `{{ ... }}` or `{% ... %}` patterns rem
 After successful install, the lockfile records template validation status:
 
 ```toml
-[[skills]]
+[[installs]]
 id = "commit-msg"
 
   [skills.template_validation]
