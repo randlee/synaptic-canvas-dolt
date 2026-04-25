@@ -90,12 +90,16 @@ func TestStatusCommandJSONMergedScopes(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	resolvedHome, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("UserHomeDir() error = %v", err)
+	}
 	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
 	restoreDir := chdirForTest(t, root)
 	defer restoreDir()
 
 	localRoot := filepath.Join(root, ".claude", "skills", "team-lead")
-	globalRoot := filepath.Join(home, ".claude", "skills", "team-lead")
+	globalRoot := filepath.Join(resolvedHome, ".claude", "skills", "team-lead")
 	writeCmdFile(t, filepath.Join(localRoot, "SKILL.md"), "local")
 	writeCmdFile(t, filepath.Join(globalRoot, "SKILL.md"), "global")
 
@@ -121,7 +125,7 @@ func TestStatusCommandJSONMergedScopes(t *testing.T) {
 			Branch:       "beta",
 			InstallScope: "global",
 			InstallRoot:  globalRoot,
-			InstallSite:  home,
+			InstallSite:  resolvedHome,
 			Files: map[string]string{
 				"SKILL.md": integrity.ComputeContentSHA256([]byte("global")),
 			},
@@ -130,7 +134,7 @@ func TestStatusCommandJSONMergedScopes(t *testing.T) {
 	if err := installer.SaveManifestLock(root, localLock); err != nil {
 		t.Fatalf("SaveManifestLock(local) error = %v", err)
 	}
-	if err := installer.SaveManifestLock(home, globalLock); err != nil {
+	if err := installer.SaveManifestLock(resolvedHome, globalLock); err != nil {
 		t.Fatalf("SaveManifestLock(global) error = %v", err)
 	}
 

@@ -110,6 +110,17 @@ The CLI is expected to be used by both humans and AI wrappers.
 - FS-005 Package install-scope enforcement shall be explicit. If a package is
   marked `local-only`, `sc install --global` shall fail with a clear error and
   shall not perform a partial install.
+- FS-006 The CLI shall support exporting installed package state via
+  `sc snapshot <package>`.
+- FS-007 `sc snapshot` shall default to exporting only modified tracked files
+  for the targeted install.
+- FS-008 `sc snapshot --full` shall export the full tracked install payload for
+  the targeted package.
+- FS-009 Snapshot exports shall be written under machine-level product state
+  rather than into the active repository tree.
+- FS-010 Snapshot metadata shall be stored in a human-readable
+  `snapshot.toml` file that records, at minimum, package name, branch, version,
+  snapshot timestamp, source install path, and repository path when applicable.
 
 ## 7. Verification Traceability
 
