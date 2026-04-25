@@ -11,6 +11,7 @@ import (
 
 // Execute creates the root command, configures it with version info, and runs it.
 func Execute(version, commit, date string) error {
+	defer logging.Close()
 	rootCmd := NewRootCmd(version, commit, date)
 	return rootCmd.Execute()
 }
