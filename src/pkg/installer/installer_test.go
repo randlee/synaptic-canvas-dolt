@@ -128,9 +128,13 @@ func TestExecuteGlobalWritesTrackingUnderHome(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	resolvedHome, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("UserHomeDir() error = %v", err)
+	}
 	content := "# static"
 	sum := shaHex([]byte(content))
-	_, err := (Service{}).Execute(context.Background(), Request{
+	_, err = (Service{}).Execute(context.Background(), Request{
 		Package: &models.Package{
 			ID:           "team-lead",
 			Version:      "1.2.0",
@@ -148,7 +152,7 @@ func TestExecuteGlobalWritesTrackingUnderHome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if _, statErr := os.Stat(filepath.Join(home, ".synaptic", "manifest.lock")); statErr != nil {
+	if _, statErr := os.Stat(filepath.Join(resolvedHome, ".synaptic", "manifest.lock")); statErr != nil {
 		t.Fatalf("expected global manifest.lock under home, got %v", statErr)
 	}
 	if _, statErr := os.Stat(filepath.Join(root, ".synaptic", "manifest.lock")); !os.IsNotExist(statErr) {
