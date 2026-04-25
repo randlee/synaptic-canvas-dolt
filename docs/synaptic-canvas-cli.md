@@ -106,8 +106,9 @@ sc status [--scope <project|global|both>]
     Show installed packages, their versions, branches, scopes, and validation state.
 
 sc scan [<path> ...] [--recurse] [--scope <project|global|both>] [--accept-all] [--upgrade-all]
-    Scan repository folders for installed packages and reconcile them into local tracking state.
-    Defaults to the current folder. Discovers installs by SHA-matching on-disk files against
+    Scan for installed packages and reconcile them into local tracking state.
+    Default mode: walks .claude/ (project) and ~/.claude/ (global).
+    Custom paths as positional args override scope. Discovers installs by SHA-matching on-disk files against
     the local catalog. Default mode lists candidates only — no tracking state mutation.
     --accept-all   Write lockfile entries for all discovered untracked installs
     --upgrade-all  Upgrade existing tracked installs to the catalog version
@@ -118,7 +119,10 @@ sc scan [<path> ...] [--recurse] [--scope <project|global|both>] [--accept-all] 
 sc catalog update [--branch <branch>] [--scope <project|global|both>]
     Fetch the SHA catalog for the effective branch from Dolt and write it to the local cache
     at .synaptic/catalog-{branch}.toml (local) or ~/.synaptic/catalog-{branch}.toml (global).
-    --scope controls write target: project writes local, global writes machine, both writes both.
+    --scope controls write target:
+      project → .synaptic/catalog-{branch}.toml
+      global  → ~/.synaptic/catalog-{branch}.toml
+      both    → writes both locations
     Default scope: project when inside a git repo, global otherwise.
     Also triggered implicitly by sc install and sc init.
 
@@ -459,6 +463,8 @@ synaptic-canvas-dolt/
 │   │   ├── info.go               # sc info
 │   │   ├── install.go            # sc install
 │   │   ├── scan.go               # sc scan
+│   │   ├── catalog.go            # sc catalog
+│   │   ├── configcmd.go          # sc config get/set
 │   │   ├── snapshot.go           # sc snapshot
 │   │   ├── upgrade.go            # sc upgrade
 │   │   ├── uninstall.go          # sc uninstall
@@ -473,15 +479,21 @@ synaptic-canvas-dolt/
 │   │       └── diff.go           # sc admin diff
 │   ├── pkg/                      # Public packages
 │   │   ├── dolt/                 # Dolt database client
+│   │   │   ├── http_client.go    # HTTPClient — DoltHub REST API (MVP)
+│   │   │   ├── errors.go         # Sentinel errors (ErrNotFound, ErrUnauthorized, etc.)
 │   │   ├── integrity/            # SHA computation and verification
 │   │   ├── manifest/             # manifest.yaml reconstruction
 │   │   ├── plugin/               # plugin.json reconstruction
+│   │   ├── catalog/              # SHA catalog: TOML cache, writeTOMLAtomic
 │   │   ├── installer/            # File installation logic
 │   │   ├── questionnaire/        # Install/upgrade question prompting + answer tracking
 │   │   ├── repo/                 # Repo detection/profile generation and scan helpers
 │   │   └── models/               # Data structures (Package, File, Dep)
 │   └── internal/                 # Private implementation
 │       ├── config/               # CLI configuration
+│       │   ├── config.go         # Config struct, NewConfigFromFlags, EffectiveBranch
+│       │   ├── fileconfig.go     # Layered file config (~/.sc/config.toml)
+│       │   └── keys.go           # Config key constants (KeyDoltClient, etc.)
 │       └── output/               # Output formatters (table, JSON)
 ├── sql/                          # DDL scripts
 │   └── 001-create-tables.sql

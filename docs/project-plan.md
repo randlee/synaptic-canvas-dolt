@@ -609,6 +609,12 @@ file-based layered config system, (2) `HTTPClient` implementing `dolt.Client`
 via the DoltHub REST API, (3) `read_helpers.go` rewired to default to
 `HTTPClient` instead of requiring a local `.dolt` directory.
 
+**Scope note:** This sprint plan document is doc-only. The implementation
+artifacts listed (http_client.go, errors.go, keys.go, fileconfig.go,
+configcmd.go, read_helpers.go rewire) do not yet exist in source — they are
+deliverables for csc to implement in Sprint 3.5. Sprint 3.6 must not begin
+until all Sprint 3.5 source artifacts are merged.
+
 **Background:** DoltHub.com exposes HTTP REST only — not MySQL wire protocol.
 `openReadClient` currently requires a `.dolt` directory and uses `CLIReader` or
 `SQLClient`. Without this sprint, every end-user command fails with
@@ -1050,7 +1056,19 @@ and Dolt are unavailable. CA-004 applies in all other scenarios.
   completes; failure is non-fatal — emit warning, continue)
 - Register `NewCatalogCmd()` in `src/cmd/root.go` `NewRootCmd`
 
-`src/pkg/catalog/atomic.go` — `writeTOMLAtomic(path string, v any) error`:
+`src/pkg/catalog/atomic.go` — `writeTOMLAtomic(path string, v any) error`.
+
+**Note:** An identical private `writeTOMLAtomic` already exists at
+`src/pkg/installer/tracking.go:161`. Sprint 3.6 adds a second copy in the
+catalog package rather than extracting a shared utility. Rationale: both packages
+are internal implementation details with no external consumers; extracting to
+`src/internal/atomicfile/` would require modifying the installer package in this
+sprint. Add a comment in both copies: `// NOTE: duplicate of tracking.writeTOMLAtomic;
+// a future refactor may extract this to src/internal/atomicfile/`.
+If the sprint developer prefers extraction, that is acceptable provided
+installer tests still pass.
+
+`src/pkg/catalog/atomic.go` spec:
 - Marshal `v` to TOML using `github.com/BurntSushi/toml` (or `github.com/pelletier/go-toml/v2`)
 - Write to a temp file in the same directory as `path` (same filesystem, no cross-device rename)
 - `os.Rename` temp → path (atomic on linux/darwin; best-effort on Windows)
@@ -1154,7 +1172,7 @@ InstallRecord{
 `TrackingOrigin` string field **already exists** at `src/pkg/installer/tracking.go:38`.
 Sprint 3.7 establishes `"scan-reconciled"` as its canonical sentinel value for
 scan-derived records. Do NOT add the field again; update the documentation comment
-to list all valid values: `"direct-install"`, `"scan-reconciled"`.
+to list all valid values: `"local-install"` (existing), `"scan-reconciled"` (new).
 Validate and upgrade must handle records where `DoltCommit` is empty — these
 are valid but cannot be pinned to a specific Dolt history point.
 
@@ -1474,7 +1492,7 @@ detected. Without `--force`, local modifications produce a warning and a prompt:
 #### Backward Compatibility
 
 Sprint 3.9 code must handle lockfile records created by Sprint 3.2–3.4 code:
-- Missing `tracking_origin` field → treat as `"direct-install"`
+- Missing `tracking_origin` field → treat as `"local-install"` (matches installer.go:187)
 - Missing `severity` on validate items → emit as `""` in JSON (not null); human
   output omits severity label
 - Missing `dependency.installed_by_sc` → treat as `false` (do not offer removal)
