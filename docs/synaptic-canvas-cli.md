@@ -76,26 +76,38 @@ sc info <package>
 sc init
     Initialize `.synaptic/` state for the current repository.
 
-sc install <package> [--global] [--branch <branch>] [--dry-run]
+sc install <package> [--global] [--branch <branch>] [--dry-run] [--yolo]
     Install a package from Dolt.
     --global    Install to ~/.claude/ (default: .claude/ in current repo)
     --branch    Install from specific branch (default: main)
     --dry-run   Show the install plan and template preview without side effects
+    --yolo      Execute the computed install plan without interactive confirmation
 
-sc upgrade <package> [--all]
-    Upgrade installed package(s) to latest version on their branch.
+sc upgrade <package> [--all] [--scope <project|global|both>] [--branch <branch>] [--version <version>] [--yolo]
+    Upgrade installed package(s) to latest version on their tracked branch and scope by default.
+    --branch    Explicitly retarget upgrade to a different branch
+    --version   Explicitly target a specific version on the chosen branch
 
-sc uninstall <package>
-    Remove an installed package.
+sc uninstall <package> [--scope <project|global|both>] [--yolo]
+    Remove an installed package from the selected tracked install scope.
 
-sc validate [<package>] [--all]
-    Verify installed files match Dolt SHA256 hashes.
+sc validate [<package>] [--all] [--scope <project|global|both>]
+    Verify installed files, dependency state, and tracked install health.
     Reports: OK, MODIFIED (local edits), MISSING, UNREADABLE (permission denied or I/O error), EXTRA (untracked files).
     `EXTRA` is limited to files inside the installed package's managed target
     paths that are not tracked by that package manifest.
+    Validation results are list-based and each item carries an explicit severity.
 
-sc status
-    Show installed packages, their versions, branches, and validation state.
+sc status [--scope <project|global|both>]
+    Show installed packages, their versions, branches, scopes, and validation state.
+
+sc scan [<path> ...]
+    Scan repository folders for installed packages and reconcile them into local tracking state.
+    Defaults to the current folder and supports `--recurse`.
+
+sc snapshot <package> [--scope <project|global|both>] [--full]
+    Export local modifications for the selected package into global snapshot staging.
+    By default exports modified tracked files only; `--full` captures the full installed package state.
 ```
 
 ### Admin Commands (opt-in)
@@ -157,6 +169,99 @@ names.
 `--remote` is primarily for admin and explicit remote-read workflows. Local
 operations may rely on configured defaults; commands that require a non-default
 remote should document that requirement explicitly.
+
+---
+
+## JSON Contracts
+
+Structured JSON is the canonical automation contract. Human-readable rendering
+may simplify presentation, but `--json` remains explicit and stable.
+
+### Error Envelope
+
+All commands that support `--json` return errors in this envelope:
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "install_scope_violation",
+    "message": "package team-lead cannot be installed globally",
+    "command": "install",
+    "details": {
+      "package": "team-lead",
+      "requested_scope": "global",
+      "allowed_scope": "local-only"
+    }
+  }
+}
+```
+
+Rules:
+- `ok` is always present
+- success responses set `ok: true` and omit `error`
+- `error.code` is stable for automation
+- `error.message` is human-readable
+- `details` may vary by command but must remain structured JSON
+
+### `sc list --json`
+
+```json
+{
+  "ok": true,
+  "branch": "main",
+  "filters": {
+    "tags": ["git", "review"]
+  },
+  "packages": [
+    {
+      "id": "team-lead",
+      "name": "team-lead",
+      "version": "1.2.0",
+      "branch": "main",
+      "description": "Team lead workflow skill",
+      "tags": ["team", "workflow"],
+      "variant": "claude",
+      "install_scope": "any",
+      "file_count": 4,
+      "dependency_count": 2,
+      "sha256": "abc123"
+    }
+  ]
+}
+```
+
+### `sc install --json`
+
+```json
+{
+  "ok": true,
+  "package": "team-lead",
+  "branch": "beta",
+  "version": "1.2.0",
+  "scope": "project",
+  "install_root": "/repo/.claude/skills/team-lead",
+  "install_id": "pkg_team-lead_project_ab12cd34",
+  "files_written": 4,
+  "dependencies": {
+    "preexisting": ["gh"],
+    "installed": ["agent-teams-mail"]
+  },
+  "hooks_registered": [
+    {
+      "event": "PreToolUse",
+      "script": ".claude/skills/team-lead/hooks/pre-commit.sh"
+    }
+  ],
+  "template_validation": {
+    "status": "ok",
+    "warnings": []
+  }
+}
+```
+
+Other Phase 3 commands follow the same top-level `ok` convention and emit
+command-specific structured payloads for automation.
 ---
 
 ## Integrity Model
@@ -215,6 +320,16 @@ For extra files in the installed package's managed target paths that are not in 
 
 Compute aggregate from local file SHAs:
   Compare against packages.sha256 → PASS | FAIL
+
+Verify tracked dependency and component state:
+  required_tools present and version-compatible → PASS | FAIL
+  required_clis present and version-compatible → PASS | FAIL
+  hook registrations and template-validation state consistent with lockfile → PASS | FAIL
+
+Inventory local modifications:
+  Record modified tracked files separately from corrupt or missing files
+  Optionally export modification snapshots into product-managed staging under
+  global state for comparison across versions
 ```
 
 **`sc admin verify <package>`** (admin):
@@ -283,6 +398,8 @@ synaptic-canvas-dolt/
 │   │   ├── list.go               # sc list
 │   │   ├── info.go               # sc info
 │   │   ├── install.go            # sc install
+│   │   ├── scan.go               # sc scan
+│   │   ├── snapshot.go           # sc snapshot
 │   │   ├── upgrade.go            # sc upgrade
 │   │   ├── uninstall.go          # sc uninstall
 │   │   ├── validate.go           # sc validate
@@ -300,6 +417,8 @@ synaptic-canvas-dolt/
 │   │   ├── manifest/             # manifest.yaml reconstruction
 │   │   ├── plugin/               # plugin.json reconstruction
 │   │   ├── installer/            # File installation logic
+│   │   ├── questionnaire/        # Install/upgrade question prompting + answer tracking
+│   │   ├── repo/                 # Repo detection/profile generation and scan helpers
 │   │   └── models/               # Data structures (Package, File, Dep)
 │   └── internal/                 # Private implementation
 │       ├── config/               # CLI configuration
@@ -413,7 +532,7 @@ ALTER TABLE packages ADD COLUMN signed_by VARCHAR(256) AFTER signature;
 
 2. ~~**Channel defaults:**~~ **Resolved.** Read-path commands resolve branches using `--branch`, then `SC_DOLT_BRANCH`, then `main`. The CLI ignores the current Dolt session branch.
 
-3. ~~**Dependency resolution:**~~ **Resolved.** For MVP, `sc install` warns about missing dependencies but does not auto-install them.
+3. ~~**Dependency resolution:**~~ **Resolved.** For MVP, `sc install` computes a dependency plan, shows external installs for approval, and may install them when approved or when `--yolo` is used. Dependency provenance is always recorded.
 
 4. **Template expansion:** ~~Resolved.~~ `sc` handles Jinja2 rendering at install time. Templates are validated at three points: dry-run (preview), pre-publish (blocking gate), and post-install (rendered output scan). See [Install System — Template Variable Validation](./synaptic-canvas-install-system.md#template-variable-validation).
 
