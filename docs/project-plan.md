@@ -602,7 +602,97 @@ func PlanBatchUpgrade(installs []TrackedInstall, req UpgradeRequest) ([]UpgradeP
 }
 ```
 
-### Sprint 3.5: SHA Catalog Subsystem
+### Sprint 3.5: HTTPClient — DoltHub REST API Implementation
+
+**Goal:** Replace `SQLClient` as the default `Client` implementation with
+`HTTPClient` using the DoltHub HTTP REST API. `SQLClient` and `CLIReader` are
+retained as documented alternatives.
+
+**Background:** DoltHub.com does not expose MySQL wire protocol. The MVP Dolt
+access path is the HTTP REST API at
+`https://www.dolthub.com/api/v1alpha1/{owner}/{database}/{branch}`.
+See `docs/dolt-api.md` for API contracts and requirement traceability (DC-001
+through DC-007).
+
+**Deliverables:**
+
+- `src/pkg/dolt/http_client.go` — `HTTPClient` struct implementing `Client`
+  interface using DoltHub REST API
+- Branch encoded in URL path per DC-003 — no session state between calls
+- Auth header `Authorization: token <TOKEN>` for private repos (DC-004)
+- Active client selectable via sc config (DC-006); default = `HTTPClient`
+- Config keys: `dolt.host` (default `dolthub.com`), `dolt.database`,
+  `dolt.token` (empty = unauthenticated public read), `dolt.client`
+  (enum: `http`, `sql`, `cli`; default `http`)
+- Unit tests using `httptest.NewServer` — no live DoltHub calls in tests
+- Integration test or manual QA step verifying live query against
+  `dolthub.com/randlee/synaptic-canvas/main`
+
+**Key implementation:**
+
+```go
+// src/pkg/dolt/http_client.go
+type HTTPClient struct {
+    baseURL  string // https://www.dolthub.com/api/v1alpha1
+    database string // randlee/synaptic-canvas
+    token    string // empty for public repos
+}
+
+func (c *HTTPClient) query(ctx context.Context, branch, sql string) (*http.Response, error) {
+    url := fmt.Sprintf("%s/%s/%s?q=%s", c.baseURL, c.database, branch,
+        url.QueryEscape(sql))
+    req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+    if c.token != "" {
+        req.Header.Set("Authorization", "token "+c.token)
+    }
+    return http.DefaultClient.Do(req)
+}
+
+// DoltHub REST API response envelope
+type apiResponse struct {
+    SchemaType string           `json:"schema_type"`
+    Columns    []apiColumn      `json:"columns"`
+    Rows       []map[string]any `json:"rows"`
+}
+```
+
+**Config wiring:**
+
+```go
+const (
+    CfgDoltClient   = "dolt.client"   // "http" | "sql" | "cli"
+    CfgDoltHost     = "dolt.host"     // dolthub.com
+    CfgDoltDatabase = "dolt.database" // randlee/synaptic-canvas
+    CfgDoltToken    = "dolt.token"    // empty = public read
+)
+
+func NewClientFromConfig(cfg *Config) (dolt.Client, error) {
+    switch cfg.Get(CfgDoltClient, "http") {
+    case "http":
+        return dolt.NewHTTPClient(cfg.Get(CfgDoltHost, "dolthub.com"),
+            cfg.Get(CfgDoltDatabase, ""), cfg.Get(CfgDoltToken, "")), nil
+    case "sql":
+        return dolt.Open(cfg.Get(CfgDoltDSN, ""))
+    case "cli":
+        return dolt.NewCLIReader(cfg.Get(CfgDoltDir, ""), ""), nil
+    }
+}
+```
+
+**Acceptance Criteria:**
+
+- `sc list` and `sc info` return correct results against live DoltHub public repo
+- Branch resolution (`--branch`, `SC_DOLT_BRANCH`, `main`) works via HTTP API
+- Private repo returns 403 without token; returns results with valid token
+- Unit tests pass with no network calls (`httptest.NewServer` mock)
+- `SQLClient` and `CLIReader` still compile and pass their existing tests
+
+**Requirements:** DC-001, DC-002, DC-003, DC-004, DC-005, DC-006, DC-007,
+BR-001 through BR-006
+
+---
+
+### Sprint 3.6: SHA Catalog Subsystem
 
 **Goal:** `sc catalog update [--branch <branch>]` and catalog-backed `sc validate`
 
@@ -633,7 +723,7 @@ func PlanBatchUpgrade(installs []TrackedInstall, req UpgradeRequest) ([]UpgradeP
 
 ---
 
-### Sprint 3.6: sc scan Implementation
+### Sprint 3.7: sc scan Implementation
 
 **Goal:** `sc scan [<path>...] [--recurse] [--scope <project|global|both>]`
 
@@ -661,7 +751,7 @@ func PlanBatchUpgrade(installs []TrackedInstall, req UpgradeRequest) ([]UpgradeP
 
 ---
 
-### Sprint 3.7: Import Collision Enforcement
+### Sprint 3.8: Import Collision Enforcement
 
 **Goal:** Enforce the SHA immutability invariant (`CA-006`, `CA-007`) at import time.
 
@@ -686,7 +776,7 @@ func PlanBatchUpgrade(installs []TrackedInstall, req UpgradeRequest) ([]UpgradeP
 
 ---
 
-### Sprint 3.8: Scope Flags, --yolo, Dep Acknowledgement, Validation Severity
+### Sprint 3.9: Scope Flags, --yolo, Dep Acknowledgement, Validation Severity
 
 **Goal:** Complete the behavioral requirements from IU-* and VA-* sections that
 were planned in Sprints 3.2–3.4 but not yet implemented.

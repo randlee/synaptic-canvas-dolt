@@ -36,6 +36,29 @@ Dolt remains the package system database because it provides:
 The CLI is a client of Dolt. End users are not expected to reason about Dolt
 session state during normal CLI use.
 
+### Dolt Client Architecture
+
+The `src/pkg/dolt` package exposes a `Client` interface. Multiple
+implementations exist; the active implementation is selected by configuration.
+See `docs/dolt-api.md` for full API contracts, source citations, and
+requirement traceability.
+
+| Implementation | Protocol | Target | MVP |
+|----------------|----------|--------|-----|
+| `HTTPClient`   | DoltHub REST API | dolthub.com public/private repos | **Yes** |
+| `SQLClient`    | MySQL wire protocol | Hosted Dolt, local dolt sql-server | Future |
+| `CLIReader`    | subprocess `dolt sql -q` | local dolt clone | Dev/alternative |
+
+Architecture rules:
+
+- `HTTPClient` is the MVP implementation; all end-user commands use it
+- `SQLClient` and `CLIReader` are retained as documented alternatives; they
+  are not removed
+- branch is always passed as a URL path segment in HTTP requests — no session
+  state exists between calls (satisfies BR-004, BR-005)
+- for MySQL-protocol implementations, branch is encoded in the qualified table
+  reference `` `database/branch`.table `` — `DOLT_CHECKOUT` is prohibited
+
 ## 3. Branch And Channel Model
 
 `develop`, `beta`, and `main` remain the release branches. Read behavior must

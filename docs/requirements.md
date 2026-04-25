@@ -44,7 +44,31 @@ lightweight and operationally useful.
   repository does not require broader observability features such as OTLP,
   routing runtimes, or health endpoints.
 
-## 3. Dolt Branch Access
+## 3. Dolt Client Contract
+
+- DC-001 The MVP Dolt client implementation shall use the DoltHub HTTP REST
+  API (`https://www.dolthub.com/api/v1alpha1/{owner}/{database}/{branch}`).
+  MySQL wire protocol is not available on dolthub.com.
+- DC-002 The `Client` interface in `src/pkg/dolt` shall be the only Dolt
+  access surface for CLI commands. Implementations are `HTTPClient` (MVP),
+  `SQLClient` (MySQL protocol, future), and `CLIReader` (subprocess, dev only).
+- DC-003 `HTTPClient` shall pass the branch as a URL path segment. No session
+  state exists between HTTP calls. This satisfies BR-004 and BR-005.
+- DC-004 For private DoltHub repos, the HTTP client shall send an
+  `Authorization: token <TOKEN>` header. Tokens are stored in sc config, never
+  in source control.
+- DC-005 When Dolt is unreachable, commands that require a live Dolt query
+  shall emit a clear error. Commands that can fall back to local cache (e.g.
+  `sc validate` using the SHA catalog) shall do so and emit a warning.
+- DC-006 The active client implementation shall be selectable via sc config
+  to support future migration from `HTTPClient` to `SQLClient` without code
+  changes. Default is `HTTPClient`.
+- DC-007 `SQLClient` and `CLIReader` shall be retained in the codebase as
+  documented alternatives. They shall not be deleted.
+
+See `docs/dolt-api.md` for API contracts and source citations.
+
+## 4. Dolt Branch Access
 
 Dolt branches are the release-channel mechanism, but CLI read behavior shall be
 explicit and deterministic.
@@ -71,7 +95,7 @@ explicit and deterministic.
   Branch identifies the release track/channel; version identifies a release on
   that branch.
 
-## 4. CLI Access Strategy
+## 5. CLI Access Strategy
 
 The CLI is expected to be used by both humans and AI wrappers.
 
@@ -89,7 +113,7 @@ The CLI is expected to be used by both humans and AI wrappers.
   that improves readability, but structured output shall emit `"main"`
   explicitly.
 
-## 5. Agents And Scripts
+## 6. Agents And Scripts
 
 - AG-001 Agent definitions in this repository shall comply with the shared
   Claude Code skills/agents guidelines located in the sibling
@@ -102,7 +126,7 @@ The CLI is expected to be used by both humans and AI wrappers.
 - AG-005 Agent and script behavior required by a sprint shall be documented in
   the sprint plan and verified by tests or explicit QA steps.
 
-## 6. Install Targets And Product State
+## 7. Install Targets And Product State
 
 - FS-001 For MVP, package artifacts for Claude Code shall be materialized into
   `.claude/` for local installs or `~/.claude/` for global installs.
@@ -128,7 +152,7 @@ The CLI is expected to be used by both humans and AI wrappers.
   `snapshot.toml` file that records, at minimum, package name, branch, version,
   snapshot timestamp, source install path, and repository path when applicable.
 
-## 7. Install Tracking And State Safety
+## 8. Install Tracking And State Safety
 
 - ST-001 Synaptic Canvas shall track all local and global package installs on
   the machine in product-managed state under `.synaptic/` or `~/.synaptic/`.
@@ -157,7 +181,7 @@ The CLI is expected to be used by both humans and AI wrappers.
   design shall not depend on process-exit cleanup as the only stale-lock
   prevention mechanism.
 
-## 8. Install, Upgrade, And Uninstall Behavior
+## 9. Install, Upgrade, And Uninstall Behavior
 
 - IU-001 Installing external tools or CLIs as dependencies shall require an
   explicit plan acknowledgement unless the user opts into non-interactive
@@ -188,7 +212,7 @@ The CLI is expected to be used by both humans and AI wrappers.
   targeted package upgrades; it shall not be supported as a blanket override for
   `upgrade --all`.
 
-## 9. Validation And Inventory
+## 10. Validation And Inventory
 
 - VA-001 Validation shall cover more than file checksums. At minimum it shall
   verify tracked file presence, aggregate package integrity, dependency
@@ -222,7 +246,7 @@ The CLI is expected to be used by both humans and AI wrappers.
   include a readable `snapshot.toml` file containing, at minimum, the full
   source path, repo URL, snapshot timestamp, version, branch, and scope.
 
-## 10. SHA Catalog
+## 11. SHA Catalog
 
 The SHA catalog is the authoritative, local-cacheable reference for all
 immutable `(package_id, version, dest_path, sha256)` tuples on a given branch.
@@ -251,7 +275,7 @@ immutable `(package_id, version, dest_path, sha256)` tuples on a given branch.
   different SHA, the import shall be rejected with a hard error naming the
   colliding file and both SHAs.
 
-## 11. Verification Traceability
+## 12. Verification Traceability
 
 - VER-001 Requirements shall be testable or otherwise verifiable.
 - VER-002 Sprint acceptance criteria shall map to one or more concrete
