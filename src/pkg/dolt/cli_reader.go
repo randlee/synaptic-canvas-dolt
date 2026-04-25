@@ -42,10 +42,29 @@ func NewCLIReader(doltDir, branch string) *CLIReader {
 func (r *CLIReader) Close() error {
 	return nil
 }
+
+func (r *CLIReader) ListPackages(ctx context.Context, opts ListOptions) ([]models.Package, error) {
+	rows, err := runCLIQuery[models.Package](ctx, r.DoltDir, opts.Branch,
+		"SELECT id, name, version, description, agent_variant, tags, install_scope, sha256 FROM packages ORDER BY name",
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	filtered := make([]models.Package, 0, len(rows))
+	for _, row := range rows {
+		if !matchesTags(row.TagsList(), opts.Tags) {
+			continue
+		}
+		filtered = append(filtered, row)
+	}
+	return filtered, nil
+}
+
 func (r *CLIReader) GetPackage(ctx context.Context, id string) (*models.Package, error) {
 	rows, err := runCLIQuery[models.Package](ctx, r.DoltDir, r.Branch, fmt.Sprintf(
 		"SELECT id, name, version, description, agent_variant, author, license, tags, install_scope, variables, options, sha256, min_claude_version FROM packages WHERE id = %s",
-		sqlString(id),
+		cliSQLString(id),
 	))
 	if err != nil {
 		return nil, err
@@ -56,10 +75,28 @@ func (r *CLIReader) GetPackage(ctx context.Context, id string) (*models.Package,
 	return &rows[0], nil
 }
 
+func (r *CLIReader) GetPackageDetail(ctx context.Context, id string) (*models.Package, error) {
+	pkg, err := r.GetPackage(ctx, id)
+	if err != nil || pkg == nil {
+		return pkg, err
+	}
+	files, err := r.GetPackageFiles(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	deps, err := r.GetPackageDeps(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	pkg.FileCount = len(files)
+	pkg.DepCount = len(deps)
+	return pkg, nil
+}
+
 func (r *CLIReader) GetPackageFiles(ctx context.Context, packageID string) ([]models.PackageFile, error) {
 	rows, err := runCLIQuery[cliPackageFile](ctx, r.DoltDir, r.Branch, fmt.Sprintf(
 		"SELECT package_id, dest_path, content, sha256, file_type, content_type, is_template, frontmatter, fm_name, fm_description, fm_version, fm_model FROM package_files WHERE package_id = %s ORDER BY dest_path",
-		sqlString(packageID),
+		cliSQLString(packageID),
 	))
 	if err != nil {
 		return nil, err
@@ -87,27 +124,27 @@ func (r *CLIReader) GetPackageFiles(ctx context.Context, packageID string) ([]mo
 func (r *CLIReader) GetPackageDeps(ctx context.Context, packageID string) ([]models.PackageDep, error) {
 	return runCLIQuery[models.PackageDep](ctx, r.DoltDir, r.Branch, fmt.Sprintf(
 		"SELECT package_id, dep_type, dep_name, dep_spec, install_cmd, cmd_sha256 FROM package_deps WHERE package_id = %s ORDER BY dep_name",
-		sqlString(packageID),
+		cliSQLString(packageID),
 	))
 }
 
 func (r *CLIReader) GetPackageHooks(ctx context.Context, packageID string) ([]models.PackageHook, error) {
 	return runCLIQuery[models.PackageHook](ctx, r.DoltDir, r.Branch, fmt.Sprintf(
 		"SELECT package_id, event, matcher, script_path, priority, blocking FROM package_hooks WHERE package_id = %s ORDER BY event, priority",
-		sqlString(packageID),
+		cliSQLString(packageID),
 	))
 }
 func (r *CLIReader) GetPackageQuestions(ctx context.Context, packageID string) ([]models.PackageQuestion, error) {
 	return runCLIQuery[models.PackageQuestion](ctx, r.DoltDir, r.Branch, fmt.Sprintf(
 		"SELECT package_id, question_id, prompt, type, default_val, choices, sort_order FROM package_questions WHERE package_id = %s ORDER BY sort_order, question_id",
-		sqlString(packageID),
+		cliSQLString(packageID),
 	))
 }
 
 func (r *CLIReader) ResolveVariant(ctx context.Context, logicalID, agentProfile string) (string, error) {
 	rows, err := runCLIQuery[models.PackageVariant](ctx, r.DoltDir, r.Branch, fmt.Sprintf(
 		"SELECT logical_id, agent_profile, variant_package_id FROM package_variants WHERE logical_id = %s AND agent_profile = %s",
-		sqlString(logicalID), sqlString(agentProfile),
+		cliSQLString(logicalID), cliSQLString(agentProfile),
 	))
 	if err != nil {
 		return "", err
@@ -132,4 +169,10 @@ func runCLIQuery[T any](ctx context.Context, doltDir, branch, query string) ([]T
 		return nil, fmt.Errorf("decoding dolt query json: %w", err)
 	}
 	return result.Rows, nil
+}
+
+var _ Client = (*CLIReader)(nil)
+
+func cliSQLString(v string) string {
+	return "'" + strings.ReplaceAll(v, "'", "''") + "'"
 }
