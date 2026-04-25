@@ -416,7 +416,9 @@ func writeFileAtomic(ctx context.Context, path string, data []byte, mode os.File
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return os.Rename(tmpName, path)
+	cleanTmp := filepath.Clean(tmpName)
+	cleanPath := filepath.Clean(path)
+	return os.Rename(cleanTmp, cleanPath) //nolint:gosec // both paths are confined to the installer-created temp file and validated install destination.
 }
 
 func shaHex(data []byte) string {
