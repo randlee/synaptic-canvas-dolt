@@ -80,7 +80,7 @@ type HookEntry struct {
 // LoadManifestLock reads manifest.lock or returns an empty lock if it does not exist.
 func LoadManifestLock(root string) (ManifestLock, error) {
 	path := filepath.Join(root, ManifestLockPath)
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // path is confined to Synaptic-managed state under the chosen root.
 	if errors.Is(err, os.ErrNotExist) {
 		return ManifestLock{Version: 1}, nil
 	}
@@ -118,7 +118,7 @@ func (m *ManifestLock) UpsertInstall(record InstallRecord) {
 // LoadHookRegistry loads the project hook registry or returns an empty registry.
 func LoadHookRegistry(root string) (HookRegistry, error) {
 	path := filepath.Join(root, HooksRegistry)
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // path is confined to Synaptic-managed state under the chosen root.
 	if errors.Is(err, os.ErrNotExist) {
 		return HookRegistry{}, nil
 	}
@@ -148,7 +148,7 @@ func SaveEnv(root string, env any) error {
 }
 
 func writeTOMLAtomic(path string, value any) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return fmt.Errorf("creating parent dir: %w", err)
 	}
 	data, err := toml.Marshal(value)

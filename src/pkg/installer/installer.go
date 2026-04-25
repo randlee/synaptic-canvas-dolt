@@ -196,9 +196,7 @@ func (Service) Execute(_ context.Context, req Request) (Summary, error) {
 	if err != nil {
 		return Summary{}, err
 	}
-	for _, hook := range summary.HooksRegistered {
-		registry.Hooks = append(registry.Hooks, hook)
-	}
+	registry.Hooks = append(registry.Hooks, summary.HooksRegistered...)
 	if err := SaveHookRegistry(req.RepoRoot, registry); err != nil {
 		return Summary{}, err
 	}
@@ -353,7 +351,7 @@ func dependencyWarnings(deps []models.PackageDep) []string {
 }
 
 func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return err
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
@@ -383,7 +381,7 @@ func shaHex(data []byte) string {
 
 func ensureProjectState(root string) error {
 	for _, rel := range []string{ManifestLockPath, RepoProfilePath, EnvPath, HooksRegistry} {
-		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, rel)), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, rel)), 0o750); err != nil {
 			return fmt.Errorf("creating state dir: %w", err)
 		}
 	}

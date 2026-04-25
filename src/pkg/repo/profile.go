@@ -98,7 +98,7 @@ func fileExists(path string) bool {
 }
 
 func fileContains(path, needle string) bool {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // path is discovered from repo-local files during profile detection.
 	if err != nil {
 		return false
 	}

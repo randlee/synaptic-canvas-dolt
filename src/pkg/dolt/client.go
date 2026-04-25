@@ -21,6 +21,9 @@ type ListOptions struct {
 	// Branch specifies the Dolt branch (channel) to query.
 	// Empty string means use the current/default branch.
 	Branch string
+
+	// Tags filters packages by requested tags using case-insensitive OR matching.
+	Tags []string
 }
 
 // Client defines the interface for querying the Synaptic Canvas Dolt database.
@@ -31,6 +34,9 @@ type Client interface {
 
 	// GetPackage retrieves a single package by ID.
 	GetPackage(ctx context.Context, id string) (*models.Package, error)
+
+	// GetPackageDetail retrieves one package with file/dependency counts.
+	GetPackageDetail(ctx context.Context, id string) (*models.Package, error)
 
 	// GetPackageFiles retrieves all files belonging to a package.
 	GetPackageFiles(ctx context.Context, packageID string) ([]models.PackageFile, error)
@@ -121,7 +127,8 @@ func (c *SQLClient) Close() error {
 // ListPackages returns all packages, optionally filtered by branch.
 func (c *SQLClient) ListPackages(ctx context.Context, opts ListOptions) ([]models.Package, error) {
 	slog.Debug("listing packages", "branch", opts.Branch)
-	rows, err := c.db.QueryContext(ctx, ListPackagesQuery(c.database, opts.Branch))
+	query, args := ListPackagesQuery(c.database, opts.Branch, opts.Tags)
+	rows, err := c.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("listing packages: %w", err)
 	}
@@ -130,7 +137,10 @@ func (c *SQLClient) ListPackages(ctx context.Context, opts ListOptions) ([]model
 	var packages []models.Package
 	for rows.Next() {
 		var p models.Package
-		if err := rows.Scan(&p.ID, &p.Name, &p.Version, &p.Description, &p.Tags, &p.InstallScope); err != nil {
+		if err := rows.Scan(
+			&p.ID, &p.Name, &p.Version, &p.Description, &p.AgentVariant,
+			&p.Tags, &p.InstallScope, &p.SHA256, &p.FileCount, &p.DepCount,
+		); err != nil {
 			return nil, fmt.Errorf("scanning package row: %w", err)
 		}
 		packages = append(packages, p)
@@ -157,6 +167,26 @@ func (c *SQLClient) GetPackage(ctx context.Context, id string) (*models.Package,
 	}
 	if err != nil {
 		return nil, fmt.Errorf("getting package %q: %w", id, err)
+	}
+	return &p, nil
+}
+
+// GetPackageDetail retrieves a single package by ID with file/dependency counts.
+func (c *SQLClient) GetPackageDetail(ctx context.Context, id string) (*models.Package, error) {
+	slog.Debug("getting package detail", "id", id)
+	var p models.Package
+	err := c.db.QueryRowContext(ctx, GetPackageDetailQuery(c.database, c.branch), id).Scan(
+		&p.ID, &p.Name, &p.Version, &p.Description, &p.AgentVariant,
+		&p.Author, &p.License, &p.Tags, &p.InstallScope,
+		&p.Variables, &p.Options, &p.SHA256, &p.MinClaudeVer,
+		&p.FileCount, &p.DepCount,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		slog.Debug("package detail not found", "id", id)
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("getting package detail %q: %w", id, err)
 	}
 	return &p, nil
 }
