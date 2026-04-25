@@ -76,26 +76,32 @@ sc info <package>
 sc init
     Initialize `.synaptic/` state for the current repository.
 
-sc install <package> [--global] [--branch <branch>] [--dry-run]
+sc install <package> [--global] [--branch <branch>] [--dry-run] [--yolo]
     Install a package from Dolt.
     --global    Install to ~/.claude/ (default: .claude/ in current repo)
     --branch    Install from specific branch (default: main)
     --dry-run   Show the install plan and template preview without side effects
+    --yolo      Execute the computed install plan without interactive confirmation
 
-sc upgrade <package> [--all]
-    Upgrade installed package(s) to latest version on their branch.
+sc upgrade <package> [--all] [--scope <project|global|both>] [--yolo]
+    Upgrade installed package(s) to latest version on their branch and scope.
 
-sc uninstall <package>
-    Remove an installed package.
+sc uninstall <package> [--scope <project|global|both>] [--yolo]
+    Remove an installed package from the selected tracked install scope.
 
-sc validate [<package>] [--all]
-    Verify installed files match Dolt SHA256 hashes.
+sc validate [<package>] [--all] [--scope <project|global|both>]
+    Verify installed files, dependency state, and tracked install health.
     Reports: OK, MODIFIED (local edits), MISSING, UNREADABLE (permission denied or I/O error), EXTRA (untracked files).
     `EXTRA` is limited to files inside the installed package's managed target
     paths that are not tracked by that package manifest.
+    Validation results are list-based and each item carries an explicit severity.
 
-sc status
-    Show installed packages, their versions, branches, and validation state.
+sc status [--scope <project|global|both>]
+    Show installed packages, their versions, branches, scopes, and validation state.
+
+sc scan [<path> ...]
+    Scan repository folders for installed packages and reconcile them into local tracking state.
+    Defaults to the current folder and supports `--recurse`.
 ```
 
 ### Admin Commands (opt-in)
@@ -215,6 +221,16 @@ For extra files in the installed package's managed target paths that are not in 
 
 Compute aggregate from local file SHAs:
   Compare against packages.sha256 → PASS | FAIL
+
+Verify tracked dependency and component state:
+  required_tools present and version-compatible → PASS | FAIL
+  required_clis present and version-compatible → PASS | FAIL
+  hook registrations and template-validation state consistent with lockfile → PASS | FAIL
+
+Inventory local modifications:
+  Record modified tracked files separately from corrupt or missing files
+  Optionally export modification snapshots into product-managed staging under
+  global state for comparison across versions
 ```
 
 **`sc admin verify <package>`** (admin):

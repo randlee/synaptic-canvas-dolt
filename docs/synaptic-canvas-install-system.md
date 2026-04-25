@@ -9,7 +9,8 @@ The install process handles three distinct concerns:
 2. **User configuration** — what does the user need from this skill?
 3. **Dependency resolution** — what needs to be installed on this machine?
 
-All three happen once, at install time, with user approval.
+All three happen once, at install time, with user approval unless the user
+explicitly opts into non-interactive approval with `--yolo`.
 
 ---
 
@@ -38,7 +39,7 @@ sc install
     │     Fill Jinja2 templates with repo context + user answers
     │     Show rendered output for verification
     │
-    ├─ 6. Approval (interactive)
+    ├─ 6. Approval (interactive unless --yolo)
     │     Present complete install plan:
     │       - Skills to install (with variants)
     │       - Files to materialize (with destinations)
@@ -324,6 +325,8 @@ variant = "claude"
 installed_at = "2026-02-22T10:05:00Z"
 install_scope = "project"
 template_rendered = true
+install_site = "/Users/rand/projects/my-api"
+tracking_origin = "local-install"
 
   [skills.files]
   ".claude/skills/commit-msg/main.md" = "sha256:rendered_hash..."
@@ -340,6 +343,7 @@ template_rendered = true
   agents = ["claude"]
   cli_installed = ["agent-teams-mail"]
   cli_versions = { "agent-teams-mail" = "0.4.2" }
+  cli_provenance = { "agent-teams-mail" = "installed-by-synaptic" }
   acknowledged_at = "2026-02-22T10:04:30Z"
 
   [skills.repo_profile_snapshot]
@@ -353,6 +357,11 @@ Lockfiles are part of Synaptic Canvas state, not Claude runtime artifacts. A
 project-local install writes the lockfile under `.synaptic/manifest.lock`; a
 global install writes it under `~/.synaptic/manifest.lock`.
 
+Local and global installs of the same package are expected to coexist. They are
+tracked as separate install records even when they resolve to the same package
+version. Scope-aware commands default to operating on both unless the user
+narrows the scope explicitly.
+
 **Key property**: after install, no skill invocation ever checks dependencies. The lockfile is the proof. Only `sc upgrade` or `SYNAPTIC_STARTUP_MODE=check` re-verifies.
 
 ### Install Scope Enforcement
@@ -364,6 +373,23 @@ global install writes it under `~/.synaptic/manifest.lock`.
 
 If a user requests `sc install --global` for a `local-only` package, the CLI
 must fail with a clear error before writing files or changing lockfile state.
+
+### Approval, Provenance, And `--yolo`
+
+External tool or CLI dependencies must be shown to the user before Synaptic
+Canvas installs them. By default the user explicitly acknowledges that plan.
+
+`sc install --yolo` skips the interactive confirmation step, but it does not
+skip planning or provenance capture. The lockfile still records:
+
+- what dependencies were already present
+- what dependencies were installed by Synaptic Canvas
+- which install scope was targeted
+- the final materialized file inventory
+
+The same `--yolo` semantics apply to `sc upgrade` and `sc uninstall`. In
+uninstall flows, non-interactive dependency removal is limited to dependencies
+recorded as installed by Synaptic Canvas.
 
 ---
 
@@ -383,9 +409,26 @@ When `sc upgrade` runs:
 5. On approval: re-materialize changed files, update lockfile
 6. Unchanged skills: no action, no re-verification
 
+If the same package is tracked both project-locally and globally, upgrade
+targets may be selected independently or together.
+
 `sc init` is idempotent. If `.synaptic/` state already exists, the command
 verifies or refreshes generated state rather than failing purely because the
 repo was already initialized.
+
+## Tracking Reconciliation
+
+The machine-level inventory is authoritative for "what is installed on this
+computer," but Synaptic Canvas must be able to discover repository installs
+created on another machine or copied into place manually.
+
+`sc scan` inspects repository folders for tracked install artifacts and
+reconciles them into local machine state. Reconciled installs are recorded with
+their discovered install site and marked distinctly from installs created
+locally by the current machine.
+
+By default `sc scan` inspects the current folder. It may also accept an
+explicit path list and a recursive mode for repository discovery.
 
 ### Answer Preservation
 

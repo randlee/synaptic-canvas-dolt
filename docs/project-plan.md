@@ -309,21 +309,29 @@ The read path. These commands never write to Dolt.
 - Lists packages from specified branch, defaults to main
 - Branch resolution follows `--branch`, then `SC_DOLT_BRANCH`, then `main`
 - Branch values map directly to Dolt branch names
-- Filters by tags
-- Info shows: name, version, description, dependencies, file count, SHA
+- `--tags` filtering semantics are explicit: split stored tags on commas, trim
+  whitespace, compare case-insensitively, and treat multiple requested tags as
+  OR filters
+- Info shows: name, version, description, dependencies, file count, SHA,
+  install scope, and variant when present
 - Both support `--json` output
+- Phase 3 end-user read commands reuse or extend the existing branch-qualified
+  read client rather than introducing a second read path
 
 ### Sprint 3.2: Install
 
-**Goal:** `sc install <package> [--global] [--branch <branch>]`
+**Goal:** `sc install <package> [--global] [--branch <branch>] [--dry-run] [--yolo]`
 
 **Deliverables:**
 - `src/cmd/install.go` — install command
 - `src/cmd/init.go` — repository bootstrap command for first-time setup
 - `src/pkg/installer/installer.go` — file installation logic
 - `src/pkg/installer/tracking.go` — installed package tracking (local state)
+- `src/cmd/scan.go` — tracking reconciliation command for scanning repository
+  folders and importing discovered installs into local machine state
 - Install logic: query Dolt → verify SHAs → write files → render templates → record install
 - Dry-run mode for install planning and template preview
+- `--yolo` mode for non-interactive approval of the computed install plan
 - Post-install template verification: scan rendered `.j2` output for unresolved `{{ }}` patterns
 - Unit and integration tests for install and tracking behavior
 
@@ -335,37 +343,83 @@ The read path. These commands never write to Dolt.
 - Branch values map directly to Dolt branch names
 - Respects `install_scope` from packages table
 - `local-only` packages fail fast if the user requests `--global`
+- The initial lockfile/tracking schema is explicit and normative for Phase 3,
+  including package identity, version, Dolt commit, branch, variant, install
+  scope, materialized file inventory, answers, requirements snapshot,
+  repo-profile snapshot, and template-validation state
+- Install tracking records all repo-local and global installs on the machine;
+  local and global installs of the same package are treated as normal
+  independent tracked installs
+- Install records dependency provenance: whether each dependency was already
+  present or was installed by Synaptic Canvas during the operation
 - Verifies per-file SHA after writing each file
 - Verifies aggregate SHA after install
 - Fails and rolls back on any SHA mismatch
 - Renders `.j2` templates with repo profile + user answers context
 - `sc install --dry-run` shows the install plan and template preview without
   side effects
+- Standard install prompts the user to acknowledge external dependency
+  installation before any CLI/tool dependency is installed
+- `sc install --yolo` executes the computed plan without interactive prompts
+  and still records dependency provenance and the final install plan in
+  tracking state
 - Post-install scan: warns if any rendered output contains unresolved `{{ }}` patterns (safety net)
 - Records installed package/version/branch for status tracking, including `template_validation` in lockfile
-- Handles dependencies (warn if missing, don't auto-install for MVP)
+- `sc init` creates or refreshes the minimum `.synaptic/` state artifacts
+  required for Phase 3, including lockfile location, repo profile, env/config
+  state, and hook-registry scaffolding
+- State locking is limited to `.synaptic/` or `~/.synaptic/` mutation and must
+  be designed so stale lock artifacts cannot occur; package artifacts under
+  `.claude/` are never left under persistent product locks
+- `sc scan` can inspect repository folders and reconcile discovered installs
+  into local tracking state for installs created on another machine
+- `sc scan` defaults to the current folder, accepts an explicit path list, and
+  supports `--recurse` for recursive repository discovery
 - `--json` output includes install summary (with template validation results)
 - `sc init` bootstraps `.synaptic/` state for a new repository and can be
   triggered implicitly by first install
 - `sc init` is idempotent on an already initialized repository
 
-### Sprint 3.3: Validate & Status
+### Sprint 3.3: Validate, Status & Scan
 
-**Goal:** `sc validate [<package>] [--all]` and `sc status`
+**Goal:** `sc validate [<package>] [--all]`, `sc status`, and `sc scan`
 
 **Deliverables:**
 - `src/cmd/validate.go` — validate command
 - `src/cmd/status.go` — status command
+- `src/cmd/scan.go` — scan command for machine/repo inventory reconciliation
 - Validate logic: recompute SHAs from installed files → compare against Dolt
+  plus validate tracked dependency and component state
 - Unit tests for validate and status behavior
 
 **Acceptance Criteria:**
-- Validate reports per-file: OK, MODIFIED, MISSING
+- Validate supports project-local installs, global installs, or both in one
+  invocation
+- Scope-aware commands use `--scope`, and omitting `--scope` defaults to `both`
+- Validate reports per-file: OK, MODIFIED, MISSING, UNREADABLE
 - Validate reports extra files inside the package's managed install paths as
   EXTRA (untracked)
 - Validate computes and checks aggregate SHA
-- Status shows installed packages, versions, branches, validation state
+- Validate also verifies tracked dependency presence, dependency version
+  compatibility, hook registration state, and template-validation state needed
+  for the package to function
+- Validate inventories local modifications distinctly from corruption so local
+  improvements can be analyzed later
+- Validate output is list-based and each item includes an explicit severity
+  level
+- Validate can export local modification snapshots into a package-organized
+  staging area under product-managed global state for comparison across
+  versions and later hardening/re-import
+- Status shows installed packages, versions, branches, install scope,
+  validation state, and enough tracking detail to answer what is installed in
+  the current repo, globally on the machine, or both
+- `sc scan` reconciles repository installs found on disk into local machine
+  tracking state
+- `sc scan` defaults to the current folder, accepts a path list, and supports
+  `--recurse`
 - Both support `--json` output
+- JSON output is stable enough for Phase 4 wrappers to consume, including
+  aggregate validation result shape and install-scope targeting
 
 ### Sprint 3.4: Upgrade & Uninstall
 
@@ -374,14 +428,30 @@ The read path. These commands never write to Dolt.
 **Deliverables:**
 - `src/cmd/upgrade.go` — upgrade command
 - `src/cmd/uninstall.go` — uninstall command
-- Upgrade logic: check for newer version → install → verify
+- Upgrade logic: check for newer version → refresh questions/profile/deps as
+  needed → install → verify
 - Uninstall logic: remove files → update tracking
 - Unit and integration tests for upgrade and uninstall behavior
 
 **Acceptance Criteria:**
+- Upgrade supports project-local installs, global installs, or both in one
+  invocation
+- Scope-aware commands use `--scope`, and omitting `--scope` defaults to `both`
 - Upgrade checks current vs available version on branch
+- Upgrade prompts for new questions added since install, re-renders templates
+  if repo profile changed, verifies changed dependencies, and re-resolves
+  variant selection
 - Upgrade warns about local modifications before overwriting
-- Uninstall removes package files and tracking record
+- Upgrade supports a mode that keeps local/global installs in sync by default
+  while still allowing users to target only local or only global installs
+- Uninstall removes only files and hooks owned exclusively by the target
+  tracked install and preserves shared dependencies still needed elsewhere
+- Uninstall asks whether dependencies installed by Synaptic Canvas should be
+  removed and ignores dependencies that predated the install
+- `--yolo` is supported for upgrade and uninstall; in uninstall it may only
+  remove dependencies recorded as installed by Synaptic Canvas
+- Uninstall behavior is explicit when tracked files are locally modified,
+  missing, or discovered by scan rather than original local tracking
 - Both support `--json` output
 
 ---

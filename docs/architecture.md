@@ -108,13 +108,56 @@ Architecture rules:
   packages
 - `.synaptic/` stores lockfiles, generated config, metadata, cache, logs, temp
   directories, hook registry state, and similar product-owned files
+- machine-level state uses `~/.synaptic/` with the same schema as repo-local
+  state where applicable
+- local and global installs of the same package are a normal supported state,
+  not an edge case; Synaptic Canvas tracks both independently and commands may
+  target project installs, global installs, or both
+- installed package artifacts under `.claude/` or `~/.claude/` must not be held
+  under long-lived product locks; coordination is limited to `.synaptic/` or
+  `~/.synaptic/` state mutation and the design must avoid stale lock artifacts
+  entirely
+- product-managed tracking must record where a package is installed, what
+  version and branch it came from, what files were materialized, and which
+  external dependencies were already present versus installed by Synaptic
+  Canvas
+- the product should support inventory reconciliation by scanning repositories
+  for tracked package artifacts and reconciling them into local machine state
 - future target roots such as `.codex/` and `.agents/` are compatible with this
   model but remain post-MVP
 
 This keeps runtime-facing files aligned with the host tool while allowing
 Synaptic Canvas to own its own operational state cleanly.
 
-## 7. Agent And Script Architecture
+## 7. End-User State And Validation
+
+Phase 3 end-user commands operate against local tracked installation state plus
+explicit Dolt reads.
+
+Architecture rules:
+
+- `status`, `validate`, `upgrade`, and `uninstall` must be able to reason about
+  project-local installs, global installs, or both in one invocation
+- scope-aware end-user commands use `--scope` with an enum and default to
+  `both` when omitted
+- validation is broader than file checksum verification; it includes installed
+  file presence, aggregate package integrity, dependency presence, dependency
+  version compatibility, hook registration state, and template-validation state
+- validation should inventory local modifications rather than reducing all drift
+  to corruption; locally modified files are part of the managed state picture
+- validation output is list-based and severity-driven rather than a single
+  monolithic pass/fail result
+- local modification snapshots can be exported into product-managed global
+  staging, organized by package, so changes can be compared across installed
+  versions and prepared for re-import
+- uninstall behavior depends on dependency provenance: dependencies installed by
+  Synaptic Canvas may be offered for removal, while dependencies that predated
+  the install are left untouched
+- non-interactive install/upgrade flows must remain explicit. `--yolo` is the
+  acknowledged "proceed without prompting" mode for install, upgrade, and
+  uninstall, and still records what external dependencies were installed
+
+## 8. Agent And Script Architecture
 
 Repository-local agent definitions and helper scripts are part of the product
 surface for Claude-facing workflows.
@@ -127,7 +170,7 @@ Architecture rules:
 - helper scripts must be unit-tested
 - sprint plans must define how agent/script behavior is verified
 
-## 8. Detailed Design Documents
+## 9. Detailed Design Documents
 
 This architecture overview is intentionally high level. The detailed subsystem
 documents remain:

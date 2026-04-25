@@ -111,7 +111,75 @@ The CLI is expected to be used by both humans and AI wrappers.
   marked `local-only`, `sc install --global` shall fail with a clear error and
   shall not perform a partial install.
 
-## 7. Verification Traceability
+## 7. Install Tracking And State Safety
+
+- ST-001 Synaptic Canvas shall track all local and global package installs on
+  the machine in product-managed state under `.synaptic/` or `~/.synaptic/`.
+- ST-002 Local and global installs of the same package shall be treated as a
+  normal supported state. Status, validate, upgrade, and uninstall flows shall
+  be able to target project installs, global installs, or both.
+- ST-003 Install tracking shall record, at minimum, package identity, version,
+  Dolt source reference, install scope, materialized file inventory, and
+  dependency provenance.
+- ST-004 Synaptic Canvas shall support reconciliation of tracked state by
+  scanning repositories for installed package artifacts and importing or
+  updating local tracking records for installs created on another machine.
+- ST-005 Product coordination shall apply only to product-managed state
+  mutation under `.synaptic/` or `~/.synaptic/`. Installed runtime artifacts
+  under `.claude/` or `~/.claude/` shall not be left under persistent product
+  locks.
+- ST-006 The locking design shall make stale lock artifacts impossible by
+  design. Synaptic Canvas shall not rely on orphanable lock files that can
+  permanently block future operations after a crash or interruption.
+- ST-007 Where mutual exclusion is required, the implementation shall use
+  atomic replacement, transactional staging, or self-cleaning OS-backed locking
+  semantics that disappear automatically when the owning process exits.
+
+## 8. Install, Upgrade, And Uninstall Behavior
+
+- IU-001 Installing external tools or CLIs as dependencies shall require an
+  explicit plan acknowledgement unless the user opts into non-interactive
+  approval with `--yolo`.
+- IU-002 `--yolo` shall mean "execute the computed plan without interactive
+  confirmation," including dependency installation, while still recording what
+  changed in tracking state.
+- IU-003 Install tracking shall record whether each dependency was already
+  present before install or was installed by Synaptic Canvas as part of the
+  operation.
+- IU-004 Uninstall shall not remove dependencies that predated the Synaptic
+  Canvas install.
+- IU-005 Uninstall shall ask whether to remove dependencies that were installed
+  by Synaptic Canvas for the package being removed, unless a non-interactive
+  mode says otherwise.
+- IU-006 Uninstall and upgrade shall preserve dependencies, hooks, and shared
+  artifacts still required by other tracked installs.
+- IU-007 For scope-aware commands, omitting `--scope` shall default to `both`.
+- IU-008 `--yolo` may be used with install, upgrade, and uninstall. In
+  uninstall flows it shall only allow removal of dependencies that were
+  recorded as installed by Synaptic Canvas.
+
+## 9. Validation And Inventory
+
+- VA-001 Validation shall cover more than file checksums. At minimum it shall
+  verify tracked file presence, aggregate package integrity, dependency
+  presence, dependency version compatibility, and other tracked installation
+  components needed for the package to function.
+- VA-002 Validation shall classify local file drift distinctly from missing or
+  corrupt files so local improvements and modifications can be inventoried and
+  analyzed.
+- VA-003 Validation output shall make the installation scope being validated
+  explicit and shall support project-local, global, or combined inventory
+  views.
+- VA-004 Status and validation output shall be sufficient to answer "what is
+  installed on this machine," including packages tracked outside the current
+  repository.
+- VA-005 Validation output shall be list-based and each reported item shall
+  carry an explicit severity level suitable for human review and automation.
+- VA-006 Validation shall support exporting local modifications to a staged
+  snapshot area under product-managed global state so locally improved variants
+  can be compared across versions and prepared for hardening or re-import.
+
+## 10. Verification Traceability
 
 - VER-001 Requirements shall be testable or otherwise verifiable.
 - VER-002 Sprint acceptance criteria shall map to one or more concrete

@@ -394,13 +394,15 @@ entry point.
 ```bash
 sc install <package>               # resolve, fetch, materialize
 sc init                            # initialize repo-local .synaptic state
-sc uninstall <package>             # remove files, update lockfile
-sc upgrade [package]               # upgrade one or all packages
+sc uninstall <package> --scope project|global|both --yolo
+sc upgrade [package] --scope project|global|both --yolo
 sc list                            # browse packages on the effective branch
 sc list --available                # all packages on the effective branch
-sc validate [<package>] [--all]    # verify installed files and hashes
-sc status                          # show installed packages and validation state
+sc validate [<package>] [--all] --scope project|global|both
+sc status --scope project|global|both
+sc scan [path ...] [--recurse]     # reconcile discovered repo installs into local inventory
 sc install --dry-run <package>     # show what files land where, no action
+sc install --yolo <package>        # execute computed plan without prompts
 ```
 
 ### Inspection
@@ -436,6 +438,7 @@ sc admin export claude-history --branch main --output ./out/claude-history
      CLIs to install:    agent-teams-mail  via: cargo install agent-teams-mail
      Hooks to register:  PreToolUse → pre-bash.sh
    [Proceed? y/N]
+   (`--yolo` skips this prompt but not the plan computation or tracking)
 6. Run CLI installs in declared order
 7. Materialize files from Dolt blobs to `.claude/...`, verify sha256
 8. Register hooks in `.synaptic/hooks/registry.toml`
@@ -445,6 +448,11 @@ sc admin export claude-history --branch main --output ./out/claude-history
 ```
 
 User acknowledgement is recorded once per install with a timestamp. Re-acknowledgement is only required if requirements change on upgrade.
+
+Local and global installs of the same package are expected to coexist. Status,
+validate, upgrade, and uninstall operate against project installs, global
+installs, or both, rather than assuming only one tracked installation exists.
+When omitted, scope defaults to `both`.
 
 ---
 
