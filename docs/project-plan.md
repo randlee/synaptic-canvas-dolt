@@ -602,90 +602,255 @@ func PlanBatchUpgrade(installs []TrackedInstall, req UpgradeRequest) ([]UpgradeP
 }
 ```
 
-### Sprint 3.5: HTTPClient — DoltHub REST API Implementation
+### Sprint 3.5: HTTPClient, File Config, and read_helpers Rewire
 
-**Goal:** Replace `SQLClient` as the default `Client` implementation with
-`HTTPClient` using the DoltHub HTTP REST API. `SQLClient` and `CLIReader` are
-retained as documented alternatives.
+**Goal:** Three tightly coupled deliverables that must land together: (1) a
+file-based layered config system, (2) `HTTPClient` implementing `dolt.Client`
+via the DoltHub REST API, (3) `read_helpers.go` rewired to default to
+`HTTPClient` instead of requiring a local `.dolt` directory.
 
-**Background:** DoltHub.com does not expose MySQL wire protocol. The MVP Dolt
-access path is the HTTP REST API at
-`https://www.dolthub.com/api/v1alpha1/{owner}/{database}/{branch}`.
-See `docs/dolt-api.md` for API contracts and requirement traceability (DC-001
-through DC-007).
+**Background:** DoltHub.com exposes HTTP REST only — not MySQL wire protocol.
+`openReadClient` currently requires a `.dolt` directory and uses `CLIReader` or
+`SQLClient`. Without this sprint, every end-user command fails with
+"could not auto-detect Dolt database directory." See `docs/dolt-api.md` for
+API contracts (DC-001 through DC-007).
 
-**Deliverables:**
+---
 
-- `src/pkg/dolt/http_client.go` — `HTTPClient` struct implementing `Client`
-  interface using DoltHub REST API
-- Branch encoded in URL path per DC-003 — no session state between calls
-- Auth header `Authorization: token <TOKEN>` for private repos (DC-004)
-- Active client selectable via sc config (DC-006); default = `HTTPClient`
-- Config keys: `dolt.host` (default `dolthub.com`), `dolt.database`,
-  `dolt.token` (empty = unauthenticated public read), `dolt.client`
-  (enum: `http`, `sql`, `cli`; default `http`)
-- Unit tests using `httptest.NewServer` — no live DoltHub calls in tests
-- Integration test or manual QA step verifying live query against
-  `dolthub.com/randlee/synaptic-canvas/main`
+#### Deliverable A: File-based Config System
 
-**Key implementation:**
+`src/internal/config/fileconfig.go` — layered config: file → env → flags.
+
+Config file location: `~/.sc/config.toml` (created on first `sc config set`).
+Format: TOML. Schema:
+
+```toml
+[dolt]
+client   = "http"                      # "http" | "sql" | "cli"; default "http"
+host     = "www.dolthub.com"           # DoltHub host
+database = "randlee/synaptic-canvas"   # owner/database slug
+token    = ""                          # DoltHub API token; empty = public read
+dsn      = ""                          # MySQL DSN; required when client = "sql"
+dir      = ""                          # local dolt dir; required when client = "cli"
+timeout  = 30                          # HTTP request timeout in seconds; default 30
+```
+
+New methods on `config.Config`:
 
 ```go
-// src/pkg/dolt/http_client.go
+// Get returns the string value for key from the merged config (file + env + flags).
+// Returns defaultVal if key is absent or empty.
+func (c *Config) Get(key, defaultVal string) string
+
+// GetInt returns the int value for key. Returns defaultVal on parse error or absent.
+func (c *Config) GetInt(key string, defaultVal int) int
+```
+
+Load order (last wins): config file → environment variables → CLI flags.
+Environment variable naming: `SC_DOLT_CLIENT`, `SC_DOLT_HOST`, etc.
+
+`src/cmd/configcmd.go` — `sc config get <key>` and `sc config set <key> <value>`.
+Both human and `--json` output. Validates key against known schema; rejects
+unknown keys with clear error.
+
+---
+
+#### Deliverable B: HTTPClient
+
+`src/pkg/dolt/http_client.go`:
+
+```go
 type HTTPClient struct {
-    baseURL  string // https://www.dolthub.com/api/v1alpha1
-    database string // randlee/synaptic-canvas
-    token    string // empty for public repos
+    baseURL  string        // https://www.dolthub.com/api/v1alpha1
+    database string        // randlee/synaptic-canvas
+    branch   string        // resolved effective branch
+    token    string        // empty for public repos
+    http     *http.Client  // custom client with timeout; never http.DefaultClient
 }
 
-func (c *HTTPClient) query(ctx context.Context, branch, sql string) (*http.Response, error) {
-    url := fmt.Sprintf("%s/%s/%s?q=%s", c.baseURL, c.database, branch,
-        url.QueryEscape(sql))
-    req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-    if c.token != "" {
-        req.Header.Set("Authorization", "token "+c.token)
-    }
-    return http.DefaultClient.Do(req)
+// HTTPConfig holds all parameters for NewHTTPClient.
+type HTTPConfig struct {
+    Host     string        // e.g. "www.dolthub.com"
+    Database string        // e.g. "randlee/synaptic-canvas"
+    Branch   string        // effective branch
+    Token    string        // empty = unauthenticated
+    Timeout  time.Duration // 0 uses DefaultHTTPTimeout (30s)
 }
 
-// DoltHub REST API response envelope
+const DefaultHTTPTimeout = 30 * time.Second
+
+func NewHTTPClient(cfg HTTPConfig) *HTTPClient
+
+// query executes SQL against the DoltHub API.
+// Uses GET with ?q= for queries under 1800 bytes; POST with body for longer.
+// Branch is URL-path-encoded via url.PathEscape.
+func (c *HTTPClient) query(ctx context.Context, sql string) ([]map[string]any, error)
+```
+
+DoltHub REST API response envelope:
+
+```go
 type apiResponse struct {
-    SchemaType string           `json:"schema_type"`
-    Columns    []apiColumn      `json:"columns"`
+    SchemaType string      `json:"schema_type"`
+    Columns    []apiColumn `json:"columns"`
     Rows       []map[string]any `json:"rows"`
 }
+
+type apiColumn struct {
+    Name       string `json:"columnName"`
+    Type       string `json:"columnType"`
+    IsPrimary  bool   `json:"isPrimaryKey"`
+    IsNullable bool   `json:"isNullable"`
+}
 ```
 
-**Config wiring:**
+**Response type mapping** — DoltHub returns all row values as JSON. Decode rules:
+- String columns → `string`; absent key or JSON `null` → empty string `""`
+- Integer columns → JSON number decoded as `float64`; cast to `int64` via
+  `int64(row["col"].(float64))`; JSON `null` → `0`
+- Boolean columns (e.g. `is_template`) → JSON `0`/`1` decoded as `float64` not
+  Go `bool`; treat as `bool` via `row["col"].(float64) != 0`
+- `json.RawMessage` columns (e.g. `frontmatter`) → kept as raw string;
+  caller decodes further
+
+**HTTP error handling:**
+- 200 → parse response
+- 400 → bad SQL; return `ErrBadQuery` with body text
+- 401/403 → authentication failure; return `ErrUnauthorized`
+- 404 → branch or database not found; return `ErrNotFound`
+- 429 → rate limited; return `ErrRateLimited` with `Retry-After` seconds if present
+- 5xx → server error; return `ErrServerError` with status code
+- Timeout (context deadline) → context error propagated as-is
+
+All sentinel errors defined in `src/pkg/dolt/errors.go`:
+```go
+var (
+    ErrNotFound     = errors.New("dolt: not found")
+    ErrUnauthorized = errors.New("dolt: unauthorized")
+    ErrBadQuery     = errors.New("dolt: bad query")
+    ErrRateLimited  = errors.New("dolt: rate limited")
+    ErrServerError  = errors.New("dolt: server error")
+)
+```
+
+---
+
+#### Deliverable C: read_helpers.go Rewire
+
+Replace `.dolt`-directory detection with config-driven client construction.
+
+`src/cmd/read_helpers.go` — new `openReadClient`:
 
 ```go
-const (
-    CfgDoltClient   = "dolt.client"   // "http" | "sql" | "cli"
-    CfgDoltHost     = "dolt.host"     // dolthub.com
-    CfgDoltDatabase = "dolt.database" // randlee/synaptic-canvas
-    CfgDoltToken    = "dolt.token"    // empty = public read
-)
+func openReadClient(cfg *config.Config) (readClient, error) {
+    clientType := cfg.Get("dolt.client", "http")
+    branch := cfg.EffectiveBranch()
 
-func NewClientFromConfig(cfg *Config) (dolt.Client, error) {
-    switch cfg.Get(CfgDoltClient, "http") {
+    switch clientType {
     case "http":
-        return dolt.NewHTTPClient(cfg.Get(CfgDoltHost, "dolthub.com"),
-            cfg.Get(CfgDoltDatabase, ""), cfg.Get(CfgDoltToken, "")), nil
+        return dolt.NewHTTPClient(dolt.HTTPConfig{
+            Host:     cfg.Get("dolt.host", "www.dolthub.com"),
+            Database: cfg.Get("dolt.database", ""),
+            Branch:   branch,
+            Token:    cfg.Get("dolt.token", ""),
+            Timeout:  time.Duration(cfg.GetInt("dolt.timeout", 30)) * time.Second,
+        }), nil
     case "sql":
-        return dolt.Open(cfg.Get(CfgDoltDSN, ""))
+        return dolt.OpenForBranch(dolt.Config{
+            Host: ..., // parse from cfg.Get("dolt.dsn", "")
+        }, branch)
     case "cli":
-        return dolt.NewCLIReader(cfg.Get(CfgDoltDir, ""), ""), nil
+        dir := cfg.Get("dolt.dir", "")
+        if dir == "" {
+            return nil, errors.New("dolt.client=cli requires dolt.dir to be set")
+        }
+        return dolt.NewCLIReader(dir, branch), nil
+    default:
+        return nil, fmt.Errorf("unknown dolt.client value %q; must be http, sql, or cli", clientType)
     }
 }
 ```
+
+`detectReadDoltDir` and `loadConfigAndReadDoltDir` are removed. `withReadClient`
+calls `openReadClient(cfg)` directly. Signature of `withReadClient` changes to:
+
+```go
+func withReadClient(cmd *cobra.Command, fn func(*config.Config, readClient) error) error
+```
+
+`dolt.client = ""` (missing from config file) defaults to `"http"`.
+If `dolt.database` is empty and client type is `http`, return a clear error:
+`"dolt.database is not configured; run: sc config set dolt.database <owner/database>"`.
+
+---
+
+#### Config Constants
+
+```go
+// src/internal/config/keys.go
+const (
+    KeyDoltClient   = "dolt.client"
+    KeyDoltHost     = "dolt.host"
+    KeyDoltDatabase = "dolt.database"
+    KeyDoltToken    = "dolt.token"
+    KeyDoltDSN      = "dolt.dsn"
+    KeyDoltDir      = "dolt.dir"
+    KeyDoltTimeout  = "dolt.timeout"
+)
+```
+
+---
+
+#### Test Requirements
+
+Unit tests (`httptest.NewServer` — no live network calls):
+
+- Empty response (zero rows) → returns empty slice, no error
+- HTTP 404 (branch not found) → returns `ErrNotFound`
+- HTTP 401/403 → returns `ErrUnauthorized`
+- HTTP 500 → returns `ErrServerError`
+- Malformed JSON response → returns wrapped parse error
+- Context timeout → returns context error
+- NULL column values → decoded to zero values (empty string, 0, false)
+- Unexpected extra JSON fields → ignored, no error
+- Branch name with `/` → URL-path-encoded correctly in request URL
+- Empty `dolt.database` → clear error before any HTTP call
+- URL > 1800 bytes → request uses POST not GET
+- Rate limit (429) → returns `ErrRateLimited`
+
+Integration test (tagged `//go:build integration`, excluded from CI):
+
+```go
+//go:build integration
+// Run: go test -tags integration ./src/pkg/dolt/ -run TestHTTPClientLive
+func TestHTTPClientLive(t *testing.T) {
+    // Queries live dolthub.com/randlee/synaptic-canvas/main
+    // Expected: at least one package returned
+    // Skips if DOLTHUB_TOKEN env var absent (public read)
+}
+```
+
+Flaky test prevention:
+- All unit tests use `httptest.NewServer` exclusively
+- Integration test tagged `integration` and excluded from default CI via
+  `.github/workflows/test.yml` (no `-tags integration` in CI matrix)
+
+`readClient` interface duplication: Sprint 3.5 must consolidate or alias
+`cmd.readClient` with `dolt.Client`. Preferred approach: add `GetPackageCatalog`
+to `dolt.Client` in Sprint 3.6 and make `readClient` a type alias
+`type readClient = dolt.Client`.
 
 **Acceptance Criteria:**
 
-- `sc list` and `sc info` return correct results against live DoltHub public repo
+- `sc list` returns correct results against live DoltHub public repo (integration test)
+- `sc list` works with httptest mock in unit tests (no network)
 - Branch resolution (`--branch`, `SC_DOLT_BRANCH`, `main`) works via HTTP API
-- Private repo returns 403 without token; returns results with valid token
-- Unit tests pass with no network calls (`httptest.NewServer` mock)
-- `SQLClient` and `CLIReader` still compile and pass their existing tests
+- `dolt.database` not set → clear error message naming the config key
+- `sc config set dolt.database randlee/synaptic-canvas` writes `~/.sc/config.toml`
+- `sc config get dolt.database` reads it back
+- HTTP 401/403 → error message mentions token configuration
+- `SQLClient` and `CLIReader` still compile and pass existing tests
+- No test makes a live network call except `TestHTTPClientLive`
 
 **Requirements:** DC-001, DC-002, DC-003, DC-004, DC-005, DC-006, DC-007,
 BR-001 through BR-006
@@ -696,30 +861,159 @@ BR-001 through BR-006
 
 **Goal:** `sc catalog update [--branch <branch>]` and catalog-backed `sc validate`
 
-**Deliverables:**
-- `GetPackageCatalogQuery(database, branch)` in `src/pkg/dolt/queries.go` —
-  returns `(id, version, dest_path, sha256)` for all packages on a branch
-- `GetPackageCatalog(ctx)` on the `Client` interface in `src/pkg/dolt/client.go`
-- `src/pkg/catalog/` — catalog struct, TOML read/write, per-branch cache file
-- Cache written to `.synaptic/catalog-{branch}.toml` (local) and
-  `~/.synaptic/catalog-{branch}.toml` (machine-level)
-- `src/cmd/catalog.go` — `sc catalog update` command with explicit Dolt fetch
-- Implicit catalog refresh triggered by `sc install` and `sc init`
-- Update `validateTrackedInstall()` in `src/cmd/state_helpers.go` to look up
-  expected SHAs from the local catalog rather than from `record.Files`
-- Offline fallback: use cached catalog with a clear warning when Dolt is
-  unavailable
-- Unit tests for catalog read/write, Dolt fetch, and validate integration
+**Background:** The catalog is a locally-cached, branch-scoped snapshot of the
+immutable `(package_id, version, dest_path, sha256)` tuples from Dolt. It
+enables offline validation and is the authoritative expected-SHA source for
+`sc validate`. `record.Files` SHAs in the lockfile are NOT the authoritative
+source — the catalog is. See CA-001 through CA-007 in requirements.md.
+
+---
+
+#### Deliverable A: Client Interface Extension
+
+Add `GetPackageCatalog(ctx context.Context) ([]CatalogEntry, error)` to the
+`dolt.Client` interface in `src/pkg/dolt/client.go`.
+
+**All four implementations must be updated:**
+- `HTTPClient` — query DoltHub REST API
+- `SQLClient` — query via MySQL protocol
+- `CLIReader` — query via subprocess
+- `MockClient` in test helpers — return configurable test data
+
+`GetPackageCatalogQuery(database, branch string) string` added to `queries.go`.
+Returns all `(package_id, version, dest_path, sha256)` for the branch.
+
+`readClient` interface in `src/cmd/read_helpers.go` must also gain
+`GetPackageCatalog` or be replaced with `type readClient = dolt.Client`.
+
+---
+
+#### Deliverable B: Catalog Package
+
+`src/pkg/catalog/catalog.go`:
+
+```go
+type CatalogEntry struct {
+    PackageID string
+    Version   string
+    DestPath  string
+    SHA256    string
+}
+
+type Catalog struct {
+    Meta    CatalogMeta    `toml:"meta"`
+    Entries []CatalogEntry `toml:"entries"`
+}
+
+type CatalogMeta struct {
+    Branch        string    `toml:"branch"`
+    FetchedAt     time.Time `toml:"fetched_at"`
+    SchemaVersion int       `toml:"schema_version"` // current = 1
+}
+```
+
+TOML file format:
+
+```toml
+[meta]
+branch         = "main"
+fetched_at     = "2026-04-25T12:00:00Z"
+schema_version = 1
+
+[[entries]]
+package_id = "team-lead"
+version    = "1.2.0"
+dest_path  = ".claude/skills/team-lead/SKILL.md"
+sha256     = "abc123..."
+
+[[entries]]
+package_id = "team-lead"
+version    = "1.2.0"
+dest_path  = ".claude/skills/team-lead/README.md"
+sha256     = "def456..."
+```
+
+Storage paths:
+- Local (project): `.synaptic/catalog-{sanitized-branch}.toml`
+- Machine: `~/.synaptic/catalog-{sanitized-branch}.toml`
+
+Branch name sanitization for path component: replace `/` with `_` and any
+character outside `[a-zA-Z0-9._-]` with `_`. Use
+`catalog.SanitizeBranchName(branch) string`. This prevents path traversal
+(e.g. `../../etc/evil` → `______etc_evil`).
+
+---
+
+#### Deliverable C: Catalog Write/Read
+
+Write target and read precedence (explicit):
+
+- `sc catalog update` with no `--scope`: writes local catalog if inside a git
+  repo, otherwise writes machine catalog. With `--scope global`: writes machine
+  catalog only. With `--scope project`: writes local catalog only.
+- `validateTrackedInstall()` reads local catalog first; falls back to machine
+  catalog if local absent.
+- Concurrent writes: catalog file writes use `writeTOMLAtomic` (temp file +
+  rename). Last writer wins — catalogs are idempotent caches. No advisory
+  locking required.
+
+---
+
+#### Deliverable D: Offline Fallback Chain
+
+When `validateTrackedInstall()` needs catalog SHAs:
+
+1. Local catalog exists → use it (emit warn if `fetched_at` > 24 hours ago)
+2. Local absent, machine catalog exists → use machine catalog with warning
+3. Both absent, Dolt reachable → fetch and cache, then use
+4. Both absent, Dolt unreachable → **fall back to lockfile `record.Files` SHAs**
+   with warning: `"catalog unavailable and Dolt offline; using lockfile SHAs
+   (may be stale — run sc catalog update when online)"`
+
+Option 4 must NOT silently pass validation — it emits a warning that appears in
+both human and JSON output.
+
+---
+
+#### Deliverable E: sc catalog update command
+
+`src/cmd/catalog.go`:
+- `sc catalog update [--branch <branch>] [--scope <project|global|both>]`
+- Fetches from Dolt via `client.GetPackageCatalog(ctx)`
+- Writes to appropriate path(s) per scope
+- `--json` output: `{"branch":"main","entries":42,"path":"~/.synaptic/catalog-main.toml"}`
+- Implicit refresh triggered by `sc install` and `sc init` (after primary op
+  completes; failure is non-fatal — emit warning, continue)
+
+---
+
+#### Test Requirements
+
+Each test must use its own `t.TempDir()`. Do not share temp directories across
+parallel tests.
+
+Mandatory test cases:
+- Corrupt/invalid TOML in catalog file → returns wrapped parse error, not panic
+- `schema_version` mismatch (future schema) → warning + best-effort parse
+- Branch name with path-unsafe characters → sanitized correctly in filename
+- Empty catalog (zero entries) → valid; validate skips SHA check with info log
+- Catalog entry with no matching lockfile entry → ignored (catalog may be ahead)
+- Validate with catalog absent + Dolt unreachable → falls back to lockfile SHAs
+  with warning in output
+- Catalog refresh failure during `sc install` → install succeeds, warning emitted
+- Concurrent writes: two goroutines writing same catalog file → no corruption
+  (atomic rename provides last-writer-wins safety)
 
 **Acceptance Criteria:**
-- `sc catalog update` fetches `(package_id, version, dest_path, sha256)` from
-  Dolt and writes `.synaptic/catalog-{branch}.toml`
-- `sc validate` compares recomputed on-disk SHAs against catalog SHAs as the
-  authoritative source; lockfile is used only for install identity
-- Validate emits a clear warning and uses cached catalog when Dolt is offline
-- Catalog storage paths are cross-platform
-- `sc install` and `sc init` refresh the catalog after completing their primary
-  operation
+
+- `sc catalog update` fetches and writes `(package_id, version, dest_path, sha256)`
+- `sc validate` uses catalog SHAs as authoritative source
+- Validate emits a warning and uses fallback when catalog absent
+- Branch names with `/` produce valid, non-colliding catalog filenames
+- All four `dolt.Client` implementations compile with `GetPackageCatalog`
+- Parallel tests each use independent `t.TempDir()`
+
+**Requirements:** CA-001 through CA-007
 
 ---
 
@@ -727,27 +1021,112 @@ BR-001 through BR-006
 
 **Goal:** `sc scan [<path>...] [--recurse] [--scope <project|global|both>]`
 
-**Deliverables:**
-- `src/cmd/scan.go` — scan command
-- Walk `.claude/` and `~/.claude/` dirs, compute SHA per file
-- Look up computed SHAs in local catalog to identify
-  `(package_id, version, dest_path)`
-- Group matched files into discovered install candidates
-- Present candidates before mutating state (ST-004a): `add all`, `upgrade all`,
-  or `skip`
-- Write valid lockfile entries for accepted installs
-- `--json` output and `--scope` flag
-- Unit tests covering: SHA match, no catalog hit, mixed local/global, stale
-  catalog warning, reconcile accepted/skipped, interrupted reconcile safety
+---
+
+#### Deliverable A: Scan Walk and SHA Matching
+
+`src/cmd/scan.go`:
+
+- Walk target directories based on `--scope`:
+  - `project`: walk `.claude/` in current directory
+  - `global`: walk `~/.claude/`
+  - `both` (default): walk both
+- Custom paths override scope when provided as positional args
+- For each file encountered: compute SHA256, look up `(dest_path, sha256)` in
+  local catalog
+
+Catalog lookup key is `(dest_path, sha256)`. When multiple catalog entries
+match (same file content, same path, different versions): **prefer the entry
+whose version matches any existing lockfile record for that package; if no
+match, prefer the latest version (lexicographic descending).**
+
+A file that matches the catalog but is already tracked in the lockfile is
+**skipped silently** — not re-presented as a discovery candidate.
+
+---
+
+#### Deliverable B: Scan-Derived Install Records
+
+Scan-discovered installs produce partial lockfile records. All fields not
+derivable from the catalog must use explicit defaults:
+
+```go
+// Scan-derived install record structure
+InstallRecord{
+    PackageID:          from catalog match,
+    Version:            from catalog match,
+    Branch:             from catalog match (branch of catalog used),
+    DoltCommit:         "",                  // unknown — not in catalog
+    InstallScope:       derived from path (local vs global),
+    InstalledAt:        time.Time{},         // zero — original time unknown
+    TrackingOrigin:     "scan-reconciled",   // sentinel: identifies scan-derived records
+    Files:              all matched files for package,
+    Answers:            nil,
+    QuestionSnapshot:   nil,
+    Requirements:       nil,
+    TemplateValidation: nil,
+    CLIVersions:        nil,
+    Dependencies:       nil,                 // not recoverable from scan
+}
+```
+
+`TrackingOrigin = "scan-reconciled"` is a new string field on `InstallRecord`.
+Validate and upgrade must handle records where `DoltCommit` is empty — these
+are valid but cannot be pinned to a specific Dolt history point.
+
+---
+
+#### Deliverable C: Non-Interactive Confirmation (MVP)
+
+ST-004a requires presenting discovered installs before mutating state. MVP
+implementation uses flags, not TTY prompts. Interactive TTY prompting is
+deferred to a future sprint.
+
+```
+sc scan                 # lists candidates only; no mutation (default dry-run)
+sc scan --accept-all    # writes lockfile entries for all discovered installs
+sc scan --upgrade-all   # upgrades existing tracked installs to catalog version
+sc scan --json          # machine-readable candidate list; no mutation
+```
+
+`--accept-all` and `--upgrade-all` are mutually exclusive. Neither is the default.
+Under `--json` mode, the command always exits dry-run (no mutation) — JSON
+consumers must pass `--accept-all` explicitly.
+
+Behavior when stdin is not a TTY and no flag given: list candidates and exit
+with code 0. This is safe for scripted environments.
+
+---
+
+#### Test Requirements
+
+All tests use `t.TempDir()` for filesystem fixtures. Symlinks and special files
+are excluded from walk (skip with `fs.ModeSymlink` check).
+
+On Windows: skip file permission tests with `if runtime.GOOS == "windows" { t.Skip(...) }`.
+
+Mandatory test cases:
+- No `.claude/` directory → returns empty candidate list, no error
+- `.claude/` contains only non-package files → zero candidates
+- File permission error during walk → error logged, walk continues, error returned
+- SHA matches multiple catalog entries → prefer installed version, then latest
+- Interrupted scan (context cancel mid-walk) → no partial lockfile writes
+- File already tracked in lockfile → not presented as candidate
+- Stale catalog warning (fetched_at > 24h) → warning in output
+- `--accept-all` on zero candidates → no-op, exit 0
+- `--json` mode → no lockfile mutation regardless of other flags
 
 **Acceptance Criteria:**
-- Discovers installed packages not in local tracking by SHA matching against catalog
-- Shows version and upgrade status for each discovered install before
-  mutating state
-- Supports `add all` / `upgrade all` / `skip` choices (ST-004a)
-- Writes valid `[[installs]]` records for accepted installs
+
+- Discovers untracked installed packages by SHA matching against catalog
+- Shows package ID, version, scope, and upgrade status for each candidate
+- `--accept-all` writes valid `[[installs]]` records with `tracking_origin = "scan-reconciled"`
+- Already-tracked packages are not re-presented
 - Works fully offline using cached catalog
-- Does not mutate tracking state until user confirms
+- No lockfile mutation without explicit `--accept-all` or `--upgrade-all`
+- `TrackingOrigin` field added to `InstallRecord` and written/read by lockfile codec
+
+**Requirements:** ST-004, ST-004a
 
 ---
 
@@ -755,61 +1134,259 @@ BR-001 through BR-006
 
 **Goal:** Enforce the SHA immutability invariant (`CA-006`, `CA-007`) at import time.
 
-**Deliverables:**
-- Pre-import catalog check in `src/pkg/importer/importer.go`
-- Before writing any package row, query existing catalog for `(package_id,
-  dest_path)` on the target branch
-- If entry exists with a different SHA → hard reject with error naming the
-  colliding file and both SHAs
-- Same version + different content = blocking error
-- New version on the same branch = allowed (replaces current row; old state
-  preserved in Dolt history via Dolt commit)
-- Unit tests: collision detected, new version allowed, first import allowed,
-  identical re-import allowed
+**Background:** `sc admin import` is a write-path admin command. The collision
+check must query **Dolt directly** (not the local catalog cache, which may be
+stale). The importer currently uses `pkg/importer` which has a `dolt.Writer`
+dependency. Sprint 3.8 adds a `dolt.Client` (read) dependency to the importer
+so it can query existing catalog entries before writing.
+
+---
+
+#### Deliverable A: Read Client in Importer
+
+`src/pkg/importer/importer.go` — add `Client dolt.Client` field alongside
+existing `Writer`. Import now requires both read and write access.
+
+`src/cmd/admin_import.go` — construct both client and writer, pass both to
+importer. If the read query fails (network error, auth failure), **block the
+import** with error: `"catalog check failed: %w; import aborted to protect SHA
+immutability"`. Do not write partial data.
+
+---
+
+#### Deliverable B: Collision Check Logic
+
+Before writing any `package_files` row, query:
+
+```sql
+SELECT dest_path, sha256 FROM `{database}/{branch}`.package_files
+WHERE package_id = ? AND dest_path = ?
+```
+
+Decision table:
+
+| Existing entry | Incoming SHA | Action |
+|----------------|-------------|--------|
+| None | any | Allow (first import) |
+| Same SHA | Same SHA | Allow (idempotent re-import, no-op) |
+| Same SHA | Different SHA | **Reject** — SHA collision |
+| Different SHA | any | **Reject** — collision (version bump must go through admin publish) |
+
+Error message format for rejection:
+```
+SHA collision: file "{{dest_path}}" on branch "{{branch}}" already exists
+  existing SHA: {{existing_sha}}
+  incoming SHA: {{incoming_sha}}
+Import aborted. No data was written.
+```
+
+JSON error format (`--json` mode):
+```json
+{
+  "error": "sha_collision",
+  "file": "{{dest_path}}",
+  "branch": "{{branch}}",
+  "existing_sha": "{{existing_sha}}",
+  "incoming_sha": "{{incoming_sha}}"
+}
+```
+
+---
+
+#### Test Requirements
+
+Mandatory test cases:
+- First import of new package (no existing rows) → allowed, all files written
+- Identical re-import (same SHA all files) → allowed, idempotent, no error
+- Same file, same dest_path, different SHA on same branch → rejected before any
+  write; no partial writes
+- Version bump on same branch (different package version, new files) → allowed
+- Read query failure → import aborted, clear error, no writes
+- Error message contains both SHAs and the colliding file path
+- `--json` mode → JSON error shape matches spec above
 
 **Acceptance Criteria:**
-- Re-import of an existing `(package_id, dest_path, branch)` with different SHA
-  is rejected before any write occurs
-- Error message names the colliding file, the existing SHA, and the incoming SHA
-- Import of a new version (different `package_id` version field) succeeds
-- Identical re-import (same SHA) is a no-op and succeeds
+
+- Re-import with different SHA rejected before any Dolt write occurs
+- Error message names the colliding file and both SHAs exactly
+- Identical re-import is a no-op and succeeds
+- Read query failure blocks import with clear error
+- No partial imports: either all files written or none
+
+**Requirements:** CA-006, CA-007
 
 ---
 
 ### Sprint 3.9: Scope Flags, --yolo, Dep Acknowledgement, Validation Severity
 
-**Goal:** Complete the behavioral requirements from IU-* and VA-* sections that
-were planned in Sprints 3.2–3.4 but not yet implemented.
+**Goal:** Complete behavioral requirements from IU-* and VA-* sections deferred
+from Sprints 3.2–3.4. These items appeared in earlier sprint acceptance criteria
+but were not implemented — Sprint 3.9 is the authoritative implementation sprint.
 
-**Deliverables:**
-- Replace `--global` bool with `--scope <project|global|both>` on: `validate`,
-  `status`, `upgrade`, `uninstall` (IU-007)
-- `--yolo` flag on `install`, `upgrade`, `uninstall` (IU-002, IU-008)
-- Interactive dependency acknowledgement in `install`: prompt before installing
-  any external CLI/tool dependency unless `--yolo` (IU-001)
-- `severity` field on each validate output item using fixed vocabulary
-  `info`, `warn`, `error`, `critical` (VA-005, VA-005a)
-- Upgrade warn-and-skip for blocked upgrades with continuation of valid upgrades
-  (IU-010)
-- `--force` for single targeted upgrade override only; not valid with
-  `upgrade --all` (IU-011)
-- Dep provenance in uninstall: offer removal only for deps recorded as
-  installed by Synaptic Canvas; leave predating deps untouched (IU-004, IU-005)
-- JSON output emits branch as `"main"` explicitly, never as empty string
-  (CLI-006)
-- Unit tests for each new flag, severity classification, blocked-upgrade skip,
-  and provenance-aware uninstall
+**Note:** Sprint 3.3 acceptance criteria included severity and aggregate_status.
+Sprint 3.4 acceptance criteria included `--scope` and `--yolo`. Both are
+**deferred to this sprint**. QA for 3.3 and 3.4 should not fail on these items;
+they are tracked as deferred here.
+
+---
+
+#### Deliverable A: --scope Flag
+
+Replace `--global` bool with `--scope <project|global|both>` on:
+`validate`, `status`, `upgrade`, `uninstall`.
+
+```go
+// Valid values; use a string enum with explicit validation.
+const (
+    ScopeProject = "project"
+    ScopeGlobal  = "global"
+    ScopeBoth    = "both"     // default when --scope omitted
+)
+```
+
+`--global` flag removed. Any code that checks `cfg.Global` bool must be updated.
+Default when `--scope` omitted: `both`.
+
+---
+
+#### Deliverable B: --yolo Flag
+
+`--yolo` on `install`, `upgrade`, `uninstall`:
+- Skips all interactive prompts (dep acknowledgement, uninstall dep removal)
+- Still records full provenance in tracking state
+- `--yolo` + `--dry-run` together → `--dry-run` wins; no mutation, no prompts
+
+---
+
+#### Deliverable C: Dependency Acknowledgement
+
+`sc install` with external CLI/tool dependencies and no `--yolo`:
+- Print the install plan listing each external dep before installing
+- Prompt: `"Proceed? [y/N]"` — default N (safe)
+- Non-TTY stdin without `--yolo`: print plan and exit 1 with error:
+  `"interactive confirmation required; use --yolo to proceed non-interactively"`
+
+---
+
+#### Deliverable D: Validation Severity
+
+Each `ValidationItem` gains a `Severity` field with fixed vocabulary:
+
+```go
+type ValidationSeverity string
+const (
+    SeverityInfo     ValidationSeverity = "info"
+    SeverityWarn     ValidationSeverity = "warn"
+    SeverityError    ValidationSeverity = "error"
+    SeverityCritical ValidationSeverity = "critical"
+)
+```
+
+Severity mapping (authoritative):
+
+| Validation status | Severity |
+|-------------------|----------|
+| OK | info |
+| MODIFIED (local change) | warn |
+| EXTRA (untracked file in package dir) | info |
+| MISSING (tracked file absent) | error |
+| UNREADABLE (file exists, can't read) | error |
+| SHA_MISMATCH (content differs, not local edit) | error |
+| DEPENDENCY_MISSING | critical |
+| DEPENDENCY_VERSION_INCOMPATIBLE | error |
+| HOOK_NOT_REGISTERED | warn |
+| TEMPLATE_INVALID | warn |
+| AGGREGATE_MISMATCH | error |
+
+Aggregate status emitted in JSON output:
+```json
+{
+  "package": "team-lead",
+  "aggregate_status": "error",
+  "items": [
+    {"path": "...", "status": "MISSING", "severity": "error"}
+  ]
+}
+```
+
+`aggregate_status` = highest severity across all items (`critical` > `error` >
+`warn` > `info`). Human output suppresses `info`-only items by default;
+`--verbose` shows all.
+
+---
+
+#### Deliverable E: Upgrade Warn-and-Skip
+
+`upgrade --all`:
+- For each candidate, compute upgrade plan independently
+- If candidate has incompatible dependency → warn: `"skipping {pkg}: {reason}"`
+- Continue remaining valid upgrades
+- Exit code 0 if any upgrade succeeded; exit code 1 only if ALL upgrades failed
+
+`upgrade <pkg> --force`:
+- Overrides blocked-upgrade behavior for single targeted package only
+- `upgrade --all --force` → rejected with error: `"--force cannot be used with
+  --all; target a specific package"`
+
+---
+
+#### Deliverable F: Provenance-Aware Uninstall
+
+`uninstall` checks `dependency.installed_by_sc` (bool) for each dep:
+- `installed_by_sc = true` → offer removal (prompt or `--yolo`)
+- `installed_by_sc = false` → leave untouched, no mention unless `--verbose`
+
+`--force` on uninstall: removes package files even if local modifications
+detected. Without `--force`, local modifications produce a warning and a prompt:
+`"Package has locally modified files. Proceed anyway? [y/N]"`. Non-TTY + no
+`--yolo` + no `--force` → error: `"locally modified files detected; use
+--force to proceed or --yolo in non-interactive mode"`.
+
+---
+
+#### Backward Compatibility
+
+Sprint 3.9 code must handle lockfile records created by Sprint 3.2–3.4 code:
+- Missing `tracking_origin` field → treat as `"direct-install"`
+- Missing `severity` on validate items → emit as `""` in JSON (not null); human
+  output omits severity label
+- Missing `dependency.installed_by_sc` → treat as `false` (do not offer removal)
+- Missing `aggregate_status` → compute from items; if no items, emit `"info"`
+
+No migration required. Zero-value fallback is sufficient.
+
+---
+
+#### Test Requirements
+
+Mandatory test cases:
+- `--scope project` when only global install exists → empty results, no error
+- `--scope both` with one local PASS, one global FAIL → mixed output, exit 1
+- `--yolo` + `--dry-run` → no mutation, no prompts
+- `--force` with `--all` → rejected before any upgrade attempt
+- Dependency provenance missing from lockfile → treated as `false`, not offered
+- `--yolo` uninstall only removes deps where `installed_by_sc = true`
+- Non-TTY stdin + dep acknowledgement required + no `--yolo` → exit 1 with error
+- All severity mappings produce correct severity value
+- `aggregate_status` = highest severity across items
+- Old lockfile record (missing `tracking_origin`) → read without panic
 
 **Acceptance Criteria:**
-- All scope-aware commands accept `--scope` enum; default is `both`
-- `--yolo` skips interactive prompts while still recording full provenance
-- Install presents external dep plan for acknowledgement before installing,
-  skipped only with `--yolo`
-- Each validate output item has a `severity` field from the fixed vocabulary
-- `upgrade --all` warns on each blocked candidate and skips it; continues
-  remaining valid upgrades
-- `--force` accepted only on single targeted upgrade; rejected for `--all`
-- Uninstall asks about SC-installed deps; ignores predating deps silently
+
+- All scope-aware commands accept `--scope` enum; omitting defaults to `both`
+- `--global` flag removed from all scope-aware commands
+- `--yolo` skips interactive prompts while recording full provenance
+- `--yolo` + `--dry-run` → dry-run wins
+- Install presents external dep plan before installing; `--yolo` skips prompt
+- Each validate output item has `severity` from fixed vocabulary
+- `aggregate_status` field emitted in JSON validate output
+- `upgrade --all` warns and skips blocked candidates; continues valid upgrades
+- `upgrade --all --force` → rejected with clear error
+- Uninstall warns on locally modified files; `--force` overrides
+- Uninstall offers SC-installed deps for removal; ignores predating deps
+- Old lockfile records (pre-3.9) handled without crash or data loss
+
+**Requirements:** IU-001 through IU-011, VA-005, VA-005a, CLI-006
 
 ---
 

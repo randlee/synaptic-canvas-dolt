@@ -20,15 +20,22 @@ is **not** available on dolthub.com.
 
 - **Source:** https://docs.dolthub.com/products/dolthub/api/sql
 
-SQL query endpoint:
+SQL query endpoint — GET with `?q=` query parameter:
 ```
-POST https://www.dolthub.com/api/v1alpha1/{owner}/{database}/{ref}
+GET https://www.dolthub.com/api/v1alpha1/{owner}/{database}/{ref}?q={url-encoded-sql}
 ```
 
 Example for `main` branch:
 ```
-https://www.dolthub.com/api/v1alpha1/randlee/synaptic-canvas/main
+GET https://www.dolthub.com/api/v1alpha1/randlee/synaptic-canvas/main?q=SELECT+*+FROM+packages
 ```
+
+**Note:** The `{ref}` path segment must be URL-path-encoded. Use `url.PathEscape(branch)`
+for any branch name that may contain `/` or other URL-unsafe characters.
+
+**URL length limit:** GET queries are subject to URL length limits (~2048 bytes safe
+limit). For complex queries that may exceed this, POST with the SQL in the request body
+is also accepted. `HTTPClient` must use POST when the constructed URL exceeds 1800 bytes.
 
 Authentication for private repos (source: https://docs.dolthub.com/products/dolthub/api/authentication):
 ```
