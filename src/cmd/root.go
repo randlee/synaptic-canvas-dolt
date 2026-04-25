@@ -11,6 +11,7 @@ import (
 
 // Execute creates the root command, configures it with version info, and runs it.
 func Execute(version, commit, date string) error {
+	defer logging.Close()
 	rootCmd := NewRootCmd(version, commit, date)
 	return rootCmd.Execute()
 }
@@ -73,6 +74,9 @@ stored in a Dolt database.`,
 	rootCmd.AddCommand(NewInstallCmd())
 	rootCmd.AddCommand(NewListCmd())
 	rootCmd.AddCommand(NewInfoCmd())
+	rootCmd.AddCommand(NewValidateCmd())
+	rootCmd.AddCommand(NewStatusCmd())
+	rootCmd.AddCommand(NewSnapshotCmd())
 	rootCmd.AddCommand(admin.NewAdminCmd())
 
 	return rootCmd

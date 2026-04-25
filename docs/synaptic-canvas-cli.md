@@ -96,6 +96,14 @@ sc validate [<package>] [--all]
 
 sc status
     Show installed packages, their versions, branches, and validation state.
+
+sc snapshot <package> [--full] [--scope <project|global|both>]
+    Export installed package state for analysis without changing the active
+    installation.
+    By default, exports only modified tracked files for the targeted package.
+    --full      Export the full tracked install payload instead of only local
+                modifications
+    Snapshot metadata is written to snapshot.toml alongside the exported files.
 ```
 
 ### Admin Commands (opt-in)

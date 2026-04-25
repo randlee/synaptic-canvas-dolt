@@ -108,13 +108,33 @@ Architecture rules:
   packages
 - `.synaptic/` stores lockfiles, generated config, metadata, cache, logs, temp
   directories, hook registry state, and similar product-owned files
+- `sc snapshot` exports installed package state into product-managed snapshot
+  directories under machine-level Synaptic Canvas state so local modifications
+  can be reviewed without mutating the active installation
 - future target roots such as `.codex/` and `.agents/` are compatible with this
   model but remain post-MVP
 
 This keeps runtime-facing files aligned with the host tool while allowing
 Synaptic Canvas to own its own operational state cleanly.
 
-## 7. Agent And Script Architecture
+## 7. Command Architecture
+
+The end-user CLI surface is split into read, install, validation, and export
+operations:
+
+- `sc list` and `sc info` are read-only catalog queries
+- `sc init` and `sc install` materialize package state into runtime artifact
+  roots and product-managed state
+- `sc validate` and `sc status` inspect installed state and report drift
+- `sc snapshot` exports installed state for analysis and comparison workflows
+  without writing back to Dolt
+- admin commands remain opt-in and own Dolt write-path behavior
+
+`sc snapshot` belongs with the end-user validation/inspection family rather
+than the admin export pipeline because it operates on installed state already
+materialized on disk.
+
+## 8. Agent And Script Architecture
 
 Repository-local agent definitions and helper scripts are part of the product
 surface for Claude-facing workflows.
@@ -127,7 +147,7 @@ Architecture rules:
 - helper scripts must be unit-tested
 - sprint plans must define how agent/script behavior is verified
 
-## 8. Detailed Design Documents
+## 9. Detailed Design Documents
 
 This architecture overview is intentionally high level. The detailed subsystem
 documents remain:

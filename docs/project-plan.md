@@ -356,7 +356,10 @@ The read path. These commands never write to Dolt.
 **Deliverables:**
 - `src/cmd/validate.go` — validate command
 - `src/cmd/status.go` — status command
+- `src/cmd/snapshot.go` — snapshot command
 - Validate logic: recompute SHAs from installed files → compare against Dolt
+- Snapshot logic: export installed package state and metadata for offline
+  analysis
 - Unit tests for validate and status behavior
 
 **Acceptance Criteria:**
@@ -365,6 +368,8 @@ The read path. These commands never write to Dolt.
   EXTRA (untracked)
 - Validate computes and checks aggregate SHA
 - Status shows installed packages, versions, branches, validation state
+- `sc snapshot <package>` exports modified tracked files by default and supports
+  `--full` for full tracked install export
 - Both support `--json` output
 
 ### Sprint 3.4: Upgrade & Uninstall
