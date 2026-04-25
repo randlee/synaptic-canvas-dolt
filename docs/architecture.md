@@ -190,7 +190,32 @@ Architecture rules:
 - upgrade planning must warn and skip blocked upgrades by default; force
   behavior is an explicit targeted override, not the default batch behavior
 
-## 9. Agent And Script Architecture
+## 9. SHA Catalog
+
+The SHA catalog is a locally-cached, per-branch snapshot of the immutable Dolt
+SHA reference for all packages. It enables offline validation, reconciliation
+via `sc scan`, and import collision enforcement.
+
+Architecture rules:
+
+- one SHA per `(package_id, version, dest_path, branch)` tuple is the
+  immutable invariant; no tooling produces or accepts a second SHA for an
+  existing tuple
+- the catalog is the authoritative expected-SHA source for `sc validate`;
+  the lockfile records install identity but not the authoritative SHA
+- the catalog is stored at `.synaptic/catalog-{branch}.toml` (project) and
+  `~/.synaptic/catalog-{branch}.toml` (machine-level); schema mirrors the
+  Dolt `package_files JOIN packages` result for that branch
+- catalog fetch is triggered explicitly by `sc catalog update` and implicitly
+  by `sc install` and `sc init`; all other commands use the cached copy
+- when Dolt is unreachable, commands that require the catalog use the cached
+  copy and emit a warning; they do not fail unless the cache is absent
+- `sc scan` uses the catalog to identify packages from on-disk SHAs without
+  requiring a Dolt connection
+- `sc admin import` checks the catalog before writing; a SHA collision on an
+  existing `(package_id, dest_path, branch)` is a hard rejection
+
+## 10. Agent And Script Architecture
 
 Repository-local agent definitions and helper scripts are part of the product
 surface for Claude-facing workflows.
@@ -203,7 +228,7 @@ Architecture rules:
 - helper scripts must be unit-tested
 - sprint plans must define how agent/script behavior is verified
 
-## 10. Detailed Design Documents
+## 11. Detailed Design Documents
 
 This architecture overview is intentionally high level. The detailed subsystem
 documents remain:

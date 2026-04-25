@@ -602,6 +602,125 @@ func PlanBatchUpgrade(installs []TrackedInstall, req UpgradeRequest) ([]UpgradeP
 }
 ```
 
+### Sprint 3.5: SHA Catalog Subsystem
+
+**Goal:** `sc catalog update [--branch <branch>]` and catalog-backed `sc validate`
+
+**Deliverables:**
+- `GetPackageCatalogQuery(database, branch)` in `src/pkg/dolt/queries.go` —
+  returns `(id, version, dest_path, sha256)` for all packages on a branch
+- `GetPackageCatalog(ctx)` on the `Client` interface in `src/pkg/dolt/client.go`
+- `src/pkg/catalog/` — catalog struct, TOML read/write, per-branch cache file
+- Cache written to `.synaptic/catalog-{branch}.toml` (local) and
+  `~/.synaptic/catalog-{branch}.toml` (machine-level)
+- `src/cmd/catalog.go` — `sc catalog update` command with explicit Dolt fetch
+- Implicit catalog refresh triggered by `sc install` and `sc init`
+- Update `validateTrackedInstall()` in `src/cmd/state_helpers.go` to look up
+  expected SHAs from the local catalog rather than from `record.Files`
+- Offline fallback: use cached catalog with a clear warning when Dolt is
+  unavailable
+- Unit tests for catalog read/write, Dolt fetch, and validate integration
+
+**Acceptance Criteria:**
+- `sc catalog update` fetches `(package_id, version, dest_path, sha256)` from
+  Dolt and writes `.synaptic/catalog-{branch}.toml`
+- `sc validate` compares recomputed on-disk SHAs against catalog SHAs as the
+  authoritative source; lockfile is used only for install identity
+- Validate emits a clear warning and uses cached catalog when Dolt is offline
+- Catalog storage paths are cross-platform
+- `sc install` and `sc init` refresh the catalog after completing their primary
+  operation
+
+---
+
+### Sprint 3.6: sc scan Implementation
+
+**Goal:** `sc scan [<path>...] [--recurse] [--scope <project|global|both>]`
+
+**Deliverables:**
+- `src/cmd/scan.go` — scan command
+- Walk `.claude/` and `~/.claude/` dirs, compute SHA per file
+- Look up computed SHAs in local catalog to identify
+  `(package_id, version, dest_path)`
+- Group matched files into discovered install candidates
+- Present candidates before mutating state (ST-004a): `add all`, `upgrade all`,
+  or `skip`
+- Write valid lockfile entries for accepted installs
+- `--json` output and `--scope` flag
+- Unit tests covering: SHA match, no catalog hit, mixed local/global, stale
+  catalog warning, reconcile accepted/skipped, interrupted reconcile safety
+
+**Acceptance Criteria:**
+- Discovers installed packages not in local tracking by SHA matching against catalog
+- Shows version and upgrade status for each discovered install before
+  mutating state
+- Supports `add all` / `upgrade all` / `skip` choices (ST-004a)
+- Writes valid `[[installs]]` records for accepted installs
+- Works fully offline using cached catalog
+- Does not mutate tracking state until user confirms
+
+---
+
+### Sprint 3.7: Import Collision Enforcement
+
+**Goal:** Enforce the SHA immutability invariant (`CA-006`, `CA-007`) at import time.
+
+**Deliverables:**
+- Pre-import catalog check in `src/pkg/importer/importer.go`
+- Before writing any package row, query existing catalog for `(package_id,
+  dest_path)` on the target branch
+- If entry exists with a different SHA → hard reject with error naming the
+  colliding file and both SHAs
+- Same version + different content = blocking error
+- New version on the same branch = allowed (replaces current row; old state
+  preserved in Dolt history via Dolt commit)
+- Unit tests: collision detected, new version allowed, first import allowed,
+  identical re-import allowed
+
+**Acceptance Criteria:**
+- Re-import of an existing `(package_id, dest_path, branch)` with different SHA
+  is rejected before any write occurs
+- Error message names the colliding file, the existing SHA, and the incoming SHA
+- Import of a new version (different `package_id` version field) succeeds
+- Identical re-import (same SHA) is a no-op and succeeds
+
+---
+
+### Sprint 3.8: Scope Flags, --yolo, Dep Acknowledgement, Validation Severity
+
+**Goal:** Complete the behavioral requirements from IU-* and VA-* sections that
+were planned in Sprints 3.2–3.4 but not yet implemented.
+
+**Deliverables:**
+- Replace `--global` bool with `--scope <project|global|both>` on: `validate`,
+  `status`, `upgrade`, `uninstall` (IU-007)
+- `--yolo` flag on `install`, `upgrade`, `uninstall` (IU-002, IU-008)
+- Interactive dependency acknowledgement in `install`: prompt before installing
+  any external CLI/tool dependency unless `--yolo` (IU-001)
+- `severity` field on each validate output item using fixed vocabulary
+  `info`, `warn`, `error`, `critical` (VA-005, VA-005a)
+- Upgrade warn-and-skip for blocked upgrades with continuation of valid upgrades
+  (IU-010)
+- `--force` for single targeted upgrade override only; not valid with
+  `upgrade --all` (IU-011)
+- Dep provenance in uninstall: offer removal only for deps recorded as
+  installed by Synaptic Canvas; leave predating deps untouched (IU-004, IU-005)
+- JSON output emits branch as `"main"` explicitly, never as empty string
+  (CLI-006)
+- Unit tests for each new flag, severity classification, blocked-upgrade skip,
+  and provenance-aware uninstall
+
+**Acceptance Criteria:**
+- All scope-aware commands accept `--scope` enum; default is `both`
+- `--yolo` skips interactive prompts while still recording full provenance
+- Install presents external dep plan for acknowledgement before installing,
+  skipped only with `--yolo`
+- Each validate output item has a `severity` field from the fixed vocabulary
+- `upgrade --all` warns on each blocked candidate and skips it; continues
+  remaining valid upgrades
+- `--force` accepted only on single targeted upgrade; rejected for `--all`
+- Uninstall asks about SC-installed deps; ignores predating deps silently
+
 ---
 
 ## Phase 4: Skill & Installer

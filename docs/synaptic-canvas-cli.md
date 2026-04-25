@@ -101,9 +101,14 @@ sc validate [<package>] [--all] [--scope <project|global|both>]
 sc status [--scope <project|global|both>]
     Show installed packages, their versions, branches, scopes, and validation state.
 
-sc scan [<path> ...]
+sc scan [<path> ...] [--recurse] [--scope <project|global|both>]
     Scan repository folders for installed packages and reconcile them into local tracking state.
-    Defaults to the current folder and supports `--recurse`.
+    Defaults to the current folder. Discovers installs by SHA-matching on-disk files against
+    the local catalog. Presents candidates before mutating tracking state.
+
+sc catalog update [--branch <branch>]
+    Fetch the SHA catalog for the effective branch from Dolt and write it to the local cache
+    at .synaptic/catalog-{branch}.toml. Also triggered implicitly by sc install and sc init.
 
 sc snapshot <package> [--scope <project|global|both>] [--full]
     Export local modifications for the selected package into global snapshot staging.

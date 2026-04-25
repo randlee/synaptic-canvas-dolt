@@ -222,7 +222,36 @@ The CLI is expected to be used by both humans and AI wrappers.
   include a readable `snapshot.toml` file containing, at minimum, the full
   source path, repo URL, snapshot timestamp, version, branch, and scope.
 
-## 10. Verification Traceability
+## 10. SHA Catalog
+
+The SHA catalog is the authoritative, local-cacheable reference for all
+immutable `(package_id, version, dest_path, sha256)` tuples on a given branch.
+
+- CA-001 The CLI shall maintain a local SHA catalog cache per branch at
+  `.synaptic/catalog-{branch}.toml` for project installs and at
+  `~/.synaptic/catalog-{branch}.toml` for machine-level state.
+- CA-002 The catalog shall store, at minimum, `(package_id, version,
+  dest_path, sha256)` tuples — the complete immutable SHA reference for all
+  packages on that branch.
+- CA-003 The catalog shall be refreshed from Dolt when a connection is
+  available. When Dolt is unavailable the CLI shall fall back to the local
+  cache and emit a clear warning if the cache is stale or absent.
+- CA-004 `sc validate` shall use catalog SHAs as the authoritative expected
+  source for file integrity comparison. The lockfile is used only to identify
+  which packages are installed, at what version and branch, and which paths
+  are tracked.
+- CA-005 `sc catalog update [--branch <branch>]` shall explicitly fetch the
+  current catalog from Dolt and write it to the local cache. Catalog refresh
+  shall also be triggered implicitly by `sc install` and `sc init`.
+- CA-006 The SHA immutability invariant shall be: one SHA per
+  `(package_id, version, dest_path, branch)` tuple, forever. No tooling
+  shall produce or accept a second SHA for an existing tuple.
+- CA-007 `sc admin import` shall check the existing catalog before writing.
+  If `(package_id, dest_path)` already exists on the target branch with a
+  different SHA, the import shall be rejected with a hard error naming the
+  colliding file and both SHAs.
+
+## 11. Verification Traceability
 
 - VER-001 Requirements shall be testable or otherwise verifiable.
 - VER-002 Sprint acceptance criteria shall map to one or more concrete
