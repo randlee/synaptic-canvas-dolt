@@ -115,6 +115,17 @@ func (m *ManifestLock) UpsertInstall(record InstallRecord) {
 	m.Installs = append(m.Installs, record)
 }
 
+// RemoveInstall removes one install record by id.
+func (m *ManifestLock) RemoveInstall(installID string) bool {
+	for i := range m.Installs {
+		if m.Installs[i].InstallID == installID {
+			m.Installs = append(m.Installs[:i], m.Installs[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
 // LoadHookRegistry loads the project hook registry or returns an empty registry.
 func LoadHookRegistry(root string) (HookRegistry, error) {
 	path := filepath.Join(root, HooksRegistry)
