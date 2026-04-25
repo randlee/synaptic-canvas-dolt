@@ -23,6 +23,7 @@ The system has three main layers:
 
 The CLI executable name is `sc`. `Synaptic Canvas` remains the product name,
 but `synaptic` is not a separate supported command surface.
+
 ## 2. Dolt As The Source Of Truth
 
 Dolt remains the package system database because it provides:
@@ -50,6 +51,10 @@ Architecture rules:
   switching
 - in MVP, externally selectable branch values are the Dolt branch names
   directly; there is no separate channel-mapping layer
+- branch and version are first-class, independent concepts: branch identifies
+  the release track/channel and version identifies a release on that branch
+- routine upgrades move to the latest compatible version on the currently
+  tracked branch unless the user explicitly changes `--branch` or `--version`
 
 This keeps CLI behavior deterministic and allows multiple readers to query
 different branches safely in parallel.
@@ -113,6 +118,8 @@ Architecture rules:
 - local and global installs of the same package are a normal supported state,
   not an edge case; Synaptic Canvas tracks both independently and commands may
   target project installs, global installs, or both
+- the same package may legitimately be installed locally and globally on
+  different branches and/or versions at the same time
 - installed package artifacts under `.claude/` or `~/.claude/` must not be held
   under long-lived product locks; coordination is limited to `.synaptic/` or
   `~/.synaptic/` state mutation and the design must avoid stale lock artifacts
@@ -147,15 +154,22 @@ Architecture rules:
   to corruption; locally modified files are part of the managed state picture
 - validation output is list-based and severity-driven rather than a single
   monolithic pass/fail result
-- local modification snapshots can be exported into product-managed global
-  staging, organized by package, so changes can be compared across installed
+- local modification snapshots are exported through a separate `snapshot`
+  command into product-managed global staging, organized by
+  package/branch/repository, so changes can be compared across installed
   versions and prepared for re-import
+- scan/reconciliation should present discovered installs and the candidate
+  actions first, then let the user choose `add all`, `upgrade all`, or `skip`
 - uninstall behavior depends on dependency provenance: dependencies installed by
   Synaptic Canvas may be offered for removal, while dependencies that predated
   the install are left untouched
 - non-interactive install/upgrade flows must remain explicit. `--yolo` is the
   acknowledged "proceed without prompting" mode for install, upgrade, and
   uninstall, and still records what external dependencies were installed
+- the default human-readable status view may suppress the branch label for
+  `main`, but structured output must emit `"main"` explicitly
+- upgrade planning must warn and skip blocked upgrades by default; force
+  behavior is an explicit targeted override, not the default batch behavior
 
 ## 8. Agent And Script Architecture
 

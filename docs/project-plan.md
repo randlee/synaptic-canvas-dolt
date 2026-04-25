@@ -24,6 +24,9 @@ These apply to every sprint in every phase:
 - Mocks for Dolt database interactions (interface-based)
 - Repository-owned helper scripts must have unit tests
 - Tests must avoid nondeterministic dependence on wall-clock time, user state, or production logs
+- Flaky tests are not tolerated; any nondeterministic test is a blocking defect
+- Corner-case and interruption-path coverage is required for state mutation,
+  install tracking, dependency resolution, and validation inventory logic
 
 ### Structured Logging
 - **Package:** `log/slog` (stdlib, Go 1.21+; project targets Go 1.26)
@@ -302,6 +305,10 @@ The read path. These commands never write to Dolt.
 **Deliverables:**
 - `src/cmd/list.go` — list command with `--branch` and `--tags` filters
 - `src/cmd/info.go` — info command showing package details
+- `src/pkg/dolt/queries.go` extensions for:
+  - tag-filtered package listing
+  - variant resolution lookups
+  - package detail queries with file/dependency counts
 - Table and JSON output for both
 - Unit tests for list/info command behavior and output
 
@@ -317,6 +324,8 @@ The read path. These commands never write to Dolt.
 - Both support `--json` output
 - Phase 3 end-user read commands reuse or extend the existing branch-qualified
   read client rather than introducing a second read path
+- Human-readable output may render the `main` branch as an empty string for UX,
+  but JSON output must emit `"main"` explicitly
 
 ### Sprint 3.2: Install
 
@@ -327,8 +336,11 @@ The read path. These commands never write to Dolt.
 - `src/cmd/init.go` — repository bootstrap command for first-time setup
 - `src/pkg/installer/installer.go` — file installation logic
 - `src/pkg/installer/tracking.go` — installed package tracking (local state)
-- `src/cmd/scan.go` — tracking reconciliation command for scanning repository
-  folders and importing discovered installs into local machine state
+- `src/pkg/repo/` — repo detection, repo-profile generation, and init helpers
+- `src/pkg/questionnaire/` — install and upgrade question prompting plus
+  tracked-answer comparison
+- Reconciliation-ready tracking primitives for repository install discovery,
+  consumed by `sc scan` in Sprint 3.3
 - Install logic: query Dolt → verify SHAs → write files → render templates → record install
 - Dry-run mode for install planning and template preview
 - `--yolo` mode for non-interactive approval of the computed install plan
@@ -366,31 +378,64 @@ The read path. These commands never write to Dolt.
 - Post-install scan: warns if any rendered output contains unresolved `{{ }}` patterns (safety net)
 - Records installed package/version/branch for status tracking, including `template_validation` in lockfile
 - `sc init` creates or refreshes the minimum `.synaptic/` state artifacts
-  required for Phase 3, including lockfile location, repo profile, env/config
-  state, and hook-registry scaffolding
-- State locking is limited to `.synaptic/` or `~/.synaptic/` mutation and must
-  be designed so stale lock artifacts cannot occur; package artifacts under
-  `.claude/` are never left under persistent product locks
-- `sc scan` can inspect repository folders and reconcile discovered installs
-  into local tracking state for installs created on another machine
-- `sc scan` defaults to the current folder, accepts an explicit path list, and
-  supports `--recurse` for recursive repository discovery
+  required for Phase 3:
+  - `.synaptic/manifest.lock`
+  - `.synaptic/repo-profile.toml`
+  - `.synaptic/env.toml`
+  - `.synaptic/hooks/registry.toml`
+- Install step 7 registers hooks and records the resulting hook registry state
+  in tracking data
+- State mutation uses atomic replacement and transactional staging for
+  `.synaptic/` or `~/.synaptic/`; package artifacts under `.claude/` are never
+  left under persistent product locks
 - `--json` output includes install summary (with template validation results)
 - `sc init` bootstraps `.synaptic/` state for a new repository and can be
   triggered implicitly by first install
 - `sc init` is idempotent on an already initialized repository
 
-### Sprint 3.3: Validate, Status & Scan
+**Implementation Sketch: tracking record**
 
-**Goal:** `sc validate [<package>] [--all]`, `sc status`, and `sc scan`
+```toml
+version = 1
+
+[[installs]]
+install_id = "pkg_team-lead_project_ab12cd34"
+package = "team-lead"
+version = "1.2.0"
+branch = "beta"
+dolt_commit = "abc123def456"
+scope = "project"
+install_root = "/repo/.claude/skills/team-lead"
+repo_path = "/repo"
+variant = ""
+template_validation = "ok"
+
+[installs.requirements]
+repo_profile_sha = "9d5a..."
+answers_sha = "5a9d..."
+
+[installs.question_snapshot]
+question_ids = ["lang", "style"]
+
+[installs.files]
+".claude/skills/team-lead/SKILL.md" = "c0ffee..."
+
+[installs.requirements.cli_provenance]
+gh = "preexisting"
+```
+
+### Sprint 3.3: Validate, Status, Scan & Snapshot
+
+**Goal:** `sc validate [<package>] [--all]`, `sc status`, `sc scan`, and `sc snapshot <package>`
 
 **Deliverables:**
 - `src/cmd/validate.go` — validate command
 - `src/cmd/status.go` — status command
 - `src/cmd/scan.go` — scan command for machine/repo inventory reconciliation
+- `src/cmd/snapshot.go` — snapshot command for exporting local modifications
 - Validate logic: recompute SHAs from installed files → compare against Dolt
   plus validate tracked dependency and component state
-- Unit tests for validate and status behavior
+- Unit tests for validate, status, scan, and snapshot behavior
 
 **Acceptance Criteria:**
 - Validate supports project-local installs, global installs, or both in one
@@ -406,24 +451,92 @@ The read path. These commands never write to Dolt.
 - Validate inventories local modifications distinctly from corruption so local
   improvements can be analyzed later
 - Validate output is list-based and each item includes an explicit severity
-  level
-- Validate can export local modification snapshots into a package-organized
-  staging area under product-managed global state for comparison across
-  versions and later hardening/re-import
-- Status shows installed packages, versions, branches, install scope,
-  validation state, and enough tracking detail to answer what is installed in
-  the current repo, globally on the machine, or both
-- `sc scan` reconciles repository installs found on disk into local machine
-  tracking state
+  level from `info`, `warn`, `error`, or `critical`
+- Validate computes an aggregate package result and emits it in JSON with a
+  stable field such as `aggregate_status`
+- Status shows one row per package with columns for package, global
+  version/branch, and local version/branch; human-readable output suppresses
+  `main` to an empty branch string while JSON emits `"main"`
+- `sc scan` discovers repository installs found on disk, shows version and
+  upgrade status, and then offers `add all`, `upgrade all`, or `skip`
 - `sc scan` defaults to the current folder, accepts a path list, and supports
   `--recurse`
+- `sc snapshot <package>` exports modified tracked files by default and supports
+  `--full` for full-package snapshots
+- Snapshot exports are written under
+  `~/.synaptic/mod-snapshots/<package>/<branch>/<repo>/`, where `<repo>` is a
+  sanitized repository key such as `<base-folder-name>-<repo-id>`
+- Snapshot metadata is recorded in `snapshot.toml`, including source path, repo
+  URL, snapshot timestamp, version, branch, and scope
 - Both support `--json` output
 - JSON output is stable enough for Phase 4 wrappers to consume, including
   aggregate validation result shape and install-scope targeting
+- Validate/upgrade/uninstall target concrete install records; status is the
+  merged presentation view over those records
+- Scan, snapshot, and validation tests cover duplicate repo names, unreadable
+  files, mixed local/global installs, modified-vs-missing classification, and
+  reconcile behavior for installs created on another machine
+
+**Implementation Sketch: validation JSON item**
+
+```json
+{
+  "package": "team-lead",
+  "scope": "project",
+  "branch": "main",
+  "version": "1.2.0",
+  "items": [
+    {
+      "type": "file",
+      "path": ".claude/skills/team-lead/SKILL.md",
+      "status": "MODIFIED",
+      "severity": "warn",
+      "expected_sha256": "abc123",
+      "actual_sha256": "def456"
+    },
+    {
+      "type": "dependency",
+      "name": "gh",
+      "status": "OK",
+      "severity": "info",
+      "version": "2.77.0"
+    }
+  ]
+}
+```
+
+**Implementation Sketch: snapshot metadata**
+
+```toml
+package = "team-lead"
+branch = "beta"
+version = "1.2.0"
+scope = "project"
+source_path = "/repo/.claude/skills/team-lead"
+repo_path = "/repo"
+repo_url = "git@github.com:org/repo.git"
+snapshot_time = "2026-04-24T18:42:00Z"
+```
+
+**Implementation Sketch: scan findings**
+
+```json
+[
+  {
+    "package": "team-lead",
+    "scope": "project",
+    "branch": "beta",
+    "version": "1.2.0",
+    "latest_on_branch": "1.3.0",
+    "needs_upgrade": true,
+    "repo": "client-repo-7f3a9c"
+  }
+]
+```
 
 ### Sprint 3.4: Upgrade & Uninstall
 
-**Goal:** `sc upgrade <package> [--all]` and `sc uninstall <package>`
+**Goal:** `sc upgrade <package> [--all] [--scope <project|global|both>] [--branch <branch>] [--version <version>] [--yolo]` and `sc uninstall <package> [--scope <project|global|both>] [--yolo]`
 
 **Deliverables:**
 - `src/cmd/upgrade.go` — upgrade command
@@ -437,13 +550,18 @@ The read path. These commands never write to Dolt.
 - Upgrade supports project-local installs, global installs, or both in one
   invocation
 - Scope-aware commands use `--scope`, and omitting `--scope` defaults to `both`
-- Upgrade checks current vs available version on branch
+- Upgrade checks current vs available version on the tracked branch by default;
+  branch changes are explicit via `--branch`
 - Upgrade prompts for new questions added since install, re-renders templates
   if repo profile changed, verifies changed dependencies, and re-resolves
   variant selection
 - Upgrade warns about local modifications before overwriting
-- Upgrade supports a mode that keeps local/global installs in sync by default
+- Upgrade supports the policy goal of keeping local/global installs up to date
   while still allowing users to target only local or only global installs
+- `upgrade --all` warns and skips blocked upgrades that would violate
+  dependency or compatibility requirements and continues valid upgrades
+- `--force` is only available for explicitly targeted package upgrades; it is
+  not supported as a blanket override for `upgrade --all`
 - Uninstall removes only files and hooks owned exclusively by the target
   tracked install and preserves shared dependencies still needed elsewhere
 - Uninstall asks whether dependencies installed by Synaptic Canvas should be
@@ -453,6 +571,34 @@ The read path. These commands never write to Dolt.
 - Uninstall behavior is explicit when tracked files are locally modified,
   missing, or discovered by scan rather than original local tracking
 - Both support `--json` output
+- Upgrade and uninstall tests cover dependency-order planning, blocked upgrade
+  skip behavior, local/global mixed-state upgrades, branch changes, targeted
+  version pinning, and interruption-safe state mutation
+
+**Implementation Sketch: dependency-safe upgrade planning**
+
+```go
+func PlanBatchUpgrade(installs []TrackedInstall, req UpgradeRequest) ([]UpgradePlan, []BlockedUpgrade) {
+    candidates := resolveCandidates(installs, req) // latest on tracked branch unless overridden
+    ordered := topoSortByDependencies(candidates)
+
+    var plans []UpgradePlan
+    var blocked []BlockedUpgrade
+
+    for _, candidate := range ordered {
+        if err := validateDependencyClosure(candidate, plans); err != nil {
+            blocked = append(blocked, BlockedUpgrade{
+                Package: candidate.Package,
+                Reason:  err.Error(),
+            })
+            continue
+        }
+        plans = append(plans, candidate)
+    }
+
+    return plans, blocked
+}
+```
 
 ---
 

@@ -11,6 +11,25 @@ Reviewed:
 - `docs/synaptic-canvas-schema.md`
 - current `develop` read-path code under `src/pkg/dolt/`, `src/internal/config/`, and `src/cmd/admin/`
 
+## Resolution Addendum
+
+The findings below drove the hardening pass on `feature/phase3-plan-hardening`.
+The current doc set resolves the major blockers by:
+
+- defining one normative `manifest.lock` schema based on flat `[[installs]]`
+  records and deprecating legacy `[[skills]]` examples
+- making `status` the merged presentation view while validate/upgrade/uninstall
+  operate on concrete install records
+- adding `sc snapshot` to the CLI command surface
+- aligning `sc upgrade` with `--branch` and `--version`
+- defining the JSON error envelope plus concrete `list` and `install` JSON
+  success shapes
+- defining `sc init` minimum artifacts explicitly
+- defining new-question detection via tracked `question_snapshot.question_ids`
+  instead of a schema change to `package_questions`
+- making atomic replacement and transactional staging part of the accepted
+  state-safety contract
+
 ## Findings
 
 ### 1. Sprint 3.2 install tracking format is still under-specified at the plan level

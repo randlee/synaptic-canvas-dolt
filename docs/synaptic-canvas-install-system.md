@@ -136,19 +136,27 @@ Skills can declare **install-time questions** in their package definition. Quest
 
 ### Answer Storage
 
-Answers are recorded in the lockfile under each skill:
+Answers are recorded in the lockfile under the install record:
 
 ```toml
-[[skills]]
-id = "commit-msg"
+[[installs]]
+install_id = "pkg_commit-msg_project_ab12cd34"
+package = "commit-msg"
 
-  [skills.answers]
+  [installs.answers]
   lang = ["python", "typescript"]
   style = "conventional"
   answered_at = "2026-02-22T10:00:00Z"
+
+  [installs.question_snapshot]
+  question_ids = ["lang", "style"]
 ```
 
-On upgrade, existing answers are preserved. New questions (added in a newer version) prompt the user; removed questions are silently dropped.
+On upgrade, existing answers are preserved. New questions are detected by
+comparing the current `package_questions.question_id` set from Dolt with the
+tracked `question_snapshot.question_ids` in the install record. Removed
+questions are silently dropped from active prompts and retained only in history
+or backup artifacts if needed.
 
 ---
 
@@ -313,31 +321,42 @@ dependencies, or mutate local or remote state.
 
 ## Phase 5: Lockfile Recording
 
-After successful install, the lockfile captures everything needed to reproduce or verify the install:
+After successful install, the lockfile captures everything needed to reproduce
+or verify the install. The normative MVP schema is a flat install-record model:
+`manifest.lock` contains one `[[installs]]` record per tracked install. Older
+examples that use `[[skills]]` are deprecated and must not be treated as the
+authoritative Phase 3 schema.
 
 ```toml
-[[skills]]
-id = "commit-msg"
+version = 1
+
+[[installs]]
+install_id = "pkg_commit-msg_project_ab12cd34"
+package = "commit-msg"
 version = "1.3.0"
 dolt_commit = "a3f9c21"
 branch = "main"
 variant = "claude"
 installed_at = "2026-02-22T10:05:00Z"
 install_scope = "project"
-template_rendered = true
+install_root = "/Users/rand/projects/my-api/.claude/skills/commit-msg"
 install_site = "/Users/rand/projects/my-api"
 tracking_origin = "local-install"
+template_rendered = true
 
-  [skills.files]
+  [installs.files]
   ".claude/skills/commit-msg/main.md" = "sha256:rendered_hash..."
   ".claude/skills/commit-msg/hooks/pre-commit.sh" = "sha256:script_hash..."
 
-  [skills.answers]
+  [installs.answers]
   lang = ["python", "typescript"]
   style = "conventional"
   answered_at = "2026-02-22T10:00:00Z"
 
-  [skills.requirements]
+  [installs.question_snapshot]
+  question_ids = ["lang", "style"]
+
+  [installs.requirements]
   tools = ["python3>=3.11"]
   tools_verified = { "python3" = "3.11.4" }
   agents = ["claude"]
@@ -346,11 +365,14 @@ tracking_origin = "local-install"
   cli_provenance = { "agent-teams-mail" = "installed-by-synaptic" }
   acknowledged_at = "2026-02-22T10:04:30Z"
 
-  [skills.repo_profile_snapshot]
-  # Snapshot of repo profile at install time
-  # Used to detect when re-rendering is needed on upgrade
+  [installs.repo_profile_snapshot]
   primary_language = "python"
   languages_hash = "sha256:lang_list_hash..."
+
+  [installs.template_validation]
+  validated_at = "2026-02-22T10:05:00Z"
+  unresolved = []
+  warnings = []
 ```
 
 Lockfiles are part of Synaptic Canvas state, not Claude runtime artifacts. A
@@ -361,6 +383,10 @@ Local and global installs of the same package are expected to coexist. They are
 tracked as separate install records even when they resolve to the same package
 version. Scope-aware commands default to operating on both unless the user
 narrows the scope explicitly.
+
+`status` is a presentation-layer merge over these install records. Validate,
+upgrade, uninstall, and snapshot operate on the underlying install records and
+then format the result by scope when needed.
 
 **Key property**: after install, no skill invocation ever checks dependencies. The lockfile is the proof. Only `sc upgrade` or `SYNAPTIC_STARTUP_MODE=check` re-verifies.
 
@@ -400,7 +426,9 @@ When `sc upgrade` runs:
 1. Fetch latest versions from Dolt for installed skills
 2. Compare against lockfile versions
 3. For changed skills:
-   a. Check if new questions were added → prompt user
+   a. Compare current `package_questions.question_id` values against the
+      tracked `question_snapshot.question_ids`; prompt only for newly added
+      question IDs
    b. Check if repo profile changed since install → re-render templates
    c. Check if dependencies changed → verify new requirements
    d. Re-resolve variant selection; if no matching variant exists for the
@@ -622,10 +650,10 @@ The post-install check looks for literal `{{ ... }}` or `{% ... %}` patterns rem
 After successful install, the lockfile records template validation status:
 
 ```toml
-[[skills]]
-id = "commit-msg"
+[[installs]]
+install_id = "pkg_commit-msg_project_ab12cd34"
 
-  [skills.template_validation]
+  [installs.template_validation]
   validated_at = "2026-02-22T10:05:00Z"
   template_files = [".claude/skills/commit-msg/main.md.j2"]
   variables_resolved = ["repo.name", "repo.primary_language", "answers.style", "answers.lang"]

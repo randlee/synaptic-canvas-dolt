@@ -339,7 +339,7 @@ All installation is **project-scoped by default**. Nothing is installed globally
       common-utils/
         helpers.sh
   .synaptic/
-    manifest.lock          # committed to git — source of truth
+    manifest.lock          # Synaptic install tracking state — gitignored
     env.toml               # generated at install time — gitignored
     repo-profile.toml      # generated repo profile — gitignored
     hooks/
@@ -351,7 +351,9 @@ All installation is **project-scoped by default**. Nothing is installed globally
 
 `.claude/` contains installed runtime-facing package artifacts. `.synaptic/`
 contains Synaptic Canvas state, metadata, and temporary files. `manifest.lock`
-is committed. Other `.synaptic/` contents are gitignored and regenerated.
+is product-managed local state rather than a committed repository artifact.
+Other `.synaptic/` contents are also local state and may be regenerated as
+needed.
 
 ---
 

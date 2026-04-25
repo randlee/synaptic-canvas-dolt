@@ -67,6 +67,9 @@ explicit and deterministic.
   design.
 - BR-008 In MVP, user-selectable branch values map directly to Dolt branch
   names. There is no separate channel-to-branch translation layer.
+- BR-009 Branch and version shall be tracked and reasoned about independently.
+  Branch identifies the release track/channel; version identifies a release on
+  that branch.
 
 ## 4. CLI Access Strategy
 
@@ -82,6 +85,9 @@ The CLI is expected to be used by both humans and AI wrappers.
   not replace `--json` as the preferred explicit machine-access contract.
 - CLI-005 JSON-mode errors shall be documented and stable enough for AI wrappers
   and automation to consume predictably.
+- CLI-006 Human-readable output may suppress the branch label for `main` when
+  that improves readability, but structured output shall emit `"main"`
+  explicitly.
 
 ## 5. Agents And Scripts
 
@@ -119,11 +125,14 @@ The CLI is expected to be used by both humans and AI wrappers.
   normal supported state. Status, validate, upgrade, and uninstall flows shall
   be able to target project installs, global installs, or both.
 - ST-003 Install tracking shall record, at minimum, package identity, version,
-  Dolt source reference, install scope, materialized file inventory, and
-  dependency provenance.
+  branch, Dolt source reference, install scope, materialized file inventory,
+  and dependency provenance.
 - ST-004 Synaptic Canvas shall support reconciliation of tracked state by
   scanning repositories for installed package artifacts and importing or
   updating local tracking records for installs created on another machine.
+- ST-004a Scan/reconciliation flows shall present discovered installs and their
+  upgrade status before mutating tracking state, and shall support the user
+  choices `add all`, `upgrade all`, or `skip`.
 - ST-005 Product coordination shall apply only to product-managed state
   mutation under `.synaptic/` or `~/.synaptic/`. Installed runtime artifacts
   under `.claude/` or `~/.claude/` shall not be left under persistent product
@@ -132,8 +141,10 @@ The CLI is expected to be used by both humans and AI wrappers.
   design. Synaptic Canvas shall not rely on orphanable lock files that can
   permanently block future operations after a crash or interruption.
 - ST-007 Where mutual exclusion is required, the implementation shall use
-  atomic replacement, transactional staging, or self-cleaning OS-backed locking
-  semantics that disappear automatically when the owning process exits.
+  atomic replacement and transactional staging as the primary safety mechanism.
+  Self-cleaning OS-backed locking may be used as an additional guard, but the
+  design shall not depend on process-exit cleanup as the only stale-lock
+  prevention mechanism.
 
 ## 8. Install, Upgrade, And Uninstall Behavior
 
@@ -157,6 +168,14 @@ The CLI is expected to be used by both humans and AI wrappers.
 - IU-008 `--yolo` may be used with install, upgrade, and uninstall. In
   uninstall flows it shall only allow removal of dependencies that were
   recorded as installed by Synaptic Canvas.
+- IU-009 Upgrade planning shall treat "latest" as latest available on the
+  tracked branch unless the user explicitly changes branch or version.
+- IU-010 If an upgrade candidate would violate dependency or compatibility
+  requirements, Synaptic Canvas shall warn and skip that upgrade by default
+  while continuing other valid upgrades in the same batch.
+- IU-011 `--force` may override blocked-upgrade behavior only for explicitly
+  targeted package upgrades; it shall not be supported as a blanket override for
+  `upgrade --all`.
 
 ## 9. Validation And Inventory
 
@@ -173,11 +192,24 @@ The CLI is expected to be used by both humans and AI wrappers.
 - VA-004 Status and validation output shall be sufficient to answer "what is
   installed on this machine," including packages tracked outside the current
   repository.
+- VA-004a Human-readable status output shall present one row per package with
+  separate global and local version/branch views.
 - VA-005 Validation output shall be list-based and each reported item shall
   carry an explicit severity level suitable for human review and automation.
+- VA-005a Validation severities shall use the fixed vocabulary `info`, `warn`,
+  `error`, and `critical`.
 - VA-006 Validation shall support exporting local modifications to a staged
   snapshot area under product-managed global state so locally improved variants
   can be compared across versions and prepared for hardening or re-import.
+- VA-007 Snapshot export shall be a separate command surface rather than an
+  implicit side effect of validation. `sc snapshot <package>` shall default to
+  exporting modified tracked files only and `--full` shall export the full
+  installed package state.
+- VA-008 Snapshot exports shall be stored under
+  `~/.synaptic/mod-snapshots/<package>/<branch>/<repo>/`, where `<repo>` is a
+  sanitized repository key such as `<base-folder-name>-<repo-id>`, and shall
+  include a readable `snapshot.toml` file containing, at minimum, the full
+  source path, repo URL, snapshot timestamp, version, branch, and scope.
 
 ## 10. Verification Traceability
 
@@ -198,3 +230,6 @@ The CLI is expected to be used by both humans and AI wrappers.
   and agents.
 - VER-008 Test evidence may later be stored in package metadata or adjacent
   validation records, but evidence storage is not required for MVP.
+- VER-009 Flaky tests are not acceptable. Tests that can pass or fail without a
+  product change shall be treated as blocking defects and must be fixed or
+  removed before the sprint is accepted.
