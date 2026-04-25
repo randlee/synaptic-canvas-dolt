@@ -238,9 +238,13 @@ Rules:
 
 ### `sc install --json`
 
+`plan: true` indicates a dry-run response — no files were written.
+`dependency_warnings` lists unmet or uninstalled dependency warnings.
+
 ```json
 {
   "ok": true,
+  "plan": false,
   "package": "team-lead",
   "branch": "beta",
   "version": "1.2.0",
@@ -261,9 +265,39 @@ Rules:
   "template_validation": {
     "status": "ok",
     "warnings": []
-  }
+  },
+  "dependency_warnings": []
 }
 ```
+
+### `sc upgrade --json`
+
+Each result item carries a `warnings` array for per-package upgrade notes
+(local modification warnings, already-on-latest, dependency warnings).
+
+```json
+{
+  "ok": true,
+  "results": [
+    {
+      "package": "team-lead",
+      "branch": "main",
+      "version": "1.3.0",
+      "scope": "project",
+      "status": "upgraded",
+      "warnings": [],
+      "dependency_warnings": []
+    }
+  ]
+}
+```
+
+### File Mode Policy
+
+Script and hook files (`file_type: script` or `hook`) are written with mode
+`0755`. All other files are written with mode `0644`. Mode is set atomically
+alongside the file content write. This behavior is stable and automation may
+depend on it.
 
 Other Phase 3 commands follow the same top-level `ok` convention and emit
 command-specific structured payloads for automation.
