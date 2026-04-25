@@ -309,6 +309,8 @@ The read path. These commands never write to Dolt.
   - tag-filtered package listing
   - variant resolution lookups
   - package detail queries with file/dependency counts
+  - package questions retrieval (required by `src/pkg/questionnaire/`)
+  - package hooks retrieval (required by Sprint 3.2 hook registration)
 - Table and JSON output for both
 - Unit tests for list/info command behavior and output
 
