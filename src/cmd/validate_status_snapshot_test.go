@@ -8,13 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/randlee/synaptic-canvas-dolt/internal/logging"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/installer"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/integrity"
 )
 
 func TestValidateCommandJSONAllFileStates(t *testing.T) {
-	t.Cleanup(logging.Close)
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -89,7 +87,6 @@ func TestValidateCommandJSONAllFileStates(t *testing.T) {
 }
 
 func TestStatusCommandJSONMergedScopes(t *testing.T) {
-	t.Cleanup(logging.Close)
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -172,7 +169,6 @@ func TestStatusCommandJSONMergedScopes(t *testing.T) {
 }
 
 func TestSnapshotCommandModifiedOnly(t *testing.T) {
-	t.Cleanup(logging.Close)
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -240,7 +236,6 @@ func TestSnapshotCommandModifiedOnly(t *testing.T) {
 }
 
 func TestSnapshotCommandFull(t *testing.T) {
-	t.Cleanup(logging.Close)
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -305,7 +300,6 @@ func TestSnapshotCommandFull(t *testing.T) {
 }
 
 func TestValidateCommandAllFlag(t *testing.T) {
-	t.Cleanup(logging.Close)
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)

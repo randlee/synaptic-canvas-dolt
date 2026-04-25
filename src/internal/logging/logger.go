@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"testing"
 	"time"
 )
 
@@ -84,7 +85,14 @@ func resolveConsoleLevel(verbose, quiet bool) slog.Level {
 
 // fileHandler returns a JSON handler that writes to the log file.
 // The file handler always uses Info level regardless of verbosity settings.
+// During test execution, file logging is skipped entirely to avoid holding
+// open file handles inside t.TempDir() directories, which causes cleanup
+// failures on Windows.
 func fileHandler() (slog.Handler, error) {
+	if testing.Testing() {
+		return nil, fmt.Errorf("file logging disabled during tests")
+	}
+
 	dir, err := logDirPath()
 	if err != nil {
 		return nil, err
