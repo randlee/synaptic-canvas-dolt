@@ -1,0 +1,31 @@
+<review_task id="{{ task_id }}">
+<title>Phase Review: {{ phase_title }}</title>
+<phase>{{ phase_id }}</phase>
+
+<integration_branch>{{ integration_branch }}</integration_branch>
+<worktree>{{ worktree_path }}</worktree>
+
+<scope>
+{{ scope }}
+</scope>
+
+<design_docs>
+{% for doc in design_docs %}
+- {{ doc }}
+{% endfor %}
+</design_docs>
+
+<review_agents>
+Run all three QA agents against the full integration branch (background):
+1. go-qa-agent — full test suite, race, coverage, lint
+2. req-qa-agent — all requirements across all phase sprints
+3. arch-qa-agent — architectural fitness rules
+
+Verdict: PASS only when ALL three agents pass with zero blocking findings.
+</review_agents>
+
+<protocol>
+Report verdict to team-lead via SendMessage when complete.
+Format: PASS or FAIL, finding count per agent, list of blocking findings with fix recommendations.
+</protocol>
+</review_task>

@@ -1,0 +1,35 @@
+<qa_task id="{{ task_id }}">
+<title>QA: {{ sprint_title }}</title>
+<sprint>{{ sprint_id }}</sprint>
+
+<worktree>{{ worktree_path }}</worktree>
+<branch>{{ branch }}</branch>
+<pr>{{ pr_number }}</pr>
+
+<deliverables_summary>
+{% for d in deliverables %}
+- {{ d }}
+{% endfor %}
+</deliverables_summary>
+
+<design_docs>
+{% for doc in design_docs %}
+- {{ doc }}
+{% endfor %}
+</design_docs>
+
+<qa_agents>
+Run all three QA agents in parallel (background):
+1. go-qa-agent — formatting, vet, tests, coverage, cross-platform
+2. req-qa-agent — requirements and design doc compliance
+3. arch-qa-agent — architectural fitness rules
+
+Verdict: PASS only when ALL three agents pass.
+Findings: list by agent with severity and file:line references.
+</qa_agents>
+
+<protocol>
+Report verdict to team-lead via SendMessage when complete.
+Format: PASS or FAIL, finding count, blocking findings list.
+</protocol>
+</qa_task>
