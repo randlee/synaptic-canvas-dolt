@@ -36,6 +36,8 @@ type Package struct {
 	Options      json.RawMessage `json:"options,omitempty"`
 	SHA256       *string         `json:"sha256,omitempty"`
 	MinClaudeVer *string         `json:"min_claude_version,omitempty"`
+	FileCount    int             `json:"file_count,omitempty"`
+	DepCount     int             `json:"dependency_count,omitempty"`
 }
 
 // TagsList splits the comma-separated tags field into a string slice.
