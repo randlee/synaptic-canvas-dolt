@@ -83,13 +83,17 @@ sc install <package> [--global] [--branch <branch>] [--dry-run] [--yolo]
     --dry-run   Show the install plan and template preview without side effects
     --yolo      Execute the computed install plan without interactive confirmation
 
-sc upgrade <package> [--all] [--scope <project|global|both>] [--branch <branch>] [--version <version>] [--yolo]
+sc upgrade <package> [--all] [--scope <project|global|both>] [--branch <branch>] [--version <version>] [--yolo] [--force]
     Upgrade installed package(s) to latest version on their tracked branch and scope by default.
     --branch    Explicitly retarget upgrade to a different branch
     --version   Explicitly target a specific version on the chosen branch
+    --force     Override blocked-upgrade checks for a single targeted package.
+                NOT valid with --all; rejected with error if combined.
 
-sc uninstall <package> [--scope <project|global|both>] [--yolo]
+sc uninstall <package> [--scope <project|global|both>] [--yolo] [--force]
     Remove an installed package from the selected tracked install scope.
+    --force     Remove package files even when local modifications are detected.
+                Without --force, locally modified files cause a prompt [y/N] or error in non-TTY mode.
 
 sc validate [<package>] [--all] [--scope <project|global|both>]
     Verify installed files, dependency state, and tracked install health.
@@ -101,14 +105,31 @@ sc validate [<package>] [--all] [--scope <project|global|both>]
 sc status [--scope <project|global|both>]
     Show installed packages, their versions, branches, scopes, and validation state.
 
-sc scan [<path> ...] [--recurse] [--scope <project|global|both>]
+sc scan [<path> ...] [--recurse] [--scope <project|global|both>] [--accept-all] [--upgrade-all]
     Scan repository folders for installed packages and reconcile them into local tracking state.
     Defaults to the current folder. Discovers installs by SHA-matching on-disk files against
-    the local catalog. Presents candidates before mutating tracking state.
+    the local catalog. Default mode lists candidates only — no tracking state mutation.
+    --accept-all   Write lockfile entries for all discovered untracked installs
+    --upgrade-all  Upgrade existing tracked installs to the catalog version
+    --accept-all and --upgrade-all are mutually exclusive.
+    --json mode always exits dry-run regardless of other flags.
+    Requires local catalog; never triggers a live Dolt connection. Run sc catalog update first.
 
-sc catalog update [--branch <branch>]
+sc catalog update [--branch <branch>] [--scope <project|global|both>]
     Fetch the SHA catalog for the effective branch from Dolt and write it to the local cache
-    at .synaptic/catalog-{branch}.toml. Also triggered implicitly by sc install and sc init.
+    at .synaptic/catalog-{branch}.toml (local) or ~/.synaptic/catalog-{branch}.toml (global).
+    --scope controls write target: project writes local, global writes machine, both writes both.
+    Default scope: project when inside a git repo, global otherwise.
+    Also triggered implicitly by sc install and sc init.
+
+sc config get <key>
+    Read a configuration value from ~/.sc/config.toml. Prints the resolved value (file then
+    env then default). Unknown keys are rejected with an error.
+
+sc config set <key> <value>
+    Write a configuration value to ~/.sc/config.toml, creating the file if absent.
+    Unknown keys are rejected. Valid keys: dolt.client, dolt.host, dolt.database,
+    dolt.token, dolt.dsn, dolt.dir, dolt.timeout.
 
 sc snapshot <package> [--scope <project|global|both>] [--full]
     Export local modifications for the selected package into global snapshot staging.

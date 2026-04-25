@@ -620,6 +620,15 @@ API contracts (DC-001 through DC-007).
 #### Deliverable A: File-based Config System
 
 `src/internal/config/fileconfig.go` — layered config: file → env → flags.
+`src/internal/config/keys.go` — all config key constants (see Config Constants section below).
+
+`fileconfig.go` **extends** the existing `config.Config` struct. The existing
+`NewConfigFromFlags`, `EffectiveBranch`, `Validate`, and `DoltDirExpanded` functions
+are preserved unchanged. `fileconfig.go` adds `LoadFileConfig() error` method that
+reads `~/.sc/config.toml` and stores values in a `fileValues map[string]string` field
+added to `Config`. `Get` and `GetInt` read from `fileValues` first, then env, then
+fall through to `defaultVal`. Existing struct fields (`DoltDir`, `Branch`, etc.) are
+not replaced — they continue to carry CLI flag values.
 
 Config file location: `~/.sc/config.toml` (created on first `sc config set`).
 Format: TOML. Schema:
@@ -756,9 +765,15 @@ func openReadClient(cfg *config.Config) (readClient, error) {
             Timeout:  time.Duration(cfg.GetInt("dolt.timeout", 30)) * time.Second,
         }), nil
     case "sql":
-        return dolt.OpenForBranch(dolt.Config{
-            Host: ..., // parse from cfg.Get("dolt.dsn", "")
-        }, branch)
+        dsn := cfg.Get("dolt.dsn", "")
+        if dsn == "" {
+            return nil, errors.New("dolt.client=sql requires dolt.dsn to be set")
+        }
+        sqlCfg, err := dolt.ParseDSN(dsn) // see ParseDSN below
+        if err != nil {
+            return nil, fmt.Errorf("parsing dolt.dsn: %w", err)
+        }
+        return dolt.OpenForBranch(sqlCfg, branch)
     case "cli":
         dir := cfg.Get("dolt.dir", "")
         if dir == "" {
@@ -771,8 +786,16 @@ func openReadClient(cfg *config.Config) (readClient, error) {
 }
 ```
 
-`detectReadDoltDir` and `loadConfigAndReadDoltDir` are removed. `withReadClient`
-calls `openReadClient(cfg)` directly. Signature of `withReadClient` changes to:
+**Call site migration** — every call site using the 2-arg `readClientOpener` must
+be updated. Known call sites as of this sprint:
+- `src/cmd/read_helpers.go:31` — `openReadClient` definition (replaced)
+- `src/cmd/read_helpers.go` — `readClientOpener` var (updated to new signature)
+- `src/cmd/upgrade.go:96` — uses `readClientOpener` (migrated)
+- `src/cmd/install_mutation_helpers.go:77` — uses `readClientOpener` (migrated)
+- Any test file that sets `readClientOpener` directly (all must be updated)
+
+`detectReadDoltDir`, `detectReadDoltDirImpl`, and `loadConfigAndReadDoltDir` are
+removed. `withReadClient` calls `openReadClient(cfg)` directly. Signature changes:
 
 ```go
 func withReadClient(cmd *cobra.Command, fn func(*config.Config, readClient) error) error
@@ -784,7 +807,9 @@ If `dolt.database` is empty and client type is `http`, return a clear error:
 
 ---
 
-#### Config Constants
+#### Config Constants and DSN Parser
+
+`src/internal/config/keys.go` (new file — list as deliverable):
 
 ```go
 // src/internal/config/keys.go
@@ -798,6 +823,27 @@ const (
     KeyDoltTimeout  = "dolt.timeout"
 )
 ```
+
+`src/pkg/dolt/client.go` — add `ParseDSN(dsn string) (Config, error)`:
+
+```go
+// ParseDSN parses a MySQL DSN string (user:pass@tcp(host:port)/dbname)
+// into a dolt.Config. Returns error if DSN is malformed.
+func ParseDSN(dsn string) (Config, error)
+```
+
+Uses `github.com/go-sql-driver/mysql` DSN parser:
+`cfg, err := mysqldrv.ParseDSN(dsn)` and maps fields to `dolt.Config`.
+
+---
+
+#### readClient / dolt.Client Interface Note
+
+Sprint 3.5 **defers** the `type readClient = dolt.Client` alias to Sprint 3.6.
+Reason: `GetPackageCatalog` method is added to `dolt.Client` in Sprint 3.6; the
+alias cannot be created without it. Sprint 3.5 leaves `readClient` as the
+existing local interface definition — no breaking change. Sprint 3.6 acceptance
+criteria include creating the alias once `GetPackageCatalog` is added.
 
 ---
 
@@ -815,7 +861,8 @@ Unit tests (`httptest.NewServer` — no live network calls):
 - Unexpected extra JSON fields → ignored, no error
 - Branch name with `/` → URL-path-encoded correctly in request URL
 - Empty `dolt.database` → clear error before any HTTP call
-- URL > 1800 bytes → request uses POST not GET
+- URL > 1800 bytes → request uses POST not GET; verified via `r.Method == "POST"` in
+  `httptest.NewServer` handler and `r.URL.RawQuery == ""` (no query param)
 - Rate limit (429) → returns `ErrRateLimited`
 
 Integration test (tagged `//go:build integration`, excluded from CI):
@@ -851,6 +898,9 @@ to `dolt.Client` in Sprint 3.6 and make `readClient` a type alias
 - HTTP 401/403 → error message mentions token configuration
 - `SQLClient` and `CLIReader` still compile and pass existing tests
 - No test makes a live network call except `TestHTTPClientLive`
+- `test.yml` CI workflow does NOT pass `-tags integration`; `TestHTTPClientLive`
+  does not run in CI
+- `src/internal/config/keys.go` exists with all seven constants
 
 **Requirements:** DC-001, DC-002, DC-003, DC-004, DC-005, DC-006, DC-007,
 BR-001 through BR-006
@@ -860,6 +910,9 @@ BR-001 through BR-006
 ### Sprint 3.6: SHA Catalog Subsystem
 
 **Goal:** `sc catalog update [--branch <branch>]` and catalog-backed `sc validate`
+
+**Sprint dependency:** Sprint 3.6 depends on Sprint 3.5 completion. Do not begin
+until Sprint 3.5 is merged to the integration branch.
 
 **Background:** The catalog is a locally-cached, branch-scoped snapshot of the
 immutable `(package_id, version, dest_path, sha256)` tuples from Dolt. It
@@ -875,16 +928,23 @@ Add `GetPackageCatalog(ctx context.Context) ([]CatalogEntry, error)` to the
 `dolt.Client` interface in `src/pkg/dolt/client.go`.
 
 **All four implementations must be updated:**
-- `HTTPClient` — query DoltHub REST API
-- `SQLClient` — query via MySQL protocol
-- `CLIReader` — query via subprocess
-- `MockClient` in test helpers — return configurable test data
+- `HTTPClient` (`src/pkg/dolt/http_client.go`) — query DoltHub REST API
+- `SQLClient` (`src/pkg/dolt/client.go`) — query via MySQL protocol
+- `CLIReader` (`src/pkg/dolt/cli_reader.go`) — query via subprocess
+- `MockClient` (`src/pkg/dolt/mock.go`) — return configurable test data via new
+  `CatalogEntries []CatalogEntry` field
 
 `GetPackageCatalogQuery(database, branch string) string` added to `queries.go`.
 Returns all `(package_id, version, dest_path, sha256)` for the branch.
 
-`readClient` interface in `src/cmd/read_helpers.go` must also gain
-`GetPackageCatalog` or be replaced with `type readClient = dolt.Client`.
+Sprint 3.6 creates the `readClient` type alias:
+```go
+// src/cmd/read_helpers.go
+type readClient = dolt.Client
+```
+This is possible only after `GetPackageCatalog` is added to `dolt.Client` in this sprint.
+
+Also update `src/cmd/root.go` `NewRootCmd` to register `NewCatalogCmd()` as a subcommand.
 
 ---
 
@@ -894,10 +954,10 @@ Returns all `(package_id, version, dest_path, sha256)` for the branch.
 
 ```go
 type CatalogEntry struct {
-    PackageID string
-    Version   string
-    DestPath  string
-    SHA256    string
+    PackageID string `toml:"package_id"`
+    Version   string `toml:"version"`
+    DestPath  string `toml:"dest_path"`
+    SHA256    string `toml:"sha256"`
 }
 
 type Catalog struct {
@@ -973,6 +1033,10 @@ When `validateTrackedInstall()` needs catalog SHAs:
 Option 4 must NOT silently pass validation — it emits a warning that appears in
 both human and JSON output.
 
+**CA-004 qualification:** CA-004 states the catalog is the authoritative SHA
+source. Step 4 is the only exception — it applies exclusively when both catalog
+and Dolt are unavailable. CA-004 applies in all other scenarios.
+
 ---
 
 #### Deliverable E: sc catalog update command
@@ -984,6 +1048,20 @@ both human and JSON output.
 - `--json` output: `{"branch":"main","entries":42,"path":"~/.synaptic/catalog-main.toml"}`
 - Implicit refresh triggered by `sc install` and `sc init` (after primary op
   completes; failure is non-fatal — emit warning, continue)
+- Register `NewCatalogCmd()` in `src/cmd/root.go` `NewRootCmd`
+
+`src/pkg/catalog/atomic.go` — `writeTOMLAtomic(path string, v any) error`:
+- Marshal `v` to TOML using `github.com/BurntSushi/toml` (or `github.com/pelletier/go-toml/v2`)
+- Write to a temp file in the same directory as `path` (same filesystem, no cross-device rename)
+- `os.Rename` temp → path (atomic on linux/darwin; best-effort on Windows)
+- Temp file name: `path + "." + random hex + ".tmp"`
+- On any error: remove temp file before returning
+
+`src/cmd/state_helpers.go` — refactor `validateTrackedInstall()`:
+- Current: uses `record.Files[destPath].SHA256` as expected SHA
+- New: load catalog via `catalog.Load(synapticDir, branch)`, look up
+  `entry.SHA256` by `(package_id, version, dest_path)`; fall back to lockfile
+  SHAs per the four-step chain in Deliverable D if catalog absent
 
 ---
 
@@ -1011,6 +1089,9 @@ Mandatory test cases:
 - Validate emits a warning and uses fallback when catalog absent
 - Branch names with `/` produce valid, non-colliding catalog filenames
 - All four `dolt.Client` implementations compile with `GetPackageCatalog`
+- `type readClient = dolt.Client` alias in `src/cmd/read_helpers.go`
+- `NewCatalogCmd()` registered in `src/cmd/root.go`
+- `writeTOMLAtomic` exists in `src/pkg/catalog/atomic.go` with temp+rename logic
 - Parallel tests each use independent `t.TempDir()`
 
 **Requirements:** CA-001 through CA-007
@@ -1070,7 +1151,10 @@ InstallRecord{
 }
 ```
 
-`TrackingOrigin = "scan-reconciled"` is a new string field on `InstallRecord`.
+`TrackingOrigin` string field **already exists** at `src/pkg/installer/tracking.go:38`.
+Sprint 3.7 establishes `"scan-reconciled"` as its canonical sentinel value for
+scan-derived records. Do NOT add the field again; update the documentation comment
+to list all valid values: `"direct-install"`, `"scan-reconciled"`.
 Validate and upgrade must handle records where `DoltCommit` is empty — these
 are valid but cannot be pinned to a specific Dolt history point.
 
@@ -1094,7 +1178,14 @@ Under `--json` mode, the command always exits dry-run (no mutation) — JSON
 consumers must pass `--accept-all` explicitly.
 
 Behavior when stdin is not a TTY and no flag given: list candidates and exit
-with code 0. This is safe for scripted environments.
+with code 0. This is safe for scripted environments. This default-no-mutation
+mode satisfies the "skip" choice from ST-004a.
+
+`sc scan` **never triggers a live Dolt connection**. If the catalog is absent,
+emit error: `"catalog not found for branch {branch}; run: sc catalog update"` and
+exit code 1. Do not attempt to fetch the catalog from Dolt during scan.
+
+Register `NewScanCmd()` in `src/cmd/root.go` `NewRootCmd`.
 
 ---
 
@@ -1124,7 +1215,10 @@ Mandatory test cases:
 - Already-tracked packages are not re-presented
 - Works fully offline using cached catalog
 - No lockfile mutation without explicit `--accept-all` or `--upgrade-all`
-- `TrackingOrigin` field added to `InstallRecord` and written/read by lockfile codec
+- `TrackingOrigin` field documents `"scan-reconciled"` as a valid value
+- `NewScanCmd()` registered in `src/cmd/root.go`
+- `sc scan` with absent catalog → error naming the missing branch, exit 1
+- `sc scan` with no flags → lists candidates only, no lockfile mutation
 
 **Requirements:** ST-004, ST-004a
 
@@ -1147,10 +1241,11 @@ so it can query existing catalog entries before writing.
 `src/pkg/importer/importer.go` — add `Client dolt.Client` field alongside
 existing `Writer`. Import now requires both read and write access.
 
-`src/cmd/admin_import.go` — construct both client and writer, pass both to
-importer. If the read query fails (network error, auth failure), **block the
-import** with error: `"catalog check failed: %w; import aborted to protect SHA
-immutability"`. Do not write partial data.
+`src/cmd/admin/import.go` (correct path — not `src/cmd/admin_import.go`) —
+construct both client and writer, pass both to importer. If the read query
+fails (network error, auth failure), **block the import** with error:
+`"catalog check failed: %w; import aborted to protect SHA immutability"`.
+Do not write partial data.
 
 ---
 
@@ -1163,14 +1258,20 @@ SELECT dest_path, sha256 FROM `{database}/{branch}`.package_files
 WHERE package_id = ? AND dest_path = ?
 ```
 
-Decision table:
+**Ordering:** The collision check READ query must execute BEFORE any DELETE or
+INSERT in the writer. `buildImportSQL` (in `dolt/writer.go`) issues DELETE then
+INSERT. Run `importer.checkCollision(ctx, packageID, destPath)` in the importer
+loop before calling `writer.ImportPackage`. This prevents the race where existing
+rows are deleted before the check can read them.
 
-| Existing entry | Incoming SHA | Action |
-|----------------|-------------|--------|
+Decision table (three cases — no row exists, or one row exists with matching
+or different SHA):
+
+| Existing row for (package_id, dest_path) | Incoming SHA | Action |
+|------------------------------------------|-------------|--------|
 | None | any | Allow (first import) |
-| Same SHA | Same SHA | Allow (idempotent re-import, no-op) |
-| Same SHA | Different SHA | **Reject** — SHA collision |
-| Different SHA | any | **Reject** — collision (version bump must go through admin publish) |
+| Exists, same SHA as incoming | same | Allow (idempotent re-import, no-op) |
+| Exists, different SHA from incoming | different | **Reject** — SHA collision |
 
 Error message format for rejection:
 ```
@@ -1244,7 +1345,15 @@ const (
 )
 ```
 
-`--global` flag removed. Any code that checks `cfg.Global` bool must be updated.
+`config.Config` has no `Global` field. The `--global` flag is registered
+command-locally. Remove `--global` flag registration from:
+- `src/cmd/install.go:21` (`cmd.Flags().BoolP("global", ...)`)
+- `src/cmd/upgrade.go:28`
+- `src/cmd/uninstall.go:26`
+
+Also update `selectInstall` in `src/cmd/install_mutation_helpers.go:50` which
+reads the `global` flag to derive install scope.
+
 Default when `--scope` omitted: `both`.
 
 ---
@@ -1270,7 +1379,12 @@ Default when `--scope` omitted: `both`.
 
 #### Deliverable D: Validation Severity
 
-Each `ValidationItem` gains a `Severity` field with fixed vocabulary:
+**Actual type names in source:** The validate structs are `validatedFile`
+(`src/cmd/state_helpers.go:42`) and `validatedInstall`. Use these names when
+modifying source. `ValidationSeverity` is a new type defined in
+`src/cmd/state_helpers.go` alongside these structs.
+
+Each `validatedFile` gains a `Severity ValidationSeverity` field:
 
 ```go
 type ValidationSeverity string
@@ -1332,9 +1446,22 @@ Aggregate status emitted in JSON output:
 
 #### Deliverable F: Provenance-Aware Uninstall
 
-`uninstall` checks `dependency.installed_by_sc` (bool) for each dep:
-- `installed_by_sc = true` → offer removal (prompt or `--yolo`)
-- `installed_by_sc = false` → leave untouched, no mention unless `--verbose`
+`RequirementSnapshot` in `src/pkg/installer/tracking.go` has
+`CLIProvenance map[string]string` (not a bool field). Sprint 3.9 adds:
+
+```go
+// IsInstalledBySC returns true if the named dependency was installed by
+// Synaptic Canvas (not pre-existing). Reads CLIProvenance["depName"].
+func (r *RequirementSnapshot) IsInstalledBySC(depName string) bool {
+    return r.CLIProvenance[depName] == "installed-by-synaptic"
+}
+```
+
+Do NOT change TOML on disk — `CLIProvenance` already stores provenance strings.
+
+`uninstall` uses `IsInstalledBySC(depName)` for each dep:
+- returns `true` → offer removal (prompt or `--yolo`)
+- returns `false` → leave untouched, no mention unless `--verbose`
 
 `--force` on uninstall: removes package files even if local modifications
 detected. Without `--force`, local modifications produce a warning and a prompt:
@@ -1386,7 +1513,20 @@ Mandatory test cases:
 - Uninstall offers SC-installed deps for removal; ignores predating deps
 - Old lockfile records (pre-3.9) handled without crash or data loss
 
-**Requirements:** IU-001 through IU-011, VA-005, VA-005a, CLI-006
+**VA-001 through VA-004a disposition:**
+- VA-001 (validation covers more than checksums): **partially addressed in Sprint 3.3**
+  for file presence and checksum. Dep presence, hook registration, template validation
+  are **open and addressed in Sprint 3.9** via the severity mapping and validate expansion.
+- VA-002 (MODIFIED distinct from MISSING): addressed in Sprint 3.3 — `MODIFIED` status exists.
+- VA-003 (explicit scope in output): addressed in Sprint 3.3 — scope label in output.
+- VA-004/VA-004a (status output sufficient for "what is installed"): addressed in Sprint 3.3.
+  Sprint 3.9 adds `aggregate_status` to JSON output.
+
+`upgrade --all --force` error contract:
+- Exit code: `1`
+- `--json` mode output: `{"ok":false,"error":{"code":"invalid_args","message":"--force cannot be used with --all; target a specific package"}}`
+
+**Requirements:** IU-001 through IU-011, VA-001 through VA-005a, CLI-006
 
 ---
 
@@ -1462,7 +1602,7 @@ Mandatory test cases:
 |-------|---------|-------|
 | 1. Foundation | 1.1–1.5 | Scaffold + CI pipeline, Dolt client, integrity, log-debug agent, gap closure |
 | 2. Admin | 2.1–2.4 | Import, export, verify, publish |
-| 3. End-User | 3.1–3.4 | List, install, validate, upgrade |
+| 3. End-User | 3.1–3.9 | List, install, validate, upgrade, HTTP client, SHA catalog, scan, import collision, scope/yolo/severity |
 | 4. Skill | 4.1–4.2 | sc:plugin skill, installer |
 | 5. Release | 5.1 | GoReleaser release pipeline |
 
