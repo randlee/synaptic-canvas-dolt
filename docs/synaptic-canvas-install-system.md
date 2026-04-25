@@ -9,7 +9,8 @@ The install process handles three distinct concerns:
 2. **User configuration** — what does the user need from this skill?
 3. **Dependency resolution** — what needs to be installed on this machine?
 
-All three happen once, at install time, with user approval.
+All three happen once, at install time, with user approval unless the user
+explicitly opts into non-interactive approval with `--yolo`.
 
 ---
 
@@ -38,7 +39,7 @@ sc install
     │     Fill Jinja2 templates with repo context + user answers
     │     Show rendered output for verification
     │
-    ├─ 6. Approval (interactive)
+    ├─ 6. Approval (interactive unless --yolo)
     │     Present complete install plan:
     │       - Skills to install (with variants)
     │       - Files to materialize (with destinations)
@@ -135,19 +136,27 @@ Skills can declare **install-time questions** in their package definition. Quest
 
 ### Answer Storage
 
-Answers are recorded in the lockfile under each skill:
+Answers are recorded in the lockfile under the install record:
 
 ```toml
 [[installs]]
-id = "commit-msg"
+install_id = "pkg_commit-msg_project_ab12cd34"
+package = "commit-msg"
 
   [installs.answers]
   lang = ["python", "typescript"]
   style = "conventional"
   answered_at = "2026-02-22T10:00:00Z"
+
+  [installs.question_snapshot]
+  question_ids = ["lang", "style"]
 ```
 
-On upgrade, existing answers are preserved. New questions (added in a newer version) prompt the user; removed questions are silently dropped.
+On upgrade, existing answers are preserved. New questions are detected by
+comparing the current `package_questions.question_id` set from Dolt with the
+tracked `question_snapshot.question_ids` in the install record. Removed
+questions are silently dropped from active prompts and retained only in history
+or backup artifacts if needed.
 
 ---
 
@@ -312,17 +321,27 @@ dependencies, or mutate local or remote state.
 
 ## Phase 5: Lockfile Recording
 
-After successful install, the lockfile captures everything needed to reproduce or verify the install:
+After successful install, the lockfile captures everything needed to reproduce
+or verify the install. The normative MVP schema is a flat install-record model:
+`manifest.lock` contains one `[[installs]]` record per tracked install. Older
+examples that use `[[skills]]` are deprecated and must not be treated as the
+authoritative Phase 3 schema.
 
 ```toml
+version = 1
+
 [[installs]]
-id = "commit-msg"
+install_id = "pkg_commit-msg_project_ab12cd34"
+package = "commit-msg"
 version = "1.3.0"
 dolt_commit = "a3f9c21"
 branch = "main"
 variant = "claude"
 installed_at = "2026-02-22T10:05:00Z"
 install_scope = "project"
+install_root = "/Users/rand/projects/my-api/.claude/skills/commit-msg"
+install_site = "/Users/rand/projects/my-api"
+tracking_origin = "local-install"
 template_rendered = true
 
   [installs.files]
@@ -334,24 +353,40 @@ template_rendered = true
   style = "conventional"
   answered_at = "2026-02-22T10:00:00Z"
 
+  [installs.question_snapshot]
+  question_ids = ["lang", "style"]
+
   [installs.requirements]
   tools = ["python3>=3.11"]
   tools_verified = { "python3" = "3.11.4" }
   agents = ["claude"]
   cli_installed = ["agent-teams-mail"]
   cli_versions = { "agent-teams-mail" = "0.4.2" }
+  cli_provenance = { "agent-teams-mail" = "installed-by-synaptic" }
   acknowledged_at = "2026-02-22T10:04:30Z"
 
   [installs.repo_profile_snapshot]
-  # Snapshot of repo profile at install time
-  # Used to detect when re-rendering is needed on upgrade
   primary_language = "python"
   languages_hash = "sha256:lang_list_hash..."
+
+  [installs.template_validation]
+  validated_at = "2026-02-22T10:05:00Z"
+  unresolved = []
+  warnings = []
 ```
 
 Lockfiles are part of Synaptic Canvas state, not Claude runtime artifacts. A
 project-local install writes the lockfile under `.synaptic/manifest.lock`; a
 global install writes it under `~/.synaptic/manifest.lock`.
+
+Local and global installs of the same package are expected to coexist. They are
+tracked as separate install records even when they resolve to the same package
+version. Scope-aware commands default to operating on both unless the user
+narrows the scope explicitly.
+
+`status` is a presentation-layer merge over these install records. Validate,
+upgrade, uninstall, and snapshot operate on the underlying install records and
+then format the result by scope when needed.
 
 **Key property**: after install, no skill invocation ever checks dependencies. The lockfile is the proof. Only `sc upgrade` or `SYNAPTIC_STARTUP_MODE=check` re-verifies.
 
@@ -365,6 +400,23 @@ global install writes it under `~/.synaptic/manifest.lock`.
 If a user requests `sc install --global` for a `local-only` package, the CLI
 must fail with a clear error before writing files or changing lockfile state.
 
+### Approval, Provenance, And `--yolo`
+
+External tool or CLI dependencies must be shown to the user before Synaptic
+Canvas installs them. By default the user explicitly acknowledges that plan.
+
+`sc install --yolo` skips the interactive confirmation step, but it does not
+skip planning or provenance capture. The lockfile still records:
+
+- what dependencies were already present
+- what dependencies were installed by Synaptic Canvas
+- which install scope was targeted
+- the final materialized file inventory
+
+The same `--yolo` semantics apply to `sc upgrade` and `sc uninstall`. In
+uninstall flows, non-interactive dependency removal is limited to dependencies
+recorded as installed by Synaptic Canvas.
+
 ---
 
 ## Upgrade Behavior
@@ -374,7 +426,9 @@ When `sc upgrade` runs:
 1. Fetch latest versions from Dolt for installed skills
 2. Compare against lockfile versions
 3. For changed skills:
-   a. Check if new questions were added → prompt user
+   a. Compare current `package_questions.question_id` values against the
+      tracked `question_snapshot.question_ids`; prompt only for newly added
+      question IDs
    b. Check if repo profile changed since install → re-render templates
    c. Check if dependencies changed → verify new requirements
    d. Re-resolve variant selection; if no matching variant exists for the
@@ -383,9 +437,26 @@ When `sc upgrade` runs:
 5. On approval: re-materialize changed files, update lockfile
 6. Unchanged skills: no action, no re-verification
 
+If the same package is tracked both project-locally and globally, upgrade
+targets may be selected independently or together.
+
 `sc init` is idempotent. If `.synaptic/` state already exists, the command
 verifies or refreshes generated state rather than failing purely because the
 repo was already initialized.
+
+## Tracking Reconciliation
+
+The machine-level inventory is authoritative for "what is installed on this
+computer," but Synaptic Canvas must be able to discover repository installs
+created on another machine or copied into place manually.
+
+`sc scan` inspects repository folders for tracked install artifacts and
+reconciles them into local machine state. Reconciled installs are recorded with
+their discovered install site and marked distinctly from installs created
+locally by the current machine.
+
+By default `sc scan` inspects the current folder. It may also accept an
+explicit path list and a recursive mode for repository discovery.
 
 ### Answer Preservation
 
@@ -580,7 +651,7 @@ After successful install, the lockfile records template validation status:
 
 ```toml
 [[installs]]
-id = "commit-msg"
+install_id = "pkg_commit-msg_project_ab12cd34"
 
   [installs.template_validation]
   validated_at = "2026-02-22T10:05:00Z"

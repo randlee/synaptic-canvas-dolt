@@ -50,6 +50,10 @@ Architecture rules:
   switching
 - in MVP, externally selectable branch values are the Dolt branch names
   directly; there is no separate channel-mapping layer
+- branch and version are first-class, independent concepts: branch identifies
+  the release track/channel and version identifies a release on that branch
+- routine upgrades move to the latest compatible version on the currently
+  tracked branch unless the user explicitly changes `--branch` or `--version`
 
 This keeps CLI behavior deterministic and allows multiple readers to query
 different branches safely in parallel.
@@ -108,6 +112,23 @@ Architecture rules:
   packages
 - `.synaptic/` stores lockfiles, generated config, metadata, cache, logs, temp
   directories, hook registry state, and similar product-owned files
+- machine-level state uses `~/.synaptic/` with the same schema as repo-local
+  state where applicable
+- local and global installs of the same package are a normal supported state,
+  not an edge case; Synaptic Canvas tracks both independently and commands may
+  target project installs, global installs, or both
+- the same package may legitimately be installed locally and globally on
+  different branches and/or versions at the same time
+- installed package artifacts under `.claude/` or `~/.claude/` must not be held
+  under long-lived product locks; coordination is limited to `.synaptic/` or
+  `~/.synaptic/` state mutation and the design must avoid stale lock artifacts
+  entirely
+- product-managed tracking must record where a package is installed, what
+  version and branch it came from, what files were materialized, and which
+  external dependencies were already present versus installed by Synaptic
+  Canvas
+- the product should support inventory reconciliation by scanning repositories
+  for tracked package artifacts and reconciling them into local machine state
 - `sc snapshot` exports installed package state into product-managed snapshot
   directories under machine-level Synaptic Canvas state so local modifications
   can be reviewed without mutating the active installation
@@ -134,7 +155,42 @@ operations:
 than the admin export pipeline because it operates on installed state already
 materialized on disk.
 
-## 8. Agent And Script Architecture
+## 8. End-User State And Validation
+
+Phase 3 end-user commands operate against local tracked installation state plus
+explicit Dolt reads.
+
+Architecture rules:
+
+- `status`, `validate`, `upgrade`, and `uninstall` must be able to reason about
+  project-local installs, global installs, or both in one invocation
+- scope-aware end-user commands use `--scope` with an enum and default to
+  `both` when omitted
+- validation is broader than file checksum verification; it includes installed
+  file presence, aggregate package integrity, dependency presence, dependency
+  version compatibility, hook registration state, and template-validation state
+- validation should inventory local modifications rather than reducing all drift
+  to corruption; locally modified files are part of the managed state picture
+- validation output is list-based and severity-driven rather than a single
+  monolithic pass/fail result
+- local modification snapshots are exported through a separate `snapshot`
+  command into product-managed global staging, organized by
+  package/branch/repository, so changes can be compared across installed
+  versions and prepared for re-import
+- scan/reconciliation should present discovered installs and the candidate
+  actions first, then let the user choose `add all`, `upgrade all`, or `skip`
+- uninstall behavior depends on dependency provenance: dependencies installed by
+  Synaptic Canvas may be offered for removal, while dependencies that predated
+  the install are left untouched
+- non-interactive install/upgrade flows must remain explicit. `--yolo` is the
+  acknowledged "proceed without prompting" mode for install, upgrade, and
+  uninstall, and still records what external dependencies were installed
+- the default human-readable status view may suppress the branch label for
+  `main`, but structured output must emit `"main"` explicitly
+- upgrade planning must warn and skip blocked upgrades by default; force
+  behavior is an explicit targeted override, not the default batch behavior
+
+## 9. Agent And Script Architecture
 
 Repository-local agent definitions and helper scripts are part of the product
 surface for Claude-facing workflows.
@@ -147,7 +203,7 @@ Architecture rules:
 - helper scripts must be unit-tested
 - sprint plans must define how agent/script behavior is verified
 
-## 9. Detailed Design Documents
+## 10. Detailed Design Documents
 
 This architecture overview is intentionally high level. The detailed subsystem
 documents remain:
