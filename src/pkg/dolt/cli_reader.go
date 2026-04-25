@@ -104,6 +104,20 @@ func (r *CLIReader) GetPackageQuestions(ctx context.Context, packageID string) (
 	))
 }
 
+func (r *CLIReader) ResolveVariant(ctx context.Context, logicalID, agentProfile string) (string, error) {
+	rows, err := runCLIQuery[models.PackageVariant](ctx, r.DoltDir, r.Branch, fmt.Sprintf(
+		"SELECT logical_id, agent_profile, variant_package_id FROM package_variants WHERE logical_id = %s AND agent_profile = %s",
+		sqlString(logicalID), sqlString(agentProfile),
+	))
+	if err != nil {
+		return "", err
+	}
+	if len(rows) == 0 {
+		return "", nil
+	}
+	return rows[0].VariantPackageID, nil
+}
+
 func runCLIQuery[T any](ctx context.Context, doltDir, branch, query string) ([]T, error) {
 	cmd := exec.CommandContext(ctx, doltCommand, "--branch", branch, "sql", "-q", query, "-r", "json") //nolint:gosec // G204: dolt binary is hardcoded constant.
 	cmd.Dir = doltDir
