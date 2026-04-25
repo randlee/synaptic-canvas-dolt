@@ -141,7 +141,7 @@ Answers are recorded in the lockfile under each skill:
 [[installs]]
 id = "commit-msg"
 
-  [skills.answers]
+  [installs.answers]
   lang = ["python", "typescript"]
   style = "conventional"
   answered_at = "2026-02-22T10:00:00Z"
@@ -325,16 +325,16 @@ installed_at = "2026-02-22T10:05:00Z"
 install_scope = "project"
 template_rendered = true
 
-  [skills.files]
+  [installs.files]
   ".claude/skills/commit-msg/main.md" = "sha256:rendered_hash..."
   ".claude/skills/commit-msg/hooks/pre-commit.sh" = "sha256:script_hash..."
 
-  [skills.answers]
+  [installs.answers]
   lang = ["python", "typescript"]
   style = "conventional"
   answered_at = "2026-02-22T10:00:00Z"
 
-  [skills.requirements]
+  [installs.requirements]
   tools = ["python3>=3.11"]
   tools_verified = { "python3" = "3.11.4" }
   agents = ["claude"]
@@ -342,7 +342,7 @@ template_rendered = true
   cli_versions = { "agent-teams-mail" = "0.4.2" }
   acknowledged_at = "2026-02-22T10:04:30Z"
 
-  [skills.repo_profile_snapshot]
+  [installs.repo_profile_snapshot]
   # Snapshot of repo profile at install time
   # Used to detect when re-rendering is needed on upgrade
   primary_language = "python"
@@ -582,7 +582,7 @@ After successful install, the lockfile records template validation status:
 [[installs]]
 id = "commit-msg"
 
-  [skills.template_validation]
+  [installs.template_validation]
   validated_at = "2026-02-22T10:05:00Z"
   template_files = [".claude/skills/commit-msg/main.md.j2"]
   variables_resolved = ["repo.name", "repo.primary_language", "answers.style", "answers.lang"]
