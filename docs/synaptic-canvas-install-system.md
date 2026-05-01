@@ -397,8 +397,9 @@ then format the result by scope when needed.
 - `any` permits either local install (`.claude/`) or global install (`~/.claude/`)
 - `local-only` permits only project-local install
 
-If a user requests `sc install --global` for a `local-only` package, the CLI
-must fail with a clear error before writing files or changing lockfile state.
+If a user requests `sc install --scope global` or `sc install --scope both` for
+a `local-only` package, the CLI must fail with a clear error before writing
+files or changing lockfile state.
 
 ### Approval, Provenance, And `--yolo`
 

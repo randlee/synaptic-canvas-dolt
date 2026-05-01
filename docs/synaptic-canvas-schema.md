@@ -39,7 +39,10 @@ The `sha256` column provides integrity verification independent of Dolt internal
 ### 3. Composite primary keys
 
 Most tables use composite PKs that naturally express their relationships:
-- `package_files`: (`package_id`, `dest_path`) — one file per destination per package
+- `package_files`: (`package_id`, `dest_path`) — one file per package-root
+  artifact path. The column name is currently `dest_path`, but the semantic
+  value is `doc_path`: a path relative to the package root and independent of
+  where the package is installed.
 - `package_deps`: (`package_id`, `dep_name`) — one dep entry per name per package
 - `package_questions`: (`package_id`, `question_id`) — one question per ID per package
 - `package_hooks`: (`package_id`, `event`, `script_path`) — one hook per event+script per package
@@ -95,7 +98,14 @@ CREATE TABLE packages (
 
 ### `package_files`
 
-One row per file in the package. File content is stored as text with YAML frontmatter extracted into searchable columns and a JSON column.
+One row per file in the package. File content is stored as text with YAML
+frontmatter extracted into searchable columns and a JSON column.
+
+`dest_path` is the current schema column name for the canonical package
+`doc_path`. It must not include runtime roots such as `.claude/`,
+`~/.claude/`, `.agents/`, or `~/.agents/`. Package metadata and installer
+target mapping decide where a `doc_path` is materialized for a specific AI
+agent ecosystem.
 
 ```sql
 CREATE TABLE package_files (
@@ -130,6 +140,10 @@ CREATE TABLE package_files (
 | `script` | `.claude/skills/{pkg}/scripts/` | Executable scripts (Python, shell) |
 | `hook` | `.claude/skills/{pkg}/hooks/` | Hook scripts registered with dispatcher |
 | `config` | `.claude/skills/{pkg}/` | Configuration files (JSON, YAML) |
+
+The table above describes the MVP `.claude` target mapping. Future `.agents`
+support should be implemented through package metadata and target mapping, not
+by embedding `.claude` or `.agents` in the immutable `doc_path` identity.
 
 **`content_type` values:**
 

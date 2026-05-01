@@ -135,7 +135,7 @@ Scaffold the Go project, establish patterns, connect to Dolt.
 **Deliverables:**
 - `src/pkg/integrity/types.go` — shared types: FileHash, VerifyStatus, VerifyResult
 - `src/pkg/integrity/sha.go` — per-file SHA256 computation
-- `src/pkg/integrity/aggregate.go` — package-level aggregate SHA (sorted dest_path:sha256 pairs)
+- `src/pkg/integrity/aggregate.go` — package-level aggregate SHA (sorted doc_path:sha256 pairs)
 - `src/pkg/integrity/verify.go` — comparison functions (OK, MODIFIED, MISSING, EXTRA)
 - 100% test coverage on all integrity functions
 - Test vectors with known SHA values
@@ -331,7 +331,7 @@ The read path. These commands never write to Dolt.
 
 ### Sprint 3.2: Install
 
-**Goal:** `sc install <package> [--global] [--branch <branch>] [--dry-run] [--yolo]`
+**Goal:** `sc install <package> [--scope <project|global|both>] [--branch <branch>] [--dry-run] [--yolo]`
 
 **Deliverables:**
 - `src/cmd/install.go` — install command
@@ -350,13 +350,15 @@ The read path. These commands never write to Dolt.
 - Unit and integration tests for install and tracking behavior
 
 **Acceptance Criteria:**
-- Installs package files to `.claude/` (local) or `~/.claude/` (global)
+- Installs package files to `.claude/` (project), `~/.claude/` (global), or
+  both according to `--scope`; omitted `--scope` defaults to `both`
 - Stores lockfiles, repo profile, hook registry state, cache, and temp files
   under `.synaptic/`
 - Branch resolution follows `--branch`, then `SC_DOLT_BRANCH`, then `main`
 - Branch values map directly to Dolt branch names
 - Respects `install_scope` from packages table
-- `local-only` packages fail fast if the user requests `--global`
+- `local-only` packages fail fast with no partial install if the requested
+  `--scope` includes `global`
 - The initial lockfile/tracking schema is explicit and normative for Phase 3,
   including package identity, version, Dolt commit, branch, variant, install
   scope, materialized file inventory, answers, requirements snapshot,
@@ -420,7 +422,7 @@ answers_sha = "5a9d..."
 question_ids = ["lang", "style"]
 
 [installs.files]
-".claude/skills/team-lead/SKILL.md" = "c0ffee..."
+"skills/team-lead/SKILL.md" = "c0ffee..." # key is doc_path, not materialized path
 
 [installs.requirements.cli_provenance]
 gh = "preexisting"
@@ -490,7 +492,8 @@ gh = "preexisting"
   "items": [
     {
       "type": "file",
-      "path": ".claude/skills/team-lead/SKILL.md",
+      "doc_path": "skills/team-lead/SKILL.md",
+      "materialized_path": ".claude/skills/team-lead/SKILL.md",
       "status": "MODIFIED",
       "severity": "warn",
       "expected_sha256": "abc123",
@@ -619,22 +622,31 @@ until all Sprint 3.5 source artifacts are merged.
 `openReadClient` currently requires a `.dolt` directory and uses `CLIReader` or
 `SQLClient`. Without this sprint, every end-user command fails with
 "could not auto-detect Dolt database directory." See `docs/dolt-api.md` for
-API contracts (DC-001 through DC-007).
+API contracts (DC-001 through DC-009).
 
 ---
 
 #### Deliverable A: File-based Config System
 
-`src/internal/config/fileconfig.go` — layered config: file → env → flags.
+`src/internal/config/fileconfig.go` — layered config: explicit CLI flags → env → file → default.
 `src/internal/config/keys.go` — all config key constants (see Config Constants section below).
 
 `fileconfig.go` **extends** the existing `config.Config` struct. The existing
-`NewConfigFromFlags`, `EffectiveBranch`, `Validate`, and `DoltDirExpanded` functions
-are preserved unchanged. `fileconfig.go` adds `LoadFileConfig() error` method that
-reads `~/.sc/config.toml` and stores values in a `fileValues map[string]string` field
-added to `Config`. `Get` and `GetInt` read from `fileValues` first, then env, then
-fall through to `defaultVal`. Existing struct fields (`DoltDir`, `Branch`, etc.) are
-not replaced — they continue to carry CLI flag values.
+`NewConfigFromFlags`, `EffectiveBranch`, `Validate`, and `DoltDirExpanded`
+functions are preserved, but `NewConfigFromFlags` must also record which CLI
+flags were explicitly supplied. `fileconfig.go` adds `LoadFileConfig() error`
+method that reads `~/.sc/config.toml` and stores values in a
+`fileValues map[string]string` field added to `Config`. `Get` and `GetInt`
+resolve values in this order:
+
+1. explicitly supplied CLI flag mapped to that config key
+2. environment variable mapped to that key
+3. config file value
+4. supplied default
+
+Unset CLI flag defaults must not override environment or file config. Existing
+struct fields (`DoltDir`, `Branch`, etc.) continue to carry CLI flag values for
+existing command code.
 
 Config file location: `~/.sc/config.toml` (created on first `sc config set`).
 Format: TOML. Schema:
@@ -653,7 +665,8 @@ timeout  = 30                          # HTTP request timeout in seconds; defaul
 New methods on `config.Config`:
 
 ```go
-// Get returns the string value for key from the merged config (file + env + flags).
+// Get returns the string value for key from the merged config.
+// Precedence: explicit CLI flag > environment > config file > defaultVal.
 // Returns defaultVal if key is absent or empty.
 func (c *Config) Get(key, defaultVal string) string
 
@@ -661,7 +674,24 @@ func (c *Config) Get(key, defaultVal string) string
 func (c *Config) GetInt(key string, defaultVal int) int
 ```
 
-Load order (last wins): config file → environment variables → CLI flags.
+Required implementation shape:
+
+```go
+func (c *Config) Get(key, defaultVal string) string {
+    if val, ok := c.explicitFlagValue(key); ok && val != "" {
+        return val
+    }
+    if val := os.Getenv(EnvNameForKey(key)); val != "" {
+        return val
+    }
+    if val := c.fileValues[key]; val != "" {
+        return val
+    }
+    return defaultVal
+}
+```
+
+Load precedence: explicit CLI flags → environment variables → config file → defaults.
 Environment variable naming: `SC_DOLT_CLIENT`, `SC_DOLT_HOST`, etc.
 
 `src/cmd/configcmd.go` — `sc config get <key>` and `sc config set <key> <value>`.
@@ -697,7 +727,7 @@ const DefaultHTTPTimeout = 30 * time.Second
 func NewHTTPClient(cfg HTTPConfig) *HTTPClient
 
 // query executes SQL against the DoltHub API.
-// Uses GET with ?q= for queries under 1800 bytes; POST with body for longer.
+// Uses GET with ?q=. The DoltHub SQL API read endpoint does not support POST.
 // Branch is URL-path-encoded via url.PathEscape.
 func (c *HTTPClient) query(ctx context.Context, sql string) ([]map[string]any, error)
 ```
@@ -706,25 +736,29 @@ DoltHub REST API response envelope:
 
 ```go
 type apiResponse struct {
-    SchemaType string      `json:"schema_type"`
-    Columns    []apiColumn `json:"columns"`
-    Rows       []map[string]any `json:"rows"`
+    QueryExecutionStatus  string           `json:"query_execution_status"`
+    QueryExecutionMessage string           `json:"query_execution_message"`
+    RepositoryOwner       string           `json:"repository_owner"`
+    RepositoryName        string           `json:"repository_name"`
+    CommitRef             string           `json:"commit_ref"`
+    SQLQuery              string           `json:"sql_query"`
+    Schema                []apiColumn      `json:"schema"`
+    Rows                  []map[string]any `json:"rows"`
 }
 
 type apiColumn struct {
     Name       string `json:"columnName"`
     Type       string `json:"columnType"`
-    IsPrimary  bool   `json:"isPrimaryKey"`
-    IsNullable bool   `json:"isNullable"`
 }
 ```
 
-**Response type mapping** — DoltHub returns all row values as JSON. Decode rules:
+**Response type mapping** — DoltHub commonly returns SQL values as JSON strings.
+Decode rules:
 - String columns → `string`; absent key or JSON `null` → empty string `""`
-- Integer columns → JSON number decoded as `float64`; cast to `int64` via
-  `int64(row["col"].(float64))`; JSON `null` → `0`
-- Boolean columns (e.g. `is_template`) → JSON `0`/`1` decoded as `float64` not
-  Go `bool`; treat as `bool` via `row["col"].(float64) != 0`
+- Integer columns → accept JSON string or JSON number; parse/cast to `int64`;
+  JSON `null` → `0`
+- Boolean columns (e.g. `is_template`) → accept `"0"`, `"1"`, `0`, `1`,
+  `false`, or `true`
 - `json.RawMessage` columns (e.g. `frontmatter`) → kept as raw string;
   caller decodes further
 
@@ -736,6 +770,18 @@ type apiColumn struct {
 - 429 → rate limited; return `ErrRateLimited` with `Retry-After` seconds if present
 - 5xx → server error; return `ErrServerError` with status code
 - Timeout (context deadline) → context error propagated as-is
+
+**Query dialect strategy:**
+- HTTP queries run against the repository/ref selected by the URL and shall use
+  unqualified table names such as `packages` and `package_files`.
+- HTTP queries cannot use database/sql parameter placeholders. They must be
+  built with a small, reviewed set of query-builder functions that escape
+  string literals with the existing SQL literal escaping rules.
+- SQLClient queries may keep branch-qualified table references and
+  database/sql placeholders.
+- CLIReader may keep subprocess SQL with escaped literals.
+- Tests must cover that HTTP builders do not emit `` `database/branch`.table ``
+  references and do not leave `?` placeholders in the SQL sent to DoltHub.
 
 All sentinel errors defined in `src/pkg/dolt/errors.go`:
 ```go
@@ -867,25 +913,32 @@ Unit tests (`httptest.NewServer` — no live network calls):
 - Unexpected extra JSON fields → ignored, no error
 - Branch name with `/` → URL-path-encoded correctly in request URL
 - Empty `dolt.database` → clear error before any HTTP call
-- URL > 1800 bytes → request uses POST not GET; verified via `r.Method == "POST"` in
-  `httptest.NewServer` handler and `r.URL.RawQuery == ""` (no query param)
+- HTTP query builder emits GET requests only and returns a clear error if a
+  generated query would exceed the supported URL length budget
 - Rate limit (429) → returns `ErrRateLimited`
 
-Integration test (tagged `//go:build integration`, excluded from CI):
+Manual/AI-driven live integration test (tagged `//go:build integration`,
+excluded from CI and never run by default):
 
 ```go
 //go:build integration
-// Run: go test -tags integration ./src/pkg/dolt/ -run TestHTTPClientLive
+// Run only when a human/AI explicitly opts in:
+// SC_RUN_LIVE_DOLTHUB=1 \
+// SC_TEST_DOLT_DATABASE=randlee/synaptic-canvas-dolt-test \
+// SC_TEST_DOLT_BRANCH=main \
+// go test -tags integration ./src/pkg/dolt/ -run TestHTTPClientLive
 func TestHTTPClientLive(t *testing.T) {
-    // Queries live dolthub.com/randlee/synaptic-canvas/main
-    // Expected: at least one package returned
-    // Skips if DOLTHUB_TOKEN env var absent (public read)
+    // Skips unless SC_RUN_LIVE_DOLTHUB=1.
+    // Uses SC_TEST_DOLT_DATABASE and SC_TEST_DOLT_BRANCH so the live target is
+    // not hard-coded. A dedicated project test repo with deterministic package
+    // fixture data is preferred.
 }
 ```
 
 Flaky test prevention:
 - All unit tests use `httptest.NewServer` exclusively
-- Integration test tagged `integration` and excluded from default CI via
+- Live integration test tagged `integration`, additionally gated by
+  `SC_RUN_LIVE_DOLTHUB=1`, and excluded from default CI via
   `.github/workflows/test.yml` (no `-tags integration` in CI matrix)
 
 `readClient` interface duplication: Sprint 3.5 must consolidate or alias
@@ -895,20 +948,25 @@ to `dolt.Client` in Sprint 3.6 and make `readClient` a type alias
 
 **Acceptance Criteria:**
 
-- `sc list` returns correct results against live DoltHub public repo (integration test)
+- `sc list` returns correct results against `httptest` fixtures in automated
+  tests; live DoltHub verification is a manual/AI-driven integration procedure
+  against a configured project test repo, not a CI requirement
 - `sc list` works with httptest mock in unit tests (no network)
 - Branch resolution (`--branch`, `SC_DOLT_BRANCH`, `main`) works via HTTP API
 - `dolt.database` not set → clear error message naming the config key
 - `sc config set dolt.database randlee/synaptic-canvas` writes `~/.sc/config.toml`
 - `sc config get dolt.database` reads it back
+- Config precedence is tested: explicit CLI flag overrides environment,
+  environment overrides file config, file config overrides defaults, and unset
+  CLI flag defaults do not override lower layers
 - HTTP 401/403 → error message mentions token configuration
 - `SQLClient` and `CLIReader` still compile and pass existing tests
-- No test makes a live network call except `TestHTTPClientLive`
+- No automated test makes a live network call
 - `test.yml` CI workflow does NOT pass `-tags integration`; `TestHTTPClientLive`
-  does not run in CI
+  also skips unless `SC_RUN_LIVE_DOLTHUB=1`
 - `src/internal/config/keys.go` exists with all seven constants
 
-**Requirements:** DC-001, DC-002, DC-003, DC-004, DC-005, DC-006, DC-007,
+**Requirements:** DC-001, DC-002, DC-003, DC-004, DC-005, DC-006, DC-007, DC-008, DC-009,
 BR-001 through BR-006
 
 ---
@@ -920,11 +978,15 @@ BR-001 through BR-006
 **Sprint dependency:** Sprint 3.6 depends on Sprint 3.5 completion. Do not begin
 until Sprint 3.5 is merged to the integration branch.
 
-**Background:** The catalog is a locally-cached, branch-scoped snapshot of the
-immutable `(package_id, version, dest_path, sha256)` tuples from Dolt. It
-enables offline validation and is the authoritative expected-SHA source for
-`sc validate`. `record.Files` SHAs in the lockfile are NOT the authoritative
-source — the catalog is. See CA-001 through CA-007 in requirements.md.
+**Background:** The catalog is a locally-cached, branch-scoped set of known
+immutable `(package_id, version, doc_path, sha256)` tuples from Dolt. `doc_path`
+is the package-root-relative artifact path, not the installed filesystem path.
+The catalog preserves previously observed versions when refreshed so global and
+repo-local installs can remain valid while different machines or repositories
+upgrade at different times. It enables offline validation and is the
+authoritative expected-SHA source for `sc validate`. `record.Files` SHAs in the
+lockfile are NOT the authoritative source — the catalog is. See CA-001 through
+CA-007 in requirements.md.
 
 ---
 
@@ -941,7 +1003,9 @@ Add `GetPackageCatalog(ctx context.Context) ([]CatalogEntry, error)` to the
   `CatalogEntries []CatalogEntry` field
 
 `GetPackageCatalogQuery(database, branch string) string` added to `queries.go`.
-Returns all `(package_id, version, dest_path, sha256)` for the branch.
+Returns all current `(package_id, version, doc_path, sha256)` tuples visible on
+the branch. For the current schema, `package_files.dest_path` is selected as
+`doc_path`.
 
 Sprint 3.6 creates the `readClient` type alias:
 ```go
@@ -962,7 +1026,7 @@ Also update `src/cmd/root.go` `NewRootCmd` to register `NewCatalogCmd()` as a su
 type CatalogEntry struct {
     PackageID string `toml:"package_id"`
     Version   string `toml:"version"`
-    DestPath  string `toml:"dest_path"`
+    DocPath   string `toml:"doc_path"`
     SHA256    string `toml:"sha256"`
 }
 
@@ -989,13 +1053,13 @@ schema_version = 1
 [[entries]]
 package_id = "team-lead"
 version    = "1.2.0"
-dest_path  = ".claude/skills/team-lead/SKILL.md"
+doc_path   = "skills/team-lead/SKILL.md"
 sha256     = "abc123..."
 
 [[entries]]
 package_id = "team-lead"
 version    = "1.2.0"
-dest_path  = ".claude/skills/team-lead/README.md"
+doc_path   = "skills/team-lead/README.md"
 sha256     = "def456..."
 ```
 
@@ -1014,9 +1078,12 @@ character outside `[a-zA-Z0-9._-]` with `_`. Use
 
 Write target and read precedence (explicit):
 
-- `sc catalog update` with no `--scope`: writes local catalog if inside a git
-  repo, otherwise writes machine catalog. With `--scope global`: writes machine
-  catalog only. With `--scope project`: writes local catalog only.
+- `sc catalog update` with no `--scope`: writes both project and machine
+  catalogs. With `--scope global`: writes machine catalog only. With
+  `--scope project`: writes local catalog only.
+- Catalog refresh merges new entries into the existing catalog and preserves
+  older versions. It must not truncate historical entries for the same branch
+  just because the branch currently points at a newer package version.
 - `validateTrackedInstall()` reads local catalog first; falls back to machine
   catalog if local absent.
 - Concurrent writes: catalog file writes use `writeTOMLAtomic` (temp file +
@@ -1078,7 +1145,7 @@ installer tests still pass.
 `src/cmd/state_helpers.go` — refactor `validateTrackedInstall()`:
 - Current: uses `record.Files[destPath].SHA256` as expected SHA
 - New: load catalog via `catalog.Load(synapticDir, branch)`, look up
-  `entry.SHA256` by `(package_id, version, dest_path)`; fall back to lockfile
+  `entry.SHA256` by `(package_id, version, doc_path)`; fall back to lockfile
   SHAs per the four-step chain in Deliverable D if catalog absent
 
 ---
@@ -1093,7 +1160,8 @@ Mandatory test cases:
 - `schema_version` mismatch (future schema) → warning + best-effort parse
 - Branch name with path-unsafe characters → sanitized correctly in filename
 - Empty catalog (zero entries) → valid; validate skips SHA check with info log
-- Catalog entry with no matching lockfile entry → ignored (catalog may be ahead)
+- Catalog entry with no matching lockfile entry → ignored (catalog may contain
+  older or newer versions than the current install)
 - Validate with catalog absent + Dolt unreachable → falls back to lockfile SHAs
   with warning in output
 - Catalog refresh failure during `sc install` → install succeeds, warning emitted
@@ -1102,7 +1170,7 @@ Mandatory test cases:
 
 **Acceptance Criteria:**
 
-- `sc catalog update` fetches and writes `(package_id, version, dest_path, sha256)`
+- `sc catalog update` fetches and writes `(package_id, version, doc_path, sha256)`
 - `sc validate` uses catalog SHAs as authoritative source
 - Validate emits a warning and uses fallback when catalog absent
 - Branch names with `/` produce valid, non-colliding catalog filenames
@@ -1131,10 +1199,11 @@ Mandatory test cases:
   - `global`: walk `~/.claude/`
   - `both` (default): walk both
 - Custom paths override scope when provided as positional args
-- For each file encountered: compute SHA256, look up `(dest_path, sha256)` in
-  local catalog
+- For each file encountered: compute SHA256, derive a candidate `doc_path` from
+  the package metadata/runtime-target mapping, and look up `(doc_path, sha256)`
+  in the local catalog. MVP implements the `.claude` mapping first.
 
-Catalog lookup key is `(dest_path, sha256)`. When multiple catalog entries
+Catalog lookup key is `(doc_path, sha256)`. When multiple catalog entries
 match (same file content, same path, different versions): **prefer the entry
 whose version matches any existing lockfile record for that package; if no
 match, prefer the latest version (lexicographic descending).**
@@ -1159,7 +1228,7 @@ InstallRecord{
     InstallScope:       derived from path (local vs global),
     InstalledAt:        time.Time{},         // zero — original time unknown
     TrackingOrigin:     "scan-reconciled",   // sentinel: identifies scan-derived records
-    Files:              all matched files for package,
+    Files:              all matched doc_path files for package,
     Answers:            nil,
     QuestionSnapshot:   nil,
     Requirements:       nil,
@@ -1189,11 +1258,17 @@ sc scan                 # lists candidates only; no mutation (default dry-run)
 sc scan --accept-all    # writes lockfile entries for all discovered installs
 sc scan --upgrade-all   # upgrades existing tracked installs to catalog version
 sc scan --json          # machine-readable candidate list; no mutation
+sc scan --json --accept-all  # machine-readable output and lockfile mutation
 ```
 
 `--accept-all` and `--upgrade-all` are mutually exclusive. Neither is the default.
-Under `--json` mode, the command always exits dry-run (no mutation) — JSON
-consumers must pass `--accept-all` explicitly.
+`--json` controls output format only; it must not alter mutation semantics.
+JSON consumers that want mutation must pass the same explicit action flags as
+human users, such as `--accept-all` or `--upgrade-all`.
+
+Future interactive/session mode rule: starting the session with `--json` implies
+JSON output for the entire session. Any future command surface that accepts JSON
+arguments or a JSON request payload also implies JSON output for that invocation.
 
 Behavior when stdin is not a TTY and no flag given: list candidates and exit
 with code 0. This is safe for scripted environments. This default-no-mutation
@@ -1223,7 +1298,9 @@ Mandatory test cases:
 - File already tracked in lockfile → not presented as candidate
 - Stale catalog warning (fetched_at > 24h) → warning in output
 - `--accept-all` on zero candidates → no-op, exit 0
-- `--json` mode → no lockfile mutation regardless of other flags
+- `--json` alone → no lockfile mutation because no action flag was supplied
+- `--json --accept-all` writes the same lockfile records as `--accept-all` and
+  returns the mutation summary as JSON
 
 **Acceptance Criteria:**
 
@@ -1232,7 +1309,8 @@ Mandatory test cases:
 - `--accept-all` writes valid `[[installs]]` records with `tracking_origin = "scan-reconciled"`
 - Already-tracked packages are not re-presented
 - Works fully offline using cached catalog
-- No lockfile mutation without explicit `--accept-all` or `--upgrade-all`
+- No lockfile mutation without explicit `--accept-all` or `--upgrade-all`,
+  regardless of output mode
 - `TrackingOrigin` field documents `"scan-reconciled"` as a valid value
 - `NewScanCmd()` registered in `src/cmd/root.go`
 - `sc scan` with absent catalog → error naming the missing branch, exit 1
@@ -1269,11 +1347,14 @@ Do not write partial data.
 
 #### Deliverable B: Collision Check Logic
 
-Before writing any `package_files` row, query:
+Before writing any `package_files` row, query the current package version and
+file SHA for the same package/doc_path:
 
 ```sql
-SELECT dest_path, sha256 FROM `{database}/{branch}`.package_files
-WHERE package_id = ? AND dest_path = ?
+SELECT p.version, pf.dest_path AS doc_path, pf.sha256
+FROM `{database}/{branch}`.package_files AS pf
+JOIN `{database}/{branch}`.packages AS p ON p.id = pf.package_id
+WHERE pf.package_id = ? AND pf.dest_path = ?
 ```
 
 **Ordering:** The collision check READ query must execute BEFORE any DELETE or
@@ -1282,18 +1363,21 @@ INSERT. Run `importer.checkCollision(ctx, packageID, destPath)` in the importer
 loop before calling `writer.ImportPackage`. This prevents the race where existing
 rows are deleted before the check can read them.
 
-Decision table (three cases — no row exists, or one row exists with matching
-or different SHA):
+Decision table:
 
-| Existing row for (package_id, dest_path) | Incoming SHA | Action |
-|------------------------------------------|-------------|--------|
-| None | any | Allow (first import) |
+| Existing row for `(package_id, version, doc_path)` | Incoming SHA | Action |
+|----------------------------------------------------|-------------|--------|
+| None | any | Allow (first import or new version) |
 | Exists, same SHA as incoming | same | Allow (idempotent re-import, no-op) |
 | Exists, different SHA from incoming | different | **Reject** — SHA collision |
 
+A version bump may reuse the same `doc_path` with different content and SHA.
+The collision check rejects mutation of an existing package/version/doc_path
+tuple, not legitimate new package versions.
+
 Error message format for rejection:
 ```
-SHA collision: file "{{dest_path}}" on branch "{{branch}}" already exists
+SHA collision: file "{{doc_path}}" for {{package_id}} {{version}} on branch "{{branch}}" already exists
   existing SHA: {{existing_sha}}
   incoming SHA: {{incoming_sha}}
 Import aborted. No data was written.
@@ -1303,7 +1387,9 @@ JSON error format (`--json` mode):
 ```json
 {
   "error": "sha_collision",
-  "file": "{{dest_path}}",
+  "file": "{{doc_path}}",
+  "package": "{{package_id}}",
+  "version": "{{version}}",
   "branch": "{{branch}}",
   "existing_sha": "{{existing_sha}}",
   "incoming_sha": "{{incoming_sha}}"
@@ -1317,8 +1403,8 @@ JSON error format (`--json` mode):
 Mandatory test cases:
 - First import of new package (no existing rows) → allowed, all files written
 - Identical re-import (same SHA all files) → allowed, idempotent, no error
-- Same file, same dest_path, different SHA on same branch → rejected before any
-  write; no partial writes
+- Same package, same version, same doc_path, different SHA on same branch →
+  rejected before any write; no partial writes
 - Version bump on same branch (different package version, new files) → allowed
 - Read query failure → import aborted, clear error, no writes
 - Error message contains both SHAs and the colliding file path
@@ -1326,7 +1412,8 @@ Mandatory test cases:
 
 **Acceptance Criteria:**
 
-- Re-import with different SHA rejected before any Dolt write occurs
+- Re-import of the same package/version/doc_path with different SHA rejected
+  before any Dolt write occurs
 - Error message names the colliding file and both SHAs exactly
 - Identical re-import is a no-op and succeeds
 - Read query failure blocks import with clear error
@@ -1351,8 +1438,10 @@ they are tracked as deferred here.
 
 #### Deliverable A: --scope Flag
 
-Replace `--global` bool with `--scope <project|global|both>` on:
-`validate`, `status`, `upgrade`, `uninstall`.
+Replace all scope-specific booleans with `--scope <project|global|both>` on
+every command that can target project-local state, machine-global state, or both:
+`install`, `validate`, `status`, `scan`, `catalog update`, `snapshot`,
+`upgrade`, and `uninstall`.
 
 ```go
 // Valid values; use a string enum with explicit validation.
@@ -1363,8 +1452,9 @@ const (
 )
 ```
 
-`config.Config` has no `Global` field. The `--global` flag is registered
-command-locally. Remove `--global` flag registration from:
+`config.Config` has no `Global` or `Local` field. Remove `--global` and
+`--local` aliases from all command registrations, documentation, help text, and
+tests. Known implementation cleanup points include:
 - `src/cmd/install.go:21` (`cmd.Flags().BoolP("global", ...)`)
 - `src/cmd/upgrade.go:28`
 - `src/cmd/uninstall.go:26`
@@ -1373,6 +1463,11 @@ Also update `selectInstall` in `src/cmd/install_mutation_helpers.go:50` which
 reads the `global` flag to derive install scope.
 
 Default when `--scope` omitted: `both`.
+
+Command audit requirement: Sprint 3.9 must audit all command registrations,
+help output, docs, JSON examples, and tests to ensure `--scope` is the only
+local/global selection interface. `--global` and `--local` must not appear as
+accepted CLI flags after this sprint.
 
 ---
 
@@ -1505,6 +1600,11 @@ No migration required. Zero-value fallback is sufficient.
 #### Test Requirements
 
 Mandatory test cases:
+- `sc install <pkg>` with omitted `--scope` installs both project and global
+  targets or fails atomically before writing either target
+- `sc install <pkg> --scope project` writes only project-local artifacts
+- `local-only` package with `--scope both` fails before any project/global
+  files are written
 - `--scope project` when only global install exists → empty results, no error
 - `--scope both` with one local PASS, one global FAIL → mixed output, exit 1
 - `--yolo` + `--dry-run` → no mutation, no prompts
@@ -1519,7 +1619,9 @@ Mandatory test cases:
 **Acceptance Criteria:**
 
 - All scope-aware commands accept `--scope` enum; omitting defaults to `both`
-- `--global` flag removed from all scope-aware commands
+- `--global` and `--local` flags removed from all CLI commands
+- Scope audit confirms command registrations, help text, docs, JSON examples,
+  and tests use `--scope` consistently
 - `--yolo` skips interactive prompts while recording full provenance
 - `--yolo` + `--dry-run` → dry-run wins
 - Install presents external dep plan before installing; `--yolo` skips prompt
@@ -1544,7 +1646,7 @@ Mandatory test cases:
 - Exit code: `1`
 - `--json` mode output: `{"ok":false,"error":{"code":"invalid_args","message":"--force cannot be used with --all; target a specific package"}}`
 
-**Requirements:** IU-001 through IU-011, VA-001 through VA-005a, CLI-006
+**Requirements:** IU-001 through IU-011, VA-001 through VA-005a, CLI-006 through CLI-010
 
 ---
 

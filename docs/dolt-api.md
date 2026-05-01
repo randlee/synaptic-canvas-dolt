@@ -33,9 +33,31 @@ GET https://www.dolthub.com/api/v1alpha1/randlee/synaptic-canvas/main?q=SELECT+*
 **Note:** The `{ref}` path segment must be URL-path-encoded. Use `url.PathEscape(branch)`
 for any branch name that may contain `/` or other URL-unsafe characters.
 
-**URL length limit:** GET queries are subject to URL length limits (~2048 bytes safe
-limit). For complex queries that may exceed this, POST with the SQL in the request body
-is also accepted. `HTTPClient` must use POST when the constructed URL exceeds 1800 bytes.
+**Request method:** DoltHub SQL API reads use GET with the SQL in the `q`
+query parameter. The MVP `HTTPClient` must keep generated SQL short enough for
+GET and must not switch to POST for long queries.
+
+Response envelope:
+```json
+{
+  "query_execution_status": "Success",
+  "query_execution_message": "",
+  "repository_owner": "owner",
+  "repository_name": "database",
+  "commit_ref": "main",
+  "sql_query": "SELECT ...",
+  "schema": [
+    {"columnName": "id", "columnType": "varchar"}
+  ],
+  "rows": [
+    {"id": "team-lead"}
+  ]
+}
+```
+
+DoltHub commonly returns SQL row values as JSON strings, including numeric SQL
+types. `HTTPClient` decoders must coerce from strings where needed instead of
+assuming JSON numbers or Go booleans.
 
 Authentication for private repos (source: https://docs.dolthub.com/products/dolthub/api/authentication):
 ```
@@ -109,7 +131,9 @@ Requirements BR-004 and BR-005 prohibit session mutation for branch selection.
 ### 2.1 HTTP API — Branch in URL
 
 Branch is a path segment. Each request targets a specific ref independently.
-No session state exists between HTTP calls.
+No session state exists between HTTP calls. SQL sent through this endpoint
+should use unqualified table names such as `packages` and `package_files`; the
+URL path selects the repository and ref.
 
 ```
 GET https://www.dolthub.com/api/v1alpha1/randlee/synaptic-canvas/main?q=...
@@ -165,7 +189,7 @@ Source: https://docs.dolthub.com/sql-reference/version-control/querying-history
 | BR-003 Default branch = main | HTTP default ref = main when unauthenticated | §1.1 |
 | BR-004 Ignore session branch | Do not use DOLT_CHECKOUT; use qualified refs | §2.4 |
 | BR-005 No session mutation | HTTP stateless by design; MySQL qualified refs stateless | §2.1–2.3 |
-| BR-006 Branch-qualified parallel reads | HTTP: independent requests; MySQL: separate qualifiers per query | §2 |
+| BR-006 Explicit branch-selected parallel reads | HTTP: branch in URL with unqualified table names; MySQL: separate qualifiers per query | §2 |
 | BR-008 Branch values = Dolt branch names | URL path and SQL qualifier accept Dolt branch names directly | §2.1–2.2 |
 | BR-009 Branch and version independent | Branch = ref in URL/qualifier; version = package metadata field | §2 |
 
@@ -176,9 +200,15 @@ Source: https://docs.dolthub.com/sql-reference/version-control/querying-history
 | Mode | MVP | Notes |
 |------|-----|-------|
 | DoltHub HTTP API | **Yes** | Public repo = no auth; private = token header |
-| Hosted Dolt MySQL | Future | MySQL protocol; same branch-qualified syntax |
+| Hosted Dolt MySQL | Future | MySQL protocol; branch-qualified table references |
 | Local dolt sql-server | Alternative | Dev/offline; MySQL protocol; requires dolt binary |
 | CLIReader (dolt binary) | Dev only | Subprocess; not for end users |
 
 Private repo access in MVP requires a DoltHub API token stored in sc config.
 Public repo requires no credentials.
+
+Live DoltHub verification is manual/AI-driven integration testing only. CI must
+not depend on a live DoltHub repository, branch, network path, or mutable remote
+state. Any live test must be opt-in, skipped by default, and configurable with a
+dedicated project test repository and branch containing deterministic fixture
+data.

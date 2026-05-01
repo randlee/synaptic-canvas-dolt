@@ -76,9 +76,9 @@ sc info <package>
 sc init
     Initialize `.synaptic/` state for the current repository.
 
-sc install <package> [--global] [--branch <branch>] [--dry-run] [--yolo]
+sc install <package> [--scope <project|global|both>] [--branch <branch>] [--dry-run] [--yolo]
     Install a package from Dolt.
-    --global    Install to ~/.claude/ (default: .claude/ in current repo)
+    --scope     Install to project .claude/, global ~/.claude/, or both (default: both)
     --branch    Install from specific branch (default: main)
     --dry-run   Show the install plan and template preview without side effects
     --yolo      Execute the computed install plan without interactive confirmation
@@ -108,12 +108,13 @@ sc status [--scope <project|global|both>]
 sc scan [<path> ...] [--recurse] [--scope <project|global|both>] [--accept-all] [--upgrade-all]
     Scan for installed packages and reconcile them into local tracking state.
     Default mode: walks .claude/ (project) and ~/.claude/ (global).
-    Custom paths as positional args override scope. Discovers installs by SHA-matching on-disk files against
-    the local catalog. Default mode lists candidates only — no tracking state mutation.
+    Custom paths as positional args override scope. Discovers installs by mapping on-disk files
+    to package doc_path values and SHA-matching against the local catalog.
+    Default mode lists candidates only — no tracking state mutation.
     --accept-all   Write lockfile entries for all discovered untracked installs
     --upgrade-all  Upgrade existing tracked installs to the catalog version
     --accept-all and --upgrade-all are mutually exclusive.
-    --json mode always exits dry-run regardless of other flags.
+    --json controls output format only; mutation still depends on explicit action flags.
     Requires local catalog; never triggers a live Dolt connection. Run sc catalog update first.
 
 sc catalog update [--branch <branch>] [--scope <project|global|both>]
@@ -123,12 +124,13 @@ sc catalog update [--branch <branch>] [--scope <project|global|both>]
       project → .synaptic/catalog-{branch}.toml
       global  → ~/.synaptic/catalog-{branch}.toml
       both    → writes both locations
-    Default scope: project when inside a git repo, global otherwise.
+    Default scope: both.
     Also triggered implicitly by sc install and sc init.
 
 sc config get <key>
-    Read a configuration value from ~/.sc/config.toml. Prints the resolved value (file then
-    env then default). Unknown keys are rejected with an error.
+    Read a configuration value. Prints the resolved value using explicit flag,
+    environment, ~/.sc/config.toml, then default precedence. Unknown keys are
+    rejected with an error.
 
 sc config set <key> <value>
     Write a configuration value to ~/.sc/config.toml, creating the file if absent.
@@ -182,6 +184,14 @@ sc admin diff <package> --branch1 <b1> --branch2 <b2>
 --quiet               Suppress non-essential output
 --verbose             Detailed output including SHA hashes
 ```
+
+`--json` is strictly an output-format selector. It must not change whether a
+command mutates state; mutation is controlled by command action flags such as
+`--accept-all`, `--upgrade-all`, `--yolo`, and `--dry-run`. If a future
+interactive/session mode is started with `--json`, all commands in that session
+inherit JSON output. Any future command that accepts JSON arguments or a JSON
+request payload also emits JSON output for that invocation even if `--json` is
+omitted.
 
 Read-path branch resolution order:
 
@@ -342,11 +352,11 @@ Package SHA (aggregate)
 
 **Per-file SHA256:** Computed over the raw file content bytes at ingest time. Stored in `package_files.sha256`. Verified on export and install.
 
-**Package-level SHA256:** Deterministic aggregate hash computed over sorted `(dest_path, sha256)` pairs. Stored in `packages.sha256` (column to be added). Provides a single value for quick "has anything changed?" checks.
+**Package-level SHA256:** Deterministic aggregate hash computed over sorted `(doc_path, sha256)` pairs. Stored in `packages.sha256` (column to be added). Provides a single value for quick "has anything changed?" checks. `doc_path` is the package-root-relative artifact path, not the materialized install path under `.claude/`, `~/.claude/`, `.agents/`, or another target root.
 
 ```
 package_sha = SHA256(
-    sorted([f"{dest_path}:{sha256}" for each file])
+    sorted([f"{doc_path}:{sha256}" for each file])
     joined by newline
 )
 ```
@@ -572,7 +582,7 @@ For package authors who want Claude to help with admin operations:
 "publish to beta"      → sc admin publish <pkg> --from develop --to beta --json
 ```
 
-Not installed by default. Available via `sc install sc-admin-skill --global`.
+Not installed by default. Available via `sc install sc-admin-skill --scope global`.
 
 ---
 

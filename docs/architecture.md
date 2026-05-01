@@ -69,8 +69,10 @@ Architecture rules:
 - the CLI resolves an effective branch using `--branch`, then
   `SC_DOLT_BRANCH`, then `main`
 - the CLI ignores the current/checked-out Dolt branch for read-path behavior
-- read operations should be branch-qualified rather than relying on session
-  switching
+- read operations should be explicitly branch-selected rather than relying on
+  session switching. DoltHub HTTP selects the branch in the URL and uses
+  unqualified SQL table names; MySQL protocol readers may use branch-qualified
+  table references.
 - in MVP, externally selectable branch values are the Dolt branch names
   directly; there is no separate channel-mapping layer
 - branch and version are first-class, independent concepts: branch identifies
@@ -107,6 +109,9 @@ Testing is part of the product story:
   surface
 - staged rollout across `develop`, `beta`, and `main` complements testing but
   does not replace it
+- live DoltHub checks are human/AI-driven integration verification only; CI must
+  use local fixtures, mocks, or `httptest` and must not depend on external
+  DoltHub state
 - future package validation may include test evidence captured alongside package
   metadata or adjacent validation records, but that evidence model is a later
   design step rather than an MVP prerequisite
@@ -119,11 +124,15 @@ Architecture guidance:
 
 - human output may remain concise and readable by default
 - AI callers should invoke the CLI with `--json`
+- `--json` controls output format only and must not change mutation behavior
+- a future interactive/session mode launched with `--json` keeps JSON output
+  for the whole session, and future JSON request payloads imply JSON output for
+  that invocation
 - any future environment-based output default is secondary to explicit
   `--json` invocation
 
 This keeps machine access explicit and avoids ambiguity caused by environment
-state.
+state while preserving identical command semantics for human and JSON output.
 
 ## 6. Install Targets And State Layout
 
@@ -150,6 +159,12 @@ Architecture rules:
   version and branch it came from, what files were materialized, and which
   external dependencies were already present versus installed by Synaptic
   Canvas
+- package integrity is based on `doc_path`, the package-root-relative artifact
+  path. Runtime roots such as `.claude/`, `~/.claude/`, `.agents/`, and
+  `~/.agents/` are install-target concerns, not immutable package identity.
+- package metadata maps each `doc_path` to the runtime target path for the
+  selected AI agent ecosystem. MVP implements the `.claude` target first while
+  keeping the model open for `.agents` and target-specific artifacts.
 - the product should support inventory reconciliation by scanning repositories
   for tracked package artifacts and reconciling them into local machine state
 - `sc snapshot` exports installed package state into product-managed snapshot
@@ -185,10 +200,11 @@ explicit Dolt reads.
 
 Architecture rules:
 
-- `status`, `validate`, `upgrade`, and `uninstall` must be able to reason about
-  project-local installs, global installs, or both in one invocation
+- `install`, `status`, `validate`, `scan`, `snapshot`, `upgrade`, and
+  `uninstall` must be able to reason about project-local installs, global
+  installs, or both in one invocation
 - scope-aware end-user commands use `--scope` with an enum and default to
-  `both` when omitted
+  `both` when omitted; `--global` and `--local` are not accepted aliases
 - validation is broader than file checksum verification; it includes installed
   file presence, aggregate package integrity, dependency presence, dependency
   version compatibility, hook registration state, and template-validation state
@@ -215,28 +231,34 @@ Architecture rules:
 
 ## 9. SHA Catalog
 
-The SHA catalog is a locally-cached, per-branch snapshot of the immutable Dolt
-SHA reference for all packages. It enables offline validation, reconciliation
+The SHA catalog is a locally-cached, per-branch set of known immutable Dolt SHA
+references for package artifacts. It enables offline validation, reconciliation
 via `sc scan`, and import collision enforcement.
 
 Architecture rules:
 
-- one SHA per `(package_id, version, dest_path, branch)` tuple is the
+- one SHA per `(package_id, version, doc_path, branch)` tuple is the
   immutable invariant; no tooling produces or accepts a second SHA for an
   existing tuple
+- `doc_path` is independent of install site; two repositories can validly have
+  the same package installed at different versions and each validates against
+  the catalog entries for its own tracked version
 - the catalog is the authoritative expected-SHA source for `sc validate`;
   the lockfile records install identity but not the authoritative SHA
 - the catalog is stored at `.synaptic/catalog-{branch}.toml` (project) and
   `~/.synaptic/catalog-{branch}.toml` (machine-level); schema mirrors the
-  Dolt `package_files JOIN packages` result for that branch
+  Dolt `package_files JOIN packages` result for that branch, with
+  `package_files.dest_path` treated as `doc_path`
 - catalog fetch is triggered explicitly by `sc catalog update` and implicitly
-  by `sc install` and `sc init`; all other commands use the cached copy
+  by `sc install` and `sc init`; refresh merges entries and preserves older
+  known versions for the same branch
 - when Dolt is unreachable, commands that require the catalog use the cached
   copy and emit a warning; they do not fail unless the cache is absent
 - `sc scan` uses the catalog to identify packages from on-disk SHAs without
   requiring a Dolt connection
-- `sc admin import` checks the catalog before writing; a SHA collision on an
-  existing `(package_id, dest_path, branch)` is a hard rejection
+- `sc admin import` checks before writing; a SHA collision on an existing
+  `(package_id, version, doc_path, branch)` is a hard rejection, while a new
+  version may reuse the same `doc_path` with a different SHA
 
 ## 10. Agent And Script Architecture
 
