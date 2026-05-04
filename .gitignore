@@ -211,3 +211,4 @@ doltdb/
 
 # Go test coverage output
 *.out
+.claude/settings.local.json
