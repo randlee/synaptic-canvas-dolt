@@ -212,3 +212,4 @@ doltdb/
 # Go test coverage output
 *.out
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
