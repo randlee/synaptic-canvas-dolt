@@ -1,33 +1,45 @@
-<task id="{{ task_id }}">
-<title>{{ task_title }}</title>
+---
+name: dev-task
+version: 1.0.0
+description: csc sprint assignment template for codex-orchestration phases.
+format: xml
+required_variables:
+  - task_id
+  - sprint
+  - description
+  - worktree_path
+  - branch
+  - pr_target
+  - deliverables
+  - acceptance_criteria
+  - references
+---
+<atm-task id="{{ task_id }}" sprint="{{ sprint }}" assignee="csc">
+  <description>{{ description }}</description>
 
-<worktree>{{ worktree_path }}</worktree>
-<branch>{{ branch }}</branch>
-<pr_target>{{ pr_target }}</pr_target>
+  <worktree>{{ worktree_path }}</worktree>
+  <branch>{{ branch }}</branch>
+  <pr-target>{{ pr_target }}</pr-target>
 
-<context>
-{{ context }}
-</context>
+  <deliverables>
+{{ deliverables }}
+  </deliverables>
 
-<deliverables>
-{% for d in deliverables %}
-{{ loop.index }}. {{ d }}
-{% endfor %}
-</deliverables>
+  <acceptance-criteria>
+{{ acceptance_criteria }}
+  </acceptance-criteria>
 
-<requirements_docs>
-{% for doc in requirements_docs %}
-- {{ doc }}
-{% endfor %}
-</requirements_docs>
+  <references>
+{{ references }}
+  </references>
 
-<protocol>
-1. ACK this task immediately via: atm send team-lead "ACK {{ task_id }}"
-2. Work in the assigned worktree only.
-3. Commit and push when complete.
-4. Send completion: atm send team-lead "COMPLETE {{ task_id }} branch={{ branch }} sha=$(git rev-parse HEAD)"
-</protocol>
-
-<when idle="immediate" busy="after-current-task"/>
-<console announce="concise" pause="false"/>
-</task>
+  <workflow>
+    <step id="a">ACK this message immediately. Make reasonable assumptions and do not ask clarifying questions unless a real blocker prevents execution.</step>
+    <step id="b">Immediately after ACK, begin executing the task in the same work session. Do not pause to summarize the task to the user or wait for further confirmation.</step>
+    <step id="c">Before coding: run `git fetch origin && git merge origin/{{ pr_target }}` to include all prior sprint fixes. Then complete the assigned development work end-to-end.</step>
+    <step id="d">As soon as the development changes are complete and the branch is in a pushable state, commit and push immediately. Send me the branch name + commit hash right away so I can open the PR and prepare the next worktree in parallel.</step>
+    <step id="e">After the push report, run the required validation/tests. Do not wait for PR creation before starting validation.</step>
+    <step id="f">When validation completes, send a second report with PASS or FAIL, concrete failure details if any, and whether follow-up fixes are required.</step>
+    <step id="g">After the validation report, read ATM again for follow-up work.</step>
+  </workflow>
+</atm-task>
