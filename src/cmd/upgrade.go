@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/installer"
 	"github.com/spf13/cobra"
@@ -46,7 +45,7 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 		packageID = args[0]
 	}
 
-	cfg, err := config.NewConfigFromFlags(cmd)
+	cfg, err := loadConfig(cmd)
 	if err != nil {
 		return fmt.Errorf("reading config flags: %w", err)
 	}
@@ -93,13 +92,14 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 		targets = append(targets, *install)
 	}
 
-	doltDir, err := detectReadDoltDir(cfg.DoltDirExpanded())
+	client, err := readClientOpener(cfg)
 	if err != nil {
 		if cfg.JSON {
 			return writeJSONError(formatter, "query_failed", err.Error())
 		}
 		return err
 	}
+	defer func() { _ = client.Close() }()
 
 	results := make([]upgradeResult, 0, len(targets))
 	for _, target := range targets {
@@ -110,7 +110,7 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 			}
 			return err
 		}
-		pkg, files, deps, hooks, questions, err := fetchUpgradePackage(cmd.Context(), readClientOpener, doltDir, cfg.EffectiveBranch(), target.Record)
+		pkg, files, deps, hooks, questions, err := fetchUpgradePackage(cmd.Context(), client, cfg.EffectiveBranch(), target.Record)
 		if err != nil {
 			if cfg.JSON {
 				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())

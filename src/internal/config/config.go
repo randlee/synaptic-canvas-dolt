@@ -11,12 +11,14 @@ import (
 
 // Config holds the global configuration derived from CLI flags.
 type Config struct {
-	DoltDir string
-	Remote  string
-	Branch  string
-	JSON    bool
-	Quiet   bool
-	Verbose bool
+	DoltDir       string
+	Remote        string
+	Branch        string
+	JSON          bool
+	Quiet         bool
+	Verbose       bool
+	fileValues    map[string]string
+	explicitFlags map[string]string
 }
 
 // NewConfigFromFlags extracts global flag values from the given cobra command.
@@ -52,14 +54,20 @@ func NewConfigFromFlags(cmd *cobra.Command) (*Config, error) {
 		return nil, fmt.Errorf("reading --verbose: %w", err)
 	}
 
-	return &Config{
-		DoltDir: doltDir,
-		Remote:  remote,
-		Branch:  branch,
-		JSON:    jsonMode,
-		Quiet:   quiet,
-		Verbose: verbose,
-	}, nil
+	cfg := &Config{
+		DoltDir:       doltDir,
+		Remote:        remote,
+		Branch:        branch,
+		JSON:          jsonMode,
+		Quiet:         quiet,
+		Verbose:       verbose,
+		fileValues:    map[string]string{},
+		explicitFlags: map[string]string{},
+	}
+	if flags.Lookup("dolt-dir").Changed {
+		cfg.explicitFlags[KeyDoltDir] = doltDir
+	}
+	return cfg, nil
 }
 
 // Validate checks the configuration for conflicting or invalid settings.
@@ -73,17 +81,7 @@ func (c *Config) Validate() error {
 // DoltDirExpanded returns the DoltDir path with the leading ~ expanded to the
 // user's home directory. An empty string means auto-detect and is returned as-is.
 func (c *Config) DoltDirExpanded() string {
-	if c.DoltDir == "" {
-		return ""
-	}
-	if strings.HasPrefix(c.DoltDir, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return c.DoltDir
-		}
-		return filepath.Join(home, c.DoltDir[2:])
-	}
-	return c.DoltDir
+	return ExpandPath(c.DoltDir)
 }
 
 // EffectiveBranch resolves the branch flag using flag, then environment, then
@@ -96,4 +94,20 @@ func (c *Config) EffectiveBranch() string {
 		return env
 	}
 	return "main"
+}
+
+// ExpandPath expands a leading ~/ in a filesystem path. Empty paths are
+// returned unchanged.
+func ExpandPath(path string) string {
+	if path == "" {
+		return ""
+	}
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return path
+		}
+		return filepath.Join(home, path[2:])
+	}
+	return path
 }

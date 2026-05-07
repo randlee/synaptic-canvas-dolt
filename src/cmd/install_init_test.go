@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/dolt"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
 )
@@ -176,12 +177,9 @@ func TestInstallCommandErrorJSON(t *testing.T) {
 
 func installReadTestHooks(mock *dolt.MockClient) func() {
 	prevOpener := readClientOpener
-	prevDetect := detectReadDoltDir
-	readClientOpener = func(_ string, _ string) (readClient, error) { return mock, nil }
-	detectReadDoltDir = func(string) (string, error) { return "", nil }
+	readClientOpener = func(_ *config.Config) (readClient, error) { return mock, nil }
 	return func() {
 		readClientOpener = prevOpener
-		detectReadDoltDir = prevDetect
 	}
 }
 

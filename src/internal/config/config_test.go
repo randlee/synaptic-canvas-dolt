@@ -168,3 +168,73 @@ func TestDoltDirExpanded(t *testing.T) {
 		})
 	}
 }
+
+func TestFileConfigGetPrecedence(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("SC_DOLT_DIR", "env-dir")
+
+	if _, err := SetFileValue(KeyDoltDir, "file-dir"); err != nil {
+		t.Fatalf("SetFileValue() error = %v", err)
+	}
+
+	cmd := newTestCmd()
+	cmd.SetArgs([]string{"--dolt-dir", "flag-dir"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("command execution failed: %v", err)
+	}
+	cfg, err := NewConfigFromFlags(cmd)
+	if err != nil {
+		t.Fatalf("NewConfigFromFlags() error = %v", err)
+	}
+	if err := cfg.LoadFileConfig(); err != nil {
+		t.Fatalf("LoadFileConfig() error = %v", err)
+	}
+	if got := cfg.Get(KeyDoltDir, "default-dir"); got != "flag-dir" {
+		t.Fatalf("Get(flag precedence) = %q, want flag-dir", got)
+	}
+
+	cmd = newTestCmd()
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("command execution failed: %v", err)
+	}
+	cfg, err = NewConfigFromFlags(cmd)
+	if err != nil {
+		t.Fatalf("NewConfigFromFlags() error = %v", err)
+	}
+	if err := cfg.LoadFileConfig(); err != nil {
+		t.Fatalf("LoadFileConfig() error = %v", err)
+	}
+	if got := cfg.Get(KeyDoltDir, "default-dir"); got != "env-dir" {
+		t.Fatalf("Get(env precedence) = %q, want env-dir", got)
+	}
+
+	t.Setenv("SC_DOLT_DIR", "")
+	if got := cfg.Get(KeyDoltDir, "default-dir"); got != "file-dir" {
+		t.Fatalf("Get(file precedence) = %q, want file-dir", got)
+	}
+	if got := cfg.Get(KeyDoltDatabase, "default-db"); got != "default-db" {
+		t.Fatalf("Get(default precedence) = %q, want default-db", got)
+	}
+}
+
+func TestSetFileValueWritesConfig(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	path, err := SetFileValue(KeyDoltDatabase, "randlee/synaptic-canvas")
+	if err != nil {
+		t.Fatalf("SetFileValue() error = %v", err)
+	}
+	if path != filepath.Join(home, ".sc", "config.toml") {
+		t.Fatalf("path = %q, want ~/.sc/config.toml", path)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if !strings.Contains(string(data), `database = 'randlee/synaptic-canvas'`) &&
+		!strings.Contains(string(data), `database = "randlee/synaptic-canvas"`) {
+		t.Fatalf("config file missing database value:\n%s", string(data))
+	}
+}

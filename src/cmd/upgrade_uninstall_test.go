@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/dolt"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/installer"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/integrity"
@@ -57,12 +58,9 @@ func TestUpgradeCommandJSON(t *testing.T) {
 	mock.AddQuestions("team-lead", []models.PackageQuestion{{QuestionID: "style"}, {QuestionID: "new-q"}})
 
 	prevOpener := readClientOpener
-	prevDetect := detectReadDoltDir
-	readClientOpener = func(_ string, _ string) (readClient, error) { return mock, nil }
-	detectReadDoltDir = func(string) (string, error) { return "", nil }
+	readClientOpener = func(_ *config.Config) (readClient, error) { return mock, nil }
 	defer func() {
 		readClientOpener = prevOpener
-		detectReadDoltDir = prevDetect
 	}()
 
 	cmd := NewRootCmd("test", "abc", "2025-01-01")
@@ -137,12 +135,9 @@ func TestUpgradeCommandWarnsOnLocalModification(t *testing.T) {
 	mock.AddQuestions("team-lead", []models.PackageQuestion{{QuestionID: "style"}})
 
 	prevOpener := readClientOpener
-	prevDetect := detectReadDoltDir
-	readClientOpener = func(_ string, _ string) (readClient, error) { return mock, nil }
-	detectReadDoltDir = func(string) (string, error) { return "", nil }
+	readClientOpener = func(_ *config.Config) (readClient, error) { return mock, nil }
 	defer func() {
 		readClientOpener = prevOpener
-		detectReadDoltDir = prevDetect
 	}()
 
 	cmd := NewRootCmd("test", "abc", "2025-01-01")
@@ -217,12 +212,9 @@ func TestUninstallDefaultsToProjectScope(t *testing.T) {
 
 	mock := dolt.NewMockClient()
 	prevOpener := readClientOpener
-	prevDetect := detectReadDoltDir
-	readClientOpener = func(_ string, _ string) (readClient, error) { return mock, nil }
-	detectReadDoltDir = func(string) (string, error) { return "", nil }
+	readClientOpener = func(_ *config.Config) (readClient, error) { return mock, nil }
 	defer func() {
 		readClientOpener = prevOpener
-		detectReadDoltDir = prevDetect
 	}()
 
 	cmd := NewRootCmd("test", "abc", "2025-01-01")
@@ -295,12 +287,9 @@ func TestUninstallRemovesHooksWithoutSiblingInstalls(t *testing.T) {
 
 	mock := dolt.NewMockClient()
 	prevOpener := readClientOpener
-	prevDetect := detectReadDoltDir
-	readClientOpener = func(_ string, _ string) (readClient, error) { return mock, nil }
-	detectReadDoltDir = func(string) (string, error) { return "", nil }
+	readClientOpener = func(_ *config.Config) (readClient, error) { return mock, nil }
 	defer func() {
 		readClientOpener = prevOpener
-		detectReadDoltDir = prevDetect
 	}()
 
 	cmd := NewRootCmd("test", "abc", "2025-01-01")
