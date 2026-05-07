@@ -116,6 +116,124 @@ func TestValidateUsesCatalogSHA(t *testing.T) {
 	}
 }
 
+func TestValidateIgnoresCatalogEntryWithNoMatchingLockfileEntry(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
+	restoreDir := chdirForTest(t, root)
+	defer restoreDir()
+
+	installRoot := filepath.Join(root, ".claude", "skills", "team-lead")
+	writeCmdFile(t, filepath.Join(installRoot, "SKILL.md"), "good")
+	lock := installer.ManifestLock{Installs: []installer.InstallRecord{{
+		InstallID:    "pkg_team-lead_project",
+		Package:      "team-lead",
+		Version:      "1.0.0",
+		Branch:       "main",
+		InstallScope: "project",
+		InstallRoot:  installRoot,
+		InstallSite:  root,
+		Files: map[string]string{
+			"SKILL.md": integrity.ComputeContentSHA256([]byte("good")),
+		},
+	}}}
+	if err := installer.SaveManifestLock(root, lock); err != nil {
+		t.Fatalf("SaveManifestLock() error = %v", err)
+	}
+	if _, err := catalog.Refresh(catalog.ProjectPath(root, "main"), "main", []catalog.CatalogEntry{{
+		PackageID: "team-lead",
+		Version:   "1.0.0",
+		DocPath:   "SKILL.md",
+		SHA256:    integrity.ComputeContentSHA256([]byte("good")),
+	}, {
+		PackageID: "team-lead",
+		Version:   "1.0.0",
+		DocPath:   "README.md",
+		SHA256:    integrity.ComputeContentSHA256([]byte("not installed")),
+	}, {
+		PackageID: "other-package",
+		Version:   "9.9.9",
+		DocPath:   "SKILL.md",
+		SHA256:    integrity.ComputeContentSHA256([]byte("other")),
+	}}, time.Now().UTC()); err != nil {
+		t.Fatalf("catalog.Refresh() error = %v", err)
+	}
+
+	summary, err := validateTrackedInstall(lock.Installs[0])
+	if err != nil {
+		t.Fatalf("validateTrackedInstall() error = %v", err)
+	}
+	if !summary.Pass {
+		t.Fatalf("expected validation pass with unmatched catalog entries ignored: %+v", summary)
+	}
+	if len(summary.Warnings) != 0 {
+		t.Fatalf("unexpected warnings for benign unmatched catalog entries: %+v", summary.Warnings)
+	}
+	if len(summary.Files) != 1 || summary.Files[0].Path != "SKILL.md" {
+		t.Fatalf("unexpected files: %+v", summary.Files)
+	}
+}
+
+func TestValidateStaleCatalogEmitsWarning(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
+	restoreDir := chdirForTest(t, root)
+	defer restoreDir()
+
+	now := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
+	prevNow := snapshotNow
+	snapshotNow = func() time.Time { return now }
+	defer func() { snapshotNow = prevNow }()
+
+	installRoot := filepath.Join(root, ".claude", "skills", "team-lead")
+	writeCmdFile(t, filepath.Join(installRoot, "SKILL.md"), "good")
+	lock := installer.ManifestLock{Installs: []installer.InstallRecord{{
+		InstallID:    "pkg_team-lead_project",
+		Package:      "team-lead",
+		Version:      "1.0.0",
+		Branch:       "main",
+		InstallScope: "project",
+		InstallRoot:  installRoot,
+		InstallSite:  root,
+		Files: map[string]string{
+			"SKILL.md": integrity.ComputeContentSHA256([]byte("good")),
+		},
+	}}}
+	if err := installer.SaveManifestLock(root, lock); err != nil {
+		t.Fatalf("SaveManifestLock() error = %v", err)
+	}
+	if _, err := catalog.Refresh(catalog.ProjectPath(root, "main"), "main", []catalog.CatalogEntry{{
+		PackageID: "team-lead",
+		Version:   "1.0.0",
+		DocPath:   "SKILL.md",
+		SHA256:    integrity.ComputeContentSHA256([]byte("good")),
+	}}, now.Add(-25*time.Hour)); err != nil {
+		t.Fatalf("catalog.Refresh() error = %v", err)
+	}
+
+	cmd := NewRootCmd("test", "abc", "2025-01-01")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"validate", "team-lead", "--json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	var resp validateResponse
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
+	}
+	if !resp.Pass {
+		t.Fatalf("expected stale catalog warning without failure: %+v", resp)
+	}
+	if len(resp.Packages) != 1 || !containsCI(resp.Packages[0].Warnings, "older than 24h") {
+		t.Fatalf("expected stale catalog warning, got %+v", resp.Packages)
+	}
+}
+
 func TestValidateAbsentCatalogDoltOfflineFallbackWarning(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()

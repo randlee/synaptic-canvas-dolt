@@ -12,7 +12,7 @@ import (
 
 // NOTE: duplicate of tracking.writeTOMLAtomic; a future refactor may extract this to src/internal/atomicfile/.
 func writeTOMLAtomic(path string, value any) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("creating parent dir: %w", err)
 	}
 	data, err := toml.Marshal(value)

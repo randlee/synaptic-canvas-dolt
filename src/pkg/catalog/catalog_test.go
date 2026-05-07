@@ -77,6 +77,28 @@ func TestRefreshPreservesOlderVersions(t *testing.T) {
 	}
 }
 
+func TestRefreshCreatesMissingParentDir(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), ".synaptic", "nested", CatalogFilename("feature/http"))
+	if _, err := Refresh(path, "feature/http", []CatalogEntry{{
+		PackageID: "team-lead",
+		Version:   "1.0.0",
+		DocPath:   "SKILL.md",
+		SHA256:    "abc",
+	}}, time.Date(2026, 5, 7, 1, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+
+	got, _, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got.Meta.Branch != "feature/http" || len(got.Entries) != 1 {
+		t.Fatalf("unexpected catalog: %+v", got)
+	}
+}
+
 func TestRefreshConcurrentWritesDoNotCorrupt(t *testing.T) {
 	t.Parallel()
 
