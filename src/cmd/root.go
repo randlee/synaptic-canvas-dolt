@@ -87,6 +87,7 @@ stored in a Dolt database.`,
 	rootCmd.AddCommand(NewUninstallCmd())
 	rootCmd.AddCommand(NewConfigCmd())
 	rootCmd.AddCommand(NewCatalogCmd())
+	rootCmd.AddCommand(NewScanCmd())
 	rootCmd.AddCommand(admin.NewAdminCmd())
 
 	return rootCmd

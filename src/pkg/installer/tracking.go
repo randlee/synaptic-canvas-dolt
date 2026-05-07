@@ -22,7 +22,9 @@ type ManifestLock struct {
 	Installs []InstallRecord `toml:"installs"`
 }
 
-// InstallRecord captures one tracked install.
+// InstallRecord captures one tracked install. TrackingOrigin values are
+// "local-install" for installs performed by sc and "scan-reconciled" for
+// records recovered from on-disk artifacts by sc scan.
 type InstallRecord struct {
 	InstallID          string                   `toml:"install_id"`
 	Package            string                   `toml:"package"`
