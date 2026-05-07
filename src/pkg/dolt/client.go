@@ -9,9 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
+	"strconv"
 
 	// MySQL driver for database/sql — Dolt exposes a MySQL-compatible interface.
-	_ "github.com/go-sql-driver/mysql"
+	mysql "github.com/go-sql-driver/mysql"
 
 	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
 )
@@ -89,6 +91,29 @@ func DefaultConfig() Config {
 func (c Config) DSN() string {
 	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?parseTime=true",
 		c.User, c.Password, c.Host, c.Port, c.Database)
+}
+
+// ParseDSN parses a MySQL DSN into a Dolt SQL Config.
+func ParseDSN(dsn string) (Config, error) {
+	parsed, err := mysql.ParseDSN(dsn)
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing dolt DSN: %w", err)
+	}
+	host, portText, err := net.SplitHostPort(parsed.Addr)
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing dolt DSN address %q: %w", parsed.Addr, err)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing dolt DSN port %q: %w", portText, err)
+	}
+	return Config{
+		Host:     host,
+		Port:     port,
+		User:     parsed.User,
+		Password: parsed.Passwd,
+		Database: parsed.DBName,
+	}, nil
 }
 
 // NewSQLClient creates a new SQLClient connected to the Dolt SQL server.

@@ -26,6 +26,27 @@ func TestMockClientListPackages(t *testing.T) {
 	}
 }
 
+func TestParseDSN(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := ParseDSN("root:secret@tcp(127.0.0.1:3316)/synaptic_canvas?parseTime=true")
+	if err != nil {
+		t.Fatalf("ParseDSN() error = %v", err)
+	}
+	if cfg.Host != "127.0.0.1" || cfg.Port != 3316 || cfg.User != "root" || cfg.Password != "secret" || cfg.Database != "synaptic_canvas" {
+		t.Fatalf("unexpected config: %+v", cfg)
+	}
+}
+
+func TestParseDSNInvalidAddress(t *testing.T) {
+	t.Parallel()
+
+	_, err := ParseDSN("root@unix(/tmp/mysql.sock)/synaptic_canvas")
+	if err == nil || !strings.Contains(err.Error(), "parsing dolt DSN address") {
+		t.Fatalf("error = %v, want address parse failure", err)
+	}
+}
+
 func TestMockClientListPackagesError(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

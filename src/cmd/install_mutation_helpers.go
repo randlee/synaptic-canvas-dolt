@@ -74,13 +74,7 @@ func selectInstall(installs []trackedInstall, packageID string, global bool) (*t
 	return nil, fmt.Errorf("package %q has multiple %s installs", packageID, scope)
 }
 
-func fetchUpgradePackage(ctx context.Context, opener func(string, string) (readClient, error), doltDir string, branch string, install installer.InstallRecord) (*models.Package, []models.PackageFile, []models.PackageDep, []models.PackageHook, []models.PackageQuestion, error) {
-	client, err := opener(doltDir, branch)
-	if err != nil {
-		return nil, nil, nil, nil, nil, err
-	}
-	defer func() { _ = client.Close() }()
-
+func fetchUpgradePackage(ctx context.Context, client readClient, branch string, install installer.InstallRecord) (*models.Package, []models.PackageFile, []models.PackageDep, []models.PackageHook, []models.PackageQuestion, error) {
 	targetID := install.Package
 	if variantID, err := client.ResolveVariant(ctx, install.Package, install.Variant); err != nil {
 		return nil, nil, nil, nil, nil, err
