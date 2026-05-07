@@ -112,12 +112,86 @@ func TestInstallCommandDryRunJSON(t *testing.T) {
 	}
 }
 
+func TestInstallDependencyAcknowledgementRequiresYoloInNonTTY(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
+	restoreDir := chdirForTest(t, root)
+	defer restoreDir()
+
+	mock := dolt.NewMockClient()
+	pkg := dolt.NewTestPackage("team-lead", "team-lead", "1.2.0", []string{"workflow"})
+	pkg.AgentVariant = "claude"
+	mock.AddPackage(pkg)
+	mock.AddFiles("team-lead", []models.PackageFile{{
+		DestPath: "SKILL.md", Content: "skill", SHA256: testSHA("skill"), FileType: models.FileTypeSkill,
+	}})
+	mock.AddDeps("team-lead", []models.PackageDep{{DepType: models.DepTypeCLI, DepName: "missing-cli", DepSpec: ">=1"}})
+	restore := installReadTestHooks(mock)
+	defer restore()
+
+	cmd := NewRootCmd("test", "abc", "2025-01-01")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"install", "team-lead", "--scope", "project", "--json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	var resp jsonErrorEnvelope
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
+	}
+	if resp.OK || resp.Error.Message != "interactive confirmation required; use --yolo to proceed non-interactively" {
+		t.Fatalf("unexpected response: %+v", resp)
+	}
+}
+
+func TestInstallYoloSkipsDependencyAcknowledgement(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
+	restoreDir := chdirForTest(t, root)
+	defer restoreDir()
+
+	mock := dolt.NewMockClient()
+	pkg := dolt.NewTestPackage("team-lead", "team-lead", "1.2.0", []string{"workflow"})
+	pkg.AgentVariant = "claude"
+	mock.AddPackage(pkg)
+	mock.AddFiles("team-lead", []models.PackageFile{{
+		DestPath: "SKILL.md", Content: "skill", SHA256: testSHA("skill"), FileType: models.FileTypeSkill,
+	}})
+	mock.AddDeps("team-lead", []models.PackageDep{{DepType: models.DepTypeCLI, DepName: "missing-cli", DepSpec: ">=1"}})
+	restore := installReadTestHooks(mock)
+	defer restore()
+
+	cmd := NewRootCmd("test", "abc", "2025-01-01")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"install", "team-lead", "--scope", "project", "--json", "--yolo"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if !strings.Contains(out.String(), `"ok": true`) {
+		t.Fatalf("unexpected output: %s", out.String())
+	}
+}
+
 func TestInstallCommandWritesFiles(t *testing.T) {
 	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
 	restoreDir := chdirForTest(t, root)
 	defer restoreDir()
 	resolvedRoot := mustEvalSymlinks(t, root)
+	resolvedHome := mustEvalSymlinks(t, home)
 
 	mock := dolt.NewMockClient()
 	pkg := dolt.NewTestPackage("team-lead", "team-lead", "1.2.0", []string{"workflow"})
@@ -142,6 +216,9 @@ func TestInstallCommandWritesFiles(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(resolvedRoot, ".claude", "skills", "team-lead", "SKILL.md")); err != nil {
 		t.Fatalf("installed file missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(resolvedHome, ".claude", "skills", "team-lead", "SKILL.md")); err != nil {
+		t.Fatalf("global installed file missing: %v", err)
 	}
 }
 

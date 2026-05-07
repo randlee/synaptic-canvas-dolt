@@ -96,6 +96,7 @@ func NewScanCmd() *cobra.Command {
 	cmd.Flags().Bool("recurse", false, "scan directory arguments recursively")
 	cmd.Flags().Bool("accept-all", false, "write lockfile entries for all discovered installs")
 	cmd.Flags().Bool("upgrade-all", false, "reconcile tracked installs to matched catalog versions")
+	cmd.MarkFlagsMutuallyExclusive("accept-all", "upgrade-all")
 	return cmd
 }
 
@@ -670,11 +671,12 @@ func applyScanMutations(ctx context.Context, candidates []scanCandidate, acceptA
 	accepted, upgraded := 0, 0
 	byStateRoot := map[string][]scanCandidate{}
 	for _, candidate := range candidates {
+		stateRoot := stateRootFromCandidate(candidate)
 		if acceptAll && !candidate.NeedsUpgrade {
-			byStateRoot[stateRootFromCandidate(candidate)] = append(byStateRoot[stateRootFromCandidate(candidate)], candidate)
+			byStateRoot[stateRoot] = append(byStateRoot[stateRoot], candidate)
 		}
 		if upgradeAll && candidate.NeedsUpgrade {
-			byStateRoot[stateRootFromCandidate(candidate)] = append(byStateRoot[stateRootFromCandidate(candidate)], candidate)
+			byStateRoot[stateRoot] = append(byStateRoot[stateRoot], candidate)
 		}
 	}
 	for stateRoot, scoped := range byStateRoot {
@@ -752,6 +754,9 @@ func candidateFilesMap(candidate scanCandidate) map[string]string {
 }
 
 func stateRootFromCandidate(candidate scanCandidate) string {
+	if candidate.InstallSite != "" {
+		return filepath.FromSlash(candidate.InstallSite)
+	}
 	if candidate.Scope == "global" {
 		home, err := os.UserHomeDir()
 		if err == nil {

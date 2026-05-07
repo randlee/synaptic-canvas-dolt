@@ -22,8 +22,10 @@ func NewUpgradeCmd() *cobra.Command {
 		RunE:  runUpgradeCmd,
 	}
 	cmd.Flags().Bool("all", false, "upgrade all tracked installs")
-	cmd.Flags().Bool("global", false, "target global install")
+	cmd.Flags().String("scope", "both", "upgrade scope: project, global, or both")
 	cmd.Flags().String("version", "", "required target version on the selected branch")
+	cmd.Flags().Bool("force", false, "force a blocked single-package upgrade")
+	cmd.Flags().Bool("yolo", false, "skip interactive confirmations")
 	return cmd
 }
 
@@ -32,13 +34,17 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("reading --all: %w", err)
 	}
-	global, err := cmd.Flags().GetBool("global")
+	scope, err := cmd.Flags().GetString("scope")
 	if err != nil {
-		return fmt.Errorf("reading --global: %w", err)
+		return fmt.Errorf("reading --scope: %w", err)
 	}
 	targetVersion, err := cmd.Flags().GetString("version")
 	if err != nil {
 		return fmt.Errorf("reading --version: %w", err)
+	}
+	force, err := cmd.Flags().GetBool("force")
+	if err != nil {
+		return fmt.Errorf("reading --force: %w", err)
 	}
 	packageID := ""
 	if len(args) == 1 {
@@ -52,6 +58,19 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 	formatter := output.NewFormatter(cfg.JSON, cfg.Quiet)
 	formatter.Writer = cmd.OutOrStdout()
 	formatter.ErrW = cmd.ErrOrStderr()
+	if err := validateScope(scope); err != nil {
+		if cfg.JSON {
+			return writeJSONError(formatter, "invalid_args", err.Error())
+		}
+		return err
+	}
+	if upgradeAll && force {
+		message := "--force cannot be used with --all; target a specific package"
+		if cfg.JSON {
+			return writeJSONError(formatter, "invalid_args", message)
+		}
+		return fmt.Errorf("%s", message)
+	}
 
 	repoRoot, err := currentRepoRoot()
 	if err != nil {
@@ -68,12 +87,9 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	targets := []trackedInstall{}
+	var targets []trackedInstall
 	if upgradeAll {
-		targets = installs
-		if global {
-			targets = filterInstallsByScope(targets, "global")
-		}
+		targets = filterInstallsByScope(installs, scope)
 	} else {
 		if packageID == "" {
 			err := fmt.Errorf("upgrade requires <package> or --all")
@@ -82,14 +98,14 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 			}
 			return err
 		}
-		install, err := selectInstall(installs, packageID, global)
-		if err != nil {
+		targets = selectInstalls(installs, packageID, scope)
+		if len(targets) == 0 {
+			err := fmt.Errorf("package %q is not installed", packageID)
 			if cfg.JSON {
 				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 			}
 			return err
 		}
-		targets = append(targets, *install)
 	}
 
 	client, err := readClientOpener(cfg)
@@ -102,6 +118,7 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 	defer func() { _ = client.Close() }()
 
 	results := make([]upgradeResult, 0, len(targets))
+	successes := 0
 	for _, target := range targets {
 		validation, err := validateTrackedInstall(target.Record)
 		if err != nil {
@@ -128,11 +145,26 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 				ToBranch:    cfg.EffectiveBranch(),
 				InstallRoot: target.Record.InstallRoot,
 				Warnings:    []string{warning},
+				Skipped:     true,
 			})
 			continue
 		}
 
 		warnings := buildUpgradeWarnings(target.Record, validation, deps, questions, currentProfileSnapshot(repoRoot))
+		if blockers := dependencyBlockers(deps); len(blockers) > 0 && (upgradeAll || !force) {
+			results = append(results, upgradeResult{
+				Package:     target.Record.Package,
+				Scope:       target.Record.InstallScope,
+				FromVersion: target.Record.Version,
+				ToVersion:   target.Record.Version,
+				FromBranch:  target.Record.Branch,
+				ToBranch:    cfg.EffectiveBranch(),
+				InstallRoot: target.Record.InstallRoot,
+				Warnings:    append(warnings, append([]string{"skipped upgrade"}, blockers...)...),
+				Skipped:     true,
+			})
+			continue
+		}
 		if pkg.Version == target.Record.Version && cfg.EffectiveBranch() == target.Record.Branch && targetVersion == "" {
 			results = append(results, upgradeResult{
 				Package:     target.Record.Package,
@@ -143,6 +175,7 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 				ToBranch:    cfg.EffectiveBranch(),
 				InstallRoot: target.Record.InstallRoot,
 				Warnings:    append(warnings, "already on latest version for selected branch"),
+				Skipped:     true,
 			})
 			continue
 		}
@@ -176,10 +209,11 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 			TemplateWarnings:   summary.TemplateValidationWarnings,
 			DependencyWarnings: summary.DependencyWarnings,
 		})
+		successes++
 	}
 
 	if cfg.JSON {
-		return formatter.WriteJSON(upgradeResponse{OK: true, Upgrades: results})
+		return formatter.WriteJSON(upgradeResponse{OK: successes > 0 || len(results) == 0, Upgrades: results})
 	}
 	rows := make([][]string, 0, len(results))
 	for _, result := range results {
@@ -198,6 +232,9 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 		for _, warning := range result.Warnings {
 			formatter.Success("warning: " + warning)
 		}
+	}
+	if upgradeAll && successes == 0 && len(results) > 0 {
+		return fmt.Errorf("all upgrades failed or were skipped")
 	}
 	return nil
 }

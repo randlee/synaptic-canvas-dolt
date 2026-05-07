@@ -70,9 +70,14 @@ func TestValidateCommandJSONAllFileStates(t *testing.T) {
 	if len(resp.Packages) != 1 {
 		t.Fatalf("expected 1 package, got %+v", resp)
 	}
+	if resp.Packages[0].AggregateStatus != "error" {
+		t.Fatalf("aggregate_status = %q, want error", resp.Packages[0].AggregateStatus)
+	}
 	got := map[string]string{}
+	severity := map[string]ValidationSeverity{}
 	for _, file := range resp.Packages[0].Files {
 		got[file.Path] = file.Status
+		severity[file.Path] = file.Severity
 	}
 	for path, want := range map[string]string{
 		"good.txt":       "OK",
@@ -84,6 +89,9 @@ func TestValidateCommandJSONAllFileStates(t *testing.T) {
 		if got[path] != want {
 			t.Fatalf("status[%s] = %q, want %q (all=%+v)", path, got[path], want, got)
 		}
+	}
+	if severity["good.txt"] != ValidationSeverityInfo || severity["modified.txt"] != ValidationSeverityWarn || severity["missing.txt"] != ValidationSeverityError {
+		t.Fatalf("unexpected severities: %+v", severity)
 	}
 }
 

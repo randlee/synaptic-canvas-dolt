@@ -161,6 +161,21 @@ func TestExecuteGlobalWritesTrackingUnderHome(t *testing.T) {
 	}
 }
 
+func TestRequirementSnapshotIsInstalledBySC(t *testing.T) {
+	t.Parallel()
+
+	snapshot := RequirementSnapshot{CLIProvenance: map[string]string{
+		"owned":       "installed-by-synaptic",
+		"preexisting": "already-present",
+	}}
+	if !snapshot.IsInstalledBySC("owned") {
+		t.Fatal("expected owned dependency to be Synaptic-installed")
+	}
+	if snapshot.IsInstalledBySC("preexisting") || snapshot.IsInstalledBySC("missing") {
+		t.Fatal("expected preexisting and missing dependencies to be ignored")
+	}
+}
+
 func ptr(v string) *string { return &v }
 
 func mustEvalSymlinks(t *testing.T, path string) string {

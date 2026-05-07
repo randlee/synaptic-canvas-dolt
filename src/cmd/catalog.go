@@ -164,12 +164,10 @@ func refreshCatalogWithConfigNonFatal(ctx context.Context, formatter *output.For
 }
 
 func validateCatalogScope(scope string) error {
-	switch scope {
-	case "", "project", "global", "both":
+	if scope == "" {
 		return nil
-	default:
-		return fmt.Errorf("invalid --scope %q; expected project, global, or both", scope)
 	}
+	return validateScope(scope)
 }
 
 func displayCatalogPaths(paths []string) []string {
