@@ -90,6 +90,22 @@ func confirmProceed(cmd *cobra.Command, prompt, nonInteractiveError string, yolo
 	return nil
 }
 
+var removeSCDependency = func(string) error { return nil }
+
+func confirmRemoveDependency(cmd *cobra.Command, dep string) (bool, error) {
+	if !isCommandInputTTY(cmd) {
+		return false, nil
+	}
+	_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Remove SC-installed dependency %s? [y/N] ", dep)
+	reader := bufio.NewReader(cmd.InOrStdin())
+	answer, err := reader.ReadString('\n')
+	if err != nil && err != io.EOF {
+		return false, fmt.Errorf("reading dependency removal confirmation: %w", err)
+	}
+	answer = strings.TrimSpace(strings.ToLower(answer))
+	return answer == "y" || answer == "yes", nil
+}
+
 func isCommandInputTTY(cmd *cobra.Command) bool {
 	file, ok := cmd.InOrStdin().(*os.File)
 	if !ok {

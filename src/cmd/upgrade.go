@@ -46,6 +46,10 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("reading --force: %w", err)
 	}
+	yolo, err := cmd.Flags().GetBool("yolo")
+	if err != nil {
+		return fmt.Errorf("reading --yolo: %w", err)
+	}
 	packageID := ""
 	if len(args) == 1 {
 		packageID = args[0]
@@ -164,6 +168,12 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 				Skipped:     true,
 			})
 			continue
+		}
+		if err := confirmExternalDeps(cmd, formatter, deps, yolo, false); err != nil {
+			if cfg.JSON {
+				return writeJSONError(formatter, "interactive_confirmation_required", err.Error())
+			}
+			return err
 		}
 		if pkg.Version == target.Record.Version && cfg.EffectiveBranch() == target.Record.Branch && targetVersion == "" {
 			results = append(results, upgradeResult{

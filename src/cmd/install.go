@@ -10,6 +10,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type installScopeFailure struct {
+	Package string `json:"package"`
+	Scope   string `json:"scope"`
+	Error   string `json:"error"`
+}
+
 // NewInstallCmd creates the sc install command.
 func NewInstallCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -58,15 +64,6 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 			}
 			return fmt.Errorf("getting current directory: %w", err)
 		}
-		if !dryRun {
-			if _, err := initializeRepoFunc(root); err != nil {
-				if cfg.JSON {
-					return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
-				}
-				return err
-			}
-		}
-
 		pkg, err := client.GetPackage(cmd.Context(), packageID)
 		if err != nil {
 			if cfg.JSON {
@@ -78,6 +75,13 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 			err := fmt.Errorf("package %q not found", packageID)
 			if cfg.JSON {
 				return writeJSONError(formatter, "not_found", err.Error())
+			}
+			return err
+		}
+		if string(pkg.InstallScope) == "local-only" && (scope == "global" || scope == "both") {
+			err := fmt.Errorf("package %s is local-only and cannot be installed globally", pkg.ID)
+			if cfg.JSON {
+				return writeJSONError(formatter, "invalid_args", err.Error())
 			}
 			return err
 		}
@@ -116,15 +120,18 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 			}
 			return err
 		}
+		if !dryRun {
+			if _, err := initializeRepoFunc(root); err != nil {
+				if cfg.JSON {
+					return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
+				}
+				return err
+			}
+		}
 
 		summaries := make([]installer.Summary, 0, len(scopes))
-		scopeWarnings := []string{}
+		failures := make([]installScopeFailure, 0, len(scopes))
 		for _, targetScope := range scopes {
-			if targetScope == "global" && string(pkg.InstallScope) == "local-only" {
-				scopeWarnings = append(scopeWarnings, fmt.Sprintf("package %s cannot be installed globally; skipped global scope", pkg.ID))
-				continue
-			}
-
 			summary, err := (installer.Service{}).Execute(cmd.Context(), installer.Request{
 				Package:   pkg,
 				Files:     files,
@@ -137,6 +144,14 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 				RepoRoot:  root,
 			})
 			if err != nil {
+				if scope == "both" {
+					failures = append(failures, installScopeFailure{
+						Package: pkg.ID,
+						Scope:   targetScope,
+						Error:   err.Error(),
+					})
+					continue
+				}
 				if cfg.JSON {
 					return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 				}
@@ -145,6 +160,20 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 			summaries = append(summaries, summary)
 		}
 		if len(summaries) == 0 {
+			if len(failures) > 0 {
+				if cfg.JSON {
+					if err := formatter.WriteJSON(map[string]any{
+						"ok":       false,
+						"plan":     dryRun,
+						"scope":    scope,
+						"installs": summaries,
+						"failures": failures,
+					}); err != nil {
+						return err
+					}
+				}
+				return fmt.Errorf("install failed for all selected scopes")
+			}
 			err := fmt.Errorf("no install scopes were eligible for package %q", packageID)
 			if cfg.JSON {
 				return writeJSONError(formatter, "invalid_args", err.Error())
@@ -156,9 +185,10 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 		if !dryRun {
 			catalogWarnings = refreshCatalogNonFatal(cmd.Context(), formatter, root, cfg.EffectiveBranch(), client)
 		}
-		allWarnings := append(scopeWarnings, catalogWarnings...)
+		allWarnings := catalogWarnings
+		partialFailed := len(failures) > 0
 		if cfg.JSON {
-			if len(summaries) == 1 {
+			if len(summaries) == 1 && !partialFailed {
 				summary := summaries[0]
 				return formatter.WriteJSON(map[string]any{
 					"ok":    true,
@@ -180,13 +210,20 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 					"answers":                      summary.Answers,
 				})
 			}
-			return formatter.WriteJSON(map[string]any{
-				"ok":       true,
+			if err := formatter.WriteJSON(map[string]any{
+				"ok":       !partialFailed,
 				"plan":     dryRun,
 				"scope":    scope,
 				"installs": summaries,
+				"failures": failures,
 				"warnings": allWarnings,
-			})
+			}); err != nil {
+				return err
+			}
+			if partialFailed {
+				return fmt.Errorf("install failed for one or more scopes")
+			}
+			return nil
 		}
 
 		rows := make([][]string, 0, len(summaries))
@@ -206,6 +243,9 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 		for _, warning := range allWarnings {
 			writeWarning(formatter, warning)
 		}
+		for _, failure := range failures {
+			writeWarning(formatter, fmt.Sprintf("%s [%s] failed: %s", failure.Package, failure.Scope, failure.Error))
+		}
 		for _, summary := range summaries {
 			for _, warning := range summary.DependencyWarnings {
 				formatter.Success("warning: " + warning)
@@ -213,6 +253,9 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 			for _, warning := range summary.TemplateValidationWarnings {
 				formatter.Success("template warning: " + warning)
 			}
+		}
+		if partialFailed {
+			return fmt.Errorf("install failed for one or more scopes")
 		}
 		return nil
 	})

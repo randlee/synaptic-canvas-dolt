@@ -101,6 +101,11 @@ func LoadManifestLock(root string) (ManifestLock, error) {
 	if lock.Version == 0 {
 		lock.Version = 1
 	}
+	for i := range lock.Installs {
+		if lock.Installs[i].TrackingOrigin == "" {
+			lock.Installs[i].TrackingOrigin = "local-install"
+		}
+	}
 	return lock, nil
 }
 

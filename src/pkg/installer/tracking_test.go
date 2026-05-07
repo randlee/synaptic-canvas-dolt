@@ -1,6 +1,7 @@
 package installer
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -32,5 +33,38 @@ func TestManifestLockRoundTrip(t *testing.T) {
 	}
 	if _, err := filepath.Abs(filepath.Join(root, ManifestLockPath)); err != nil {
 		t.Fatalf("Abs() error = %v", err)
+	}
+}
+
+func TestLoadManifestLockNormalizesMissingTrackingOrigin(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	path := filepath.Join(root, ManifestLockPath)
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	data := []byte(`version = 1
+
+[[installs]]
+install_id = "pkg_team-lead_project"
+package = "team-lead"
+version = "1.0.0"
+branch = "main"
+install_scope = "project"
+`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	got, err := LoadManifestLock(root)
+	if err != nil {
+		t.Fatalf("LoadManifestLock() error = %v", err)
+	}
+	if len(got.Installs) != 1 {
+		t.Fatalf("expected one install, got %+v", got)
+	}
+	if got.Installs[0].TrackingOrigin != "local-install" {
+		t.Fatalf("TrackingOrigin = %q, want local-install", got.Installs[0].TrackingOrigin)
 	}
 }

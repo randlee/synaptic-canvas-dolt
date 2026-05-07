@@ -68,7 +68,7 @@ func TestUpgradeCommandJSON(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"upgrade", "team-lead", "--branch", "beta", "--json"})
+	cmd.SetArgs([]string{"upgrade", "team-lead", "--branch", "beta", "--json", "--yolo"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute() error = %v", err)
@@ -146,7 +146,7 @@ func TestUpgradeCommandWarnsOnLocalModification(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"upgrade", "team-lead", "--json"})
+	cmd.SetArgs([]string{"upgrade", "team-lead", "--json", "--yolo"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute() error = %v", err)
@@ -187,6 +187,52 @@ func TestUpgradeAllForceRejectedJSON(t *testing.T) {
 	}
 	if resp.OK || resp.Error.Code != "invalid_args" || resp.Error.Message != "--force cannot be used with --all; target a specific package" {
 		t.Fatalf("unexpected response: %+v", resp)
+	}
+}
+
+func TestUpgradeScopeProjectWithOnlyGlobalInstallReturnsEmpty(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
+	restoreDir := chdirForTest(t, root)
+	defer restoreDir()
+
+	globalRoot := filepath.Join(home, ".claude", "skills", "team-lead")
+	writeCmdFile(t, filepath.Join(globalRoot, "SKILL.md"), "global")
+	if err := installer.SaveManifestLock(home, installer.ManifestLock{Installs: []installer.InstallRecord{{
+		InstallID:    "pkg_team-lead_global",
+		Package:      "team-lead",
+		Version:      "1.0.0",
+		Branch:       "main",
+		InstallScope: "global",
+		InstallRoot:  globalRoot,
+		InstallSite:  home,
+		Files:        map[string]string{"SKILL.md": integrity.ComputeContentSHA256([]byte("global"))},
+	}}}); err != nil {
+		t.Fatalf("SaveManifestLock(global) error = %v", err)
+	}
+
+	mock := dolt.NewMockClient()
+	prevOpener := readClientOpener
+	readClientOpener = func(_ *config.Config) (readClient, error) { return mock, nil }
+	defer func() { readClientOpener = prevOpener }()
+
+	cmd := NewRootCmd("test", "abc", "2025-01-01")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"upgrade", "--all", "--scope", "project", "--json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	var resp upgradeResponse
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
+	}
+	if !resp.OK || len(resp.Upgrades) != 0 {
+		t.Fatalf("expected empty successful upgrade result, got %+v", resp)
 	}
 }
 
@@ -467,12 +513,99 @@ func TestUninstallLocalModificationRequiresForceOrYolo(t *testing.T) {
 	out.Reset()
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"uninstall", "team-lead", "--scope", "project", "--json", "--yolo"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() yolo error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(installRoot, "SKILL.md")); !os.IsNotExist(err) {
+		t.Fatalf("expected modified file removed by --yolo, got err=%v", err)
+	}
+
+	writeCmdFile(t, filepath.Join(installRoot, "SKILL.md"), "changed")
+	if err := installer.SaveManifestLock(root, installer.ManifestLock{Installs: []installer.InstallRecord{{
+		InstallID:    "pkg_team-lead_project",
+		Package:      "team-lead",
+		Version:      "1.0.0",
+		Branch:       "main",
+		InstallScope: "project",
+		InstallRoot:  installRoot,
+		InstallSite:  root,
+		Files: map[string]string{
+			"SKILL.md": integrity.ComputeContentSHA256([]byte("original")),
+		},
+	}}}); err != nil {
+		t.Fatalf("SaveManifestLock() recreate error = %v", err)
+	}
+
+	cmd = NewRootCmd("test", "abc", "2025-01-01")
+	out.Reset()
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
 	cmd.SetArgs([]string{"uninstall", "team-lead", "--scope", "project", "--json", "--force"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute() force error = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(installRoot, "SKILL.md")); !os.IsNotExist(err) {
 		t.Fatalf("expected modified file removed by --force, got err=%v", err)
+	}
+}
+
+func TestUninstallYoloRemovesOnlySCInstalledDependencies(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
+	restoreDir := chdirForTest(t, root)
+	defer restoreDir()
+
+	installRoot := filepath.Join(root, ".claude", "skills", "team-lead")
+	writeCmdFile(t, filepath.Join(installRoot, "SKILL.md"), "skill")
+	if err := installer.SaveManifestLock(root, installer.ManifestLock{Installs: []installer.InstallRecord{{
+		InstallID:    "pkg_team-lead_project",
+		Package:      "team-lead",
+		Version:      "1.0.0",
+		Branch:       "main",
+		InstallScope: "project",
+		InstallRoot:  installRoot,
+		InstallSite:  root,
+		Files:        map[string]string{"SKILL.md": integrity.ComputeContentSHA256([]byte("skill"))},
+		Requirements: installer.RequirementSnapshot{
+			CLIInstalled: []string{"owned", "preexisting", "missing-provenance", "empty-provenance"},
+			CLIProvenance: map[string]string{
+				"owned":            "installed-by-synaptic",
+				"preexisting":      "already-present",
+				"empty-provenance": "",
+			},
+		},
+	}}}); err != nil {
+		t.Fatalf("SaveManifestLock() error = %v", err)
+	}
+	removedDeps := []string{}
+	prevRemove := removeSCDependency
+	removeSCDependency = func(dep string) error {
+		removedDeps = append(removedDeps, dep)
+		return nil
+	}
+	defer func() { removeSCDependency = prevRemove }()
+
+	cmd := NewRootCmd("test", "abc", "2025-01-01")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"uninstall", "team-lead", "--scope", "project", "--json", "--yolo"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	var resp uninstallResponse
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
+	}
+	if strings.Join(removedDeps, ",") != "owned" {
+		t.Fatalf("expected only owned dependency removed, got %+v", removedDeps)
+	}
+	if strings.Join(resp.Removed.RemovedDependencies, ",") != "owned" {
+		t.Fatalf("expected JSON to report only owned dependency, got %+v", resp.Removed.RemovedDependencies)
 	}
 }
 

@@ -91,19 +91,13 @@ func runUninstallCmd(cmd *cobra.Command, args []string) error {
 			}
 			return err
 		}
-		if hasLocalModifications(validation) && !force {
-			if cfg.JSON && !yolo {
+		if hasLocalModifications(validation) && !force && !yolo {
+			if cfg.JSON {
 				err := fmt.Errorf("locally modified files detected; use --force to proceed or --yolo in non-interactive mode")
-				if cfg.JSON {
-					return writeJSONError(formatter, "query_failed", err.Error())
-				}
-				return err
+				return writeJSONError(formatter, "query_failed", err.Error())
 			}
 			err := confirmProceed(cmd, "Package has locally modified files. Proceed anyway?", "locally modified files detected; use --force to proceed or --yolo in non-interactive mode", yolo, force)
 			if err != nil {
-				if cfg.JSON {
-					return writeJSONError(formatter, "query_failed", err.Error())
-				}
 				return err
 			}
 		}
@@ -160,11 +154,37 @@ func runUninstallCmd(cmd *cobra.Command, args []string) error {
 			HooksRemoved: hooksRemoved,
 		}
 		for _, dep := range target.Record.Requirements.CLIInstalled {
-			if target.Record.Requirements.IsInstalledBySC(dep) {
-				result.Warnings = append(result.Warnings, "Synaptic-installed dependency eligible for removal: "+dep)
-			} else if cfg.Verbose {
-				result.Warnings = append(result.Warnings, "leaving pre-existing dependency untouched: "+dep)
+			if !target.Record.Requirements.IsInstalledBySC(dep) {
+				if cfg.Verbose {
+					result.Warnings = append(result.Warnings, "leaving pre-existing dependency untouched: "+dep)
+				}
+				continue
 			}
+
+			removeDep := yolo
+			if !removeDep {
+				confirmed, err := confirmRemoveDependency(cmd, dep)
+				if err != nil {
+					if cfg.JSON {
+						return writeJSONError(formatter, "query_failed", err.Error())
+					}
+					return err
+				}
+				removeDep = confirmed
+				if !confirmed && !isCommandInputTTY(cmd) {
+					result.Warnings = append(result.Warnings, "skipped SC-installed dependency removal in non-interactive mode: "+dep)
+				}
+			}
+			if !removeDep {
+				continue
+			}
+			if err := removeSCDependency(dep); err != nil {
+				if cfg.JSON {
+					return writeJSONError(formatter, "query_failed", err.Error())
+				}
+				return err
+			}
+			result.RemovedDependencies = append(result.RemovedDependencies, dep)
 		}
 		results = append(results, result)
 	}

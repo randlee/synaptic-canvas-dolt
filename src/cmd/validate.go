@@ -107,11 +107,17 @@ func runValidateCmd(cmd *cobra.Command, args []string) error {
 	}
 
 	if cfg.JSON {
-		return formatter.WriteJSON(validateResponse{
+		if err := formatter.WriteJSON(validateResponse{
 			OK:       true,
 			Pass:     pass,
 			Packages: summaries,
-		})
+		}); err != nil {
+			return err
+		}
+		if !pass {
+			return errors.New("validation failed")
+		}
+		return nil
 	}
 
 	rows := make([][]string, 0, len(summaries))
@@ -146,6 +152,9 @@ func runValidateCmd(cmd *cobra.Command, args []string) error {
 		if err := formatter.Table([]string{"FILE", "STATUS", "SEVERITY"}, fileRows); err != nil {
 			return err
 		}
+	}
+	if !pass {
+		return errors.New("validation failed")
 	}
 	return nil
 }

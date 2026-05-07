@@ -30,11 +30,12 @@ type upgradeResult struct {
 }
 
 type uninstallResult struct {
-	Package      string   `json:"package"`
-	Scope        string   `json:"scope"`
-	RemovedFiles []string `json:"removed_files"`
-	Warnings     []string `json:"warnings,omitempty"`
-	HooksRemoved int      `json:"hooks_removed"`
+	Package             string   `json:"package"`
+	Scope               string   `json:"scope"`
+	RemovedFiles        []string `json:"removed_files"`
+	RemovedDependencies []string `json:"removed_dependencies,omitempty"`
+	Warnings            []string `json:"warnings,omitempty"`
+	HooksRemoved        int      `json:"hooks_removed"`
 }
 
 func stateRootForScope(repoRoot, scope string) (string, error) {

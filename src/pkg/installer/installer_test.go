@@ -174,6 +174,12 @@ func TestRequirementSnapshotIsInstalledBySC(t *testing.T) {
 	if snapshot.IsInstalledBySC("preexisting") || snapshot.IsInstalledBySC("missing") {
 		t.Fatal("expected preexisting and missing dependencies to be ignored")
 	}
+	if (RequirementSnapshot{}).IsInstalledBySC("nil-provenance") {
+		t.Fatal("expected nil provenance map to be ignored")
+	}
+	if (RequirementSnapshot{CLIProvenance: map[string]string{"empty": ""}}).IsInstalledBySC("empty") {
+		t.Fatal("expected empty provenance value to be ignored")
+	}
 }
 
 func ptr(v string) *string { return &v }
