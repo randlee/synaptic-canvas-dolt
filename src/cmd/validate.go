@@ -118,6 +118,9 @@ func runValidateCmd(cmd *cobra.Command, args []string) error {
 	}
 	for _, summary := range summaries {
 		formatter.Success(fmt.Sprintf("%s [%s]", summary.Package, summary.Scope))
+		for _, warning := range summary.Warnings {
+			writeWarning(formatter, warning)
+		}
 		fileRows := make([][]string, 0, len(summary.Files))
 		for _, file := range summary.Files {
 			status := file.Status

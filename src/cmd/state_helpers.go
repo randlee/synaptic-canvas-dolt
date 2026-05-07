@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/randlee/synaptic-canvas-dolt/internal/config"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/catalog"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/installer"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/integrity"
 )
@@ -31,6 +35,7 @@ type validatedInstall struct {
 	AggregateExpected string          `json:"aggregate_expected"`
 	AggregateActual   string          `json:"aggregate_actual,omitempty"`
 	AggregatePass     bool            `json:"aggregate_pass"`
+	Warnings          []string        `json:"warnings,omitempty"`
 	Pass              bool            `json:"pass"`
 	Status            string          `json:"status"`
 }
@@ -43,6 +48,7 @@ type validatedFile struct {
 
 var snapshotNow = func() time.Time { return time.Now().UTC() }
 var snapshotGitRemoteURL = gitRemoteURL
+var validateCatalogFetch = defaultValidateCatalogFetch
 
 func loadTrackedInstalls(repoRoot string) ([]trackedInstall, error) {
 	localLock, err := installer.LoadManifestLock(repoRoot)
@@ -102,11 +108,10 @@ func filterInstallsByScope(installs []trackedInstall, scope string) []trackedIns
 }
 
 func validateTrackedInstall(record installer.InstallRecord) (validatedInstall, error) {
-	expected := make([]integrity.FileHash, 0, len(record.Files))
-	for path, sha := range record.Files {
-		expected = append(expected, integrity.FileHash{DestPath: path, SHA256: sha})
+	expected, warnings, err := resolveExpectedHashes(record)
+	if err != nil {
+		return validatedInstall{}, err
 	}
-	sort.Slice(expected, func(i, j int) bool { return expected[i].DestPath < expected[j].DestPath })
 
 	results, err := integrity.VerifyPackage(expected, record.InstallRoot)
 	if err != nil {
@@ -122,10 +127,15 @@ func validateTrackedInstall(record installer.InstallRecord) (validatedInstall, e
 		InstallSite:       record.InstallSite,
 		Files:             make([]validatedFile, 0, len(results)),
 		AggregateExpected: integrity.ComputeAggregateSHA256(expected),
+		Warnings:          warnings,
 		Pass:              true,
 		Status:            "PASS",
 	}
 
+	expectedSet := make(map[string]struct{}, len(expected))
+	for _, hash := range expected {
+		expectedSet[hash.DestPath] = struct{}{}
+	}
 	actual := make([]integrity.FileHash, 0, len(expected))
 	canAggregate := true
 	for _, result := range results {
@@ -141,7 +151,7 @@ func validateTrackedInstall(record installer.InstallRecord) (validatedInstall, e
 			summary.Pass = false
 			summary.Status = "FAIL"
 		}
-		if _, tracked := record.Files[result.Path]; tracked {
+		if _, tracked := expectedSet[result.Path]; tracked {
 			sha, err := integrity.ComputeFileSHA256(filepath.Join(record.InstallRoot, filepath.FromSlash(result.Path)))
 			if err != nil {
 				canAggregate = false
@@ -163,6 +173,160 @@ func validateTrackedInstall(record installer.InstallRecord) (validatedInstall, e
 	}
 
 	return summary, nil
+}
+
+func resolveExpectedHashes(record installer.InstallRecord) ([]integrity.FileHash, []string, error) {
+	repoRoot := record.InstallSite
+	if repoRoot == "" {
+		root, err := currentRepoRoot()
+		if err != nil {
+			return nil, nil, err
+		}
+		repoRoot = root
+	}
+	branch := record.Branch
+	if branch == "" {
+		branch = "main"
+	}
+
+	localPath := catalog.ProjectPath(repoRoot, branch)
+	if cat, warnings, ok, err := loadValidationCatalog(localPath); err != nil {
+		return nil, nil, err
+	} else if ok {
+		return expectedFromCatalog(record, cat, warnings)
+	}
+
+	machinePath, err := catalog.MachinePath(branch)
+	if err != nil {
+		return nil, nil, err
+	}
+	if cat, warnings, ok, err := loadValidationCatalog(machinePath); err != nil {
+		return nil, nil, err
+	} else if ok {
+		warnings = append([]string{"project catalog absent; using machine catalog " + displayCatalogPath(machinePath)}, warnings...)
+		return expectedFromCatalog(record, cat, warnings)
+	}
+
+	entries, err := validateCatalogFetch(context.Background(), repoRoot, branch)
+	if err == nil {
+		if _, writeErr := writeCatalogCaches(repoRoot, branch, "both", entries, snapshotNow()); writeErr != nil {
+			warnings := []string{"catalog fetched but cache write failed: " + writeErr.Error()}
+			return expectedFromCatalog(record, catalog.Catalog{Meta: catalog.CatalogMeta{Branch: branch, FetchedAt: snapshotNow(), SchemaVersion: catalog.SchemaVersion}, Entries: entries}, warnings)
+		}
+		return expectedFromCatalog(record, catalog.Catalog{Meta: catalog.CatalogMeta{Branch: branch, FetchedAt: snapshotNow(), SchemaVersion: catalog.SchemaVersion}, Entries: entries}, nil)
+	}
+
+	warnings := []string{"catalog unavailable and Dolt offline; using lockfile SHAs (may be stale - run sc catalog update when online)"}
+	return expectedFromLockfile(record), warnings, nil
+}
+
+func loadValidationCatalog(path string) (catalog.Catalog, []string, bool, error) {
+	cat, warnings, err := catalog.Load(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return catalog.Catalog{}, nil, false, nil
+	}
+	if err != nil {
+		return catalog.Catalog{}, nil, false, err
+	}
+	if !cat.Meta.FetchedAt.IsZero() && snapshotNow().Sub(cat.Meta.FetchedAt) > catalog.StaleAfter {
+		warnings = append(warnings, "catalog is older than 24h; run sc catalog update")
+	}
+	return cat, warnings, true, nil
+}
+
+func expectedFromCatalog(record installer.InstallRecord, cat catalog.Catalog, warnings []string) ([]integrity.FileHash, []string, error) {
+	if len(cat.Entries) == 0 {
+		warnings = append(warnings, "catalog is empty; skipping authoritative SHA check")
+		return expectedFromCurrentFiles(record), warnings, nil
+	}
+	entries := matchingCatalogEntries(record, cat.Entries)
+	if len(entries) == 0 {
+		warnings = append(warnings, "catalog has no entries for installed package/version; using lockfile SHAs")
+		return expectedFromLockfile(record), warnings, nil
+	}
+
+	expected := make([]integrity.FileHash, 0, len(record.Files))
+	for path, lockSHA := range record.Files {
+		rel := normalizeRecordPath(record, path)
+		sha := matchingCatalogSHA(rel, entries)
+		if sha == "" {
+			sha = lockSHA
+			warnings = append(warnings, "catalog missing SHA for "+rel+"; using lockfile SHA")
+		}
+		expected = append(expected, integrity.FileHash{DestPath: rel, SHA256: sha})
+	}
+	sort.Slice(expected, func(i, j int) bool { return expected[i].DestPath < expected[j].DestPath })
+	return expected, warnings, nil
+}
+
+func expectedFromLockfile(record installer.InstallRecord) []integrity.FileHash {
+	expected := make([]integrity.FileHash, 0, len(record.Files))
+	for path, sha := range record.Files {
+		expected = append(expected, integrity.FileHash{DestPath: normalizeRecordPath(record, path), SHA256: sha})
+	}
+	sort.Slice(expected, func(i, j int) bool { return expected[i].DestPath < expected[j].DestPath })
+	return expected
+}
+
+func expectedFromCurrentFiles(record installer.InstallRecord) []integrity.FileHash {
+	expected := make([]integrity.FileHash, 0, len(record.Files))
+	for path, fallbackSHA := range record.Files {
+		rel := normalizeRecordPath(record, path)
+		sha, err := integrity.ComputeFileSHA256(filepath.Join(record.InstallRoot, filepath.FromSlash(rel)))
+		if err != nil {
+			sha = fallbackSHA
+		}
+		expected = append(expected, integrity.FileHash{DestPath: rel, SHA256: sha})
+	}
+	sort.Slice(expected, func(i, j int) bool { return expected[i].DestPath < expected[j].DestPath })
+	return expected
+}
+
+func matchingCatalogEntries(record installer.InstallRecord, entries []catalog.CatalogEntry) []catalog.CatalogEntry {
+	matches := make([]catalog.CatalogEntry, 0, len(entries))
+	for _, entry := range entries {
+		if entry.PackageID == record.Package && entry.Version == record.Version {
+			matches = append(matches, entry)
+		}
+	}
+	return matches
+}
+
+func matchingCatalogSHA(rel string, entries []catalog.CatalogEntry) string {
+	for _, entry := range entries {
+		docPath := filepath.ToSlash(entry.DocPath)
+		if docPath == rel || strings.HasSuffix(rel, "/"+docPath) || filepath.Base(docPath) == filepath.Base(rel) {
+			return entry.SHA256
+		}
+	}
+	return ""
+}
+
+func normalizeRecordPath(record installer.InstallRecord, path string) string {
+	slashPath := filepath.ToSlash(path)
+	slashRoot := filepath.ToSlash(record.InstallRoot)
+	if filepath.IsAbs(path) {
+		if rel, err := filepath.Rel(record.InstallRoot, path); err == nil {
+			return filepath.ToSlash(rel)
+		}
+	}
+	if slashRoot != "" && strings.HasPrefix(slashPath, slashRoot+"/") {
+		return strings.TrimPrefix(slashPath, slashRoot+"/")
+	}
+	return slashPath
+}
+
+func defaultValidateCatalogFetch(ctx context.Context, _ string, branch string) ([]catalog.CatalogEntry, error) {
+	cfg := &config.Config{Branch: branch}
+	if err := cfg.LoadFileConfig(); err != nil {
+		return nil, err
+	}
+	client, err := readClientOpener(cfg)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = client.Close() }()
+	return client.GetPackageCatalog(ctx)
 }
 
 func scopeDisplay(branch, version string) string {

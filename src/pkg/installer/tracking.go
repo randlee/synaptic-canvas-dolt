@@ -158,6 +158,7 @@ func SaveEnv(root string, env any) error {
 	return writeTOMLAtomic(filepath.Join(root, EnvPath), env)
 }
 
+// NOTE: duplicate of catalog.writeTOMLAtomic; a future refactor may extract this to src/internal/atomicfile/.
 func writeTOMLAtomic(path string, value any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return fmt.Errorf("creating parent dir: %w", err)

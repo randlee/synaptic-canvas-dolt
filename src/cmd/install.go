@@ -115,6 +115,10 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 			}
 			return err
 		}
+		catalogWarnings := []string{}
+		if !dryRun {
+			catalogWarnings = refreshCatalogNonFatal(cmd.Context(), formatter, root, cfg.EffectiveBranch(), client)
+		}
 		if cfg.JSON {
 			return formatter.WriteJSON(map[string]any{
 				"ok":    true,
@@ -131,6 +135,7 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 				"dependency_warnings":          summary.DependencyWarnings,
 				"hooks_registered":             summary.HooksRegistered,
 				"template_validation_warnings": summary.TemplateValidationWarnings,
+				"warnings":                     catalogWarnings,
 				"files":                        summary.Files,
 				"answers":                      summary.Answers,
 			})

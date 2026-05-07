@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/randlee/synaptic-canvas-dolt/pkg/catalog"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
 )
 
@@ -23,6 +24,28 @@ func TestMockClientListPackages(t *testing.T) {
 	}
 	if len(pkgs) != 2 {
 		t.Fatalf("got %d packages, want 2", len(pkgs))
+	}
+}
+
+func TestMockClientGetPackageCatalog(t *testing.T) {
+	t.Parallel()
+
+	m := NewMockClient()
+	m.Catalog = []catalog.CatalogEntry{{PackageID: "pkg", Version: "1.0.0", DocPath: "SKILL.md", SHA256: "abc"}}
+	got, err := m.GetPackageCatalog(context.Background())
+	if err != nil {
+		t.Fatalf("GetPackageCatalog() error = %v", err)
+	}
+	if len(got) != 1 || got[0].DocPath != "SKILL.md" {
+		t.Fatalf("unexpected catalog: %+v", got)
+	}
+	got[0].DocPath = "mutated"
+	got, err = m.GetPackageCatalog(context.Background())
+	if err != nil {
+		t.Fatalf("GetPackageCatalog() error = %v", err)
+	}
+	if got[0].DocPath != "SKILL.md" {
+		t.Fatalf("mock catalog was mutated: %+v", got)
 	}
 }
 

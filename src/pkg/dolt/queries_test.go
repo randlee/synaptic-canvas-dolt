@@ -138,6 +138,24 @@ func TestResolveVariantQuery(t *testing.T) {
 	}
 }
 
+func TestGetPackageCatalogQuery(t *testing.T) {
+	t.Parallel()
+	q := GetPackageCatalogQuery("synaptic_canvas", "beta")
+	for _, want := range []string{
+		"f.package_id",
+		"p.version",
+		"f.dest_path AS doc_path",
+		"f.sha256",
+		"`synaptic_canvas/beta`.package_files",
+		"`synaptic_canvas/beta`.packages",
+		"ORDER BY f.package_id, p.version, f.dest_path",
+	} {
+		if !strings.Contains(q, want) {
+			t.Fatalf("query missing %q:\n%s", want, q)
+		}
+	}
+}
+
 func TestListPackagesTagPredicate(t *testing.T) {
 	t.Parallel()
 	got := ListPackagesTagPredicate([]string{"go", "", "cli"})
