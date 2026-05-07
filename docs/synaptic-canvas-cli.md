@@ -48,7 +48,7 @@
 
 **Layer 2 — `sc:plugin` skill:** A Claude Code skill that wraps the `sc` CLI. Allows Claude to manage packages conversationally ("install the delay package"). Thin wrapper — delegates all logic to the CLI.
 
-**Layer 3 — Dolt Database:** Source of truth. Packages, files, dependencies, and metadata stored in relational tables. Branches (`develop`, `beta`, `main`) serve as release channels. Promotion copies specific package rows between branches via targeted SQL (DELETE + INSERT ... SELECT) followed by a Dolt commit — not a full branch merge.
+**Layer 3 — Dolt Database:** Source of truth. Packages, files, dependencies, and metadata stored in relational tables. Branches (`develop`, `beta`, `main`) serve as release channels. Package promotion copies specific package rows between branches via targeted SQL (DELETE + INSERT ... SELECT) followed by a Dolt commit. Whole-branch promotion uses `dolt_merge`.
 
 ### Installer
 
@@ -152,6 +152,10 @@ sc admin import <path> --branch <branch>
     Computes SHA256 per file and aggregate package SHA.
     Creates a Dolt commit with package metadata.
     Runs template variable validation on .j2 files (warning, non-blocking).
+    Enforces CA-007 before writing: hard-fails if any file's
+    (package_id, dest_path, branch) tuple already exists in the catalog with a
+    different SHA. The error names the colliding file plus existing and incoming
+    SHAs.
 
 sc admin export <package> --output <dir> [--branch <branch>]
     Export a package from Dolt to filesystem.
@@ -164,6 +168,16 @@ sc admin publish <package> --from <branch> --to <branch>
     Promotes a package by copying its rows (packages, package_files, deps, hooks, questions) from the source branch to the target branch via targeted SQL, then commits.
     Runs template variable validation as a BLOCKING gate — publish
     fails if any .j2 template references undeclared variables.
+
+sc admin promote <package> --from <branch> --to <branch>
+    Targeted package promotion. Copies only the named package's rows from source
+    branch to target branch using DELETE + INSERT ... SELECT targeted SQL, then
+    creates a Dolt commit. This does not merge unrelated branch changes.
+
+sc admin promote all --from <branch> --to <branch>
+    Whole-branch promotion. Runs a Dolt branch merge (`dolt_merge`) from source
+    into target and commits the branch-level result. Use only when the entire
+    source branch is ready to promote.
 
 sc admin verify <package> [--branch <branch>]
     Full integrity check within Dolt: recompute all SHA256 hashes
@@ -378,6 +392,8 @@ This is a Merkle-like construction — changing any file changes the package SHA
 Per-file validation states:
 - `OK` — file exists and SHA matches
 - `MODIFIED` — file exists but SHA does not match
+- `SHA_MISMATCH` — file exists on disk but SHA does not match the catalog entry;
+  severity = `error`
 - `MISSING` — file does not exist
 - `UNREADABLE` — file exists but cannot be read (permission denied or I/O error); `Err` field contains the underlying cause
 - `EXTRA` — file exists on disk but has no entry in the package

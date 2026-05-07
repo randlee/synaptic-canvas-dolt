@@ -928,11 +928,38 @@ func TestHTTPClientLive(t *testing.T) {
 }
 ```
 
+Additional live integration tests for retained Dolt clients:
+
+```go
+//go:build integration
+// Run only when a human/AI explicitly opts in:
+// SC_RUN_SQL_DOLT=1 \
+// SC_TEST_DOLT_DSN='user:pass@tcp(127.0.0.1:3306)/synaptic_canvas' \
+// go test -tags integration ./src/pkg/dolt/ -run TestSQLClientLive
+func TestSQLClientLive(t *testing.T) {
+    // Skips unless SC_RUN_SQL_DOLT=1.
+    // Requires a local dolt sql-server process running from dolt 1.88.0 at
+    // /opt/homebrew/bin/dolt and a DSN supplied through SC_TEST_DOLT_DSN.
+}
+
+//go:build integration
+// Run only when a human/AI explicitly opts in:
+// SC_RUN_CLI_DOLT=1 \
+// SC_TEST_DOLT_DIR=/path/to/local/synaptic-canvas-dolt-repo \
+// go test -tags integration ./src/pkg/dolt/ -run TestCLIReaderLive
+func TestCLIReaderLive(t *testing.T) {
+    // Skips unless SC_RUN_CLI_DOLT=1.
+    // Requires the dolt binary in PATH and SC_TEST_DOLT_DIR pointing at a local
+    // repository clone with deterministic fixture data.
+}
+```
+
 Flaky test prevention:
 - All unit tests use `httptest.NewServer` exclusively
 - Live integration test tagged `integration`, additionally gated by
-  `SC_RUN_LIVE_DOLTHUB=1`, and excluded from default CI via
-  `.github/workflows/test.yml` (no `-tags integration` in CI matrix)
+  `SC_RUN_LIVE_DOLTHUB=1`, `SC_RUN_SQL_DOLT=1`, or `SC_RUN_CLI_DOLT=1`, and
+  excluded from default CI via `.github/workflows/test.yml` (no
+  `-tags integration` in CI matrix)
 
 `readClient` interface duplication: Sprint 3.5 must consolidate or alias
 `cmd.readClient` with `dolt.Client`. Preferred approach: add `GetPackageCatalog`
@@ -955,8 +982,13 @@ to `dolt.Client` in Sprint 3.6 and make `readClient` a type alias
 - HTTP 401/403 → error message mentions token configuration
 - `SQLClient` and `CLIReader` still compile and pass existing tests
 - No automated test makes a live network call
-- `test.yml` CI workflow does NOT pass `-tags integration`; `TestHTTPClientLive`
-  also skips unless `SC_RUN_LIVE_DOLTHUB=1`
+- `test.yml` CI workflow does NOT pass `-tags integration`; `TestHTTPClientLive`,
+  `TestSQLClientLive`, and `TestCLIReaderLive` also skip unless their explicit
+  env gates are set
+- `TestSQLClientLive` documents and uses `SC_TEST_DOLT_DSN`; required manual
+  setup is local `dolt sql-server` from dolt 1.88.0 at `/opt/homebrew/bin/dolt`
+- `TestCLIReaderLive` documents and uses `SC_TEST_DOLT_DIR`; required manual
+  setup is `dolt` in PATH and a local repository clone with fixture data
 - `src/internal/config/keys.go` exists with all seven constants
 
 **Requirements:** DC-001, DC-002, DC-003, DC-004, DC-005, DC-006, DC-007, DC-008, DC-009,

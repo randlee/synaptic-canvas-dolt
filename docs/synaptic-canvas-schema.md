@@ -20,7 +20,16 @@ Channels are **branches, not data**. The `develop`, `beta`, and `main` branches 
 -- No WHERE channel = 'main' — the branch IS the channel
 ```
 
-This eliminates data duplication and makes promotion a pure `dolt_merge`, not a data update.
+This eliminates the need for a channel column. Promotion has two command paths:
+
+- `sc admin promote <package>` performs targeted SQL for one named package:
+  DELETE the package's existing rows on the target branch, then INSERT ... SELECT
+  the package rows from the source branch, followed by a Dolt commit.
+- `sc admin promote all` performs whole-branch promotion with `dolt_merge`
+  from the source branch into the target branch.
+
+Package-level promotion and whole-branch promotion are intentionally different
+operations; the schema supports both because branches carry the channel state.
 
 ### 2. Text + JSON storage in `package_files`
 
@@ -533,7 +542,11 @@ The `content` column always contains the exact original file — the frontmatter
 | `beta` | Validated, needs broader testing | Promoted from develop | Early adopters |
 | `main` | Proven, stable | Promoted from beta | All users, marketplace export |
 
-**Promotion:** `dolt_merge('develop')` on the beta branch; `dolt_merge('beta')` on main. Each merge is a Dolt commit with author and message — full audit trail.
+**Promotion:** `sc admin promote <package>` promotes one package via targeted
+DELETE + INSERT ... SELECT SQL from source branch to target branch, then commits.
+`sc admin promote all` promotes the whole branch using `dolt_merge('develop')`
+on beta or `dolt_merge('beta')` on main. Each path creates a Dolt commit with
+author and message for auditability.
 
 **Rollback:** `dolt_reset('--hard', 'HEAD~1')` on any branch reverts the last promotion.
 
