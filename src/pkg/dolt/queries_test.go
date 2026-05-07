@@ -88,6 +88,24 @@ func TestGetPackageFilesQuery(t *testing.T) {
 	}
 }
 
+func TestGetPackageFileSHAsQuery(t *testing.T) {
+	t.Parallel()
+	q := GetPackageFileSHAsQuery("synaptic_canvas", "")
+	for _, want := range []string{
+		"pf.package_id",
+		"p.version",
+		"pf.dest_path AS doc_path",
+		"pf.sha256",
+		"FROM package_files AS pf",
+		"JOIN packages AS p ON p.id = pf.package_id",
+		"WHERE pf.package_id = ? AND pf.dest_path = ?",
+	} {
+		if !strings.Contains(q, want) {
+			t.Errorf("expected query to contain %q; query=%s", want, q)
+		}
+	}
+}
+
 func TestGetPackageDepsQuery(t *testing.T) {
 	t.Parallel()
 	q := GetPackageDepsQuery("synaptic_canvas", "")

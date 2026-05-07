@@ -29,6 +29,7 @@ type Writer interface {
 // Service imports package directories into Dolt.
 type Service struct {
 	Writer Writer
+	Client dolt.Client
 }
 
 // ImportRequest defines one import operation.
@@ -49,6 +50,28 @@ type Summary struct {
 	PackageSHA256              string   `json:"package_sha256"`
 	CommitMessage              string   `json:"commit_message"`
 	TemplateValidationWarnings []string `json:"template_validation_warnings,omitempty"`
+}
+
+// SHACollisionError reports an immutable package/version/doc_path SHA conflict.
+type SHACollisionError struct {
+	File        string
+	Package     string
+	Version     string
+	Branch      string
+	ExistingSHA string
+	IncomingSHA string
+}
+
+func (e *SHACollisionError) Error() string {
+	return fmt.Sprintf(
+		"SHA collision: file %q for %s %s on branch %q already exists\n  existing SHA: %s\n  incoming SHA: %s\nImport aborted. No data was written.",
+		e.File,
+		e.Package,
+		e.Version,
+		e.Branch,
+		e.ExistingSHA,
+		e.IncomingSHA,
+	)
 }
 
 type manifestFile struct {
@@ -91,6 +114,9 @@ func (s Service) Import(ctx context.Context, req ImportRequest) (*Summary, error
 	if s.Writer == nil {
 		return nil, fmt.Errorf("import writer is required")
 	}
+	if s.Client == nil {
+		return nil, fmt.Errorf("import read client is required")
+	}
 	exists, err := s.Writer.BranchExists(ctx, req.Branch)
 	if err != nil {
 		return nil, fmt.Errorf("checking branch %q: %w", req.Branch, err)
@@ -101,6 +127,9 @@ func (s Service) Import(ctx context.Context, req ImportRequest) (*Summary, error
 
 	data, warnings, err := scanPackage(req.PackageDir)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.checkCollisions(ctx, req.Branch, data.Package.ID, data.Package.Version, data.Files); err != nil {
 		return nil, err
 	}
 
@@ -131,6 +160,29 @@ func (s Service) Import(ctx context.Context, req ImportRequest) (*Summary, error
 		CommitMessage:              commitMessage,
 		TemplateValidationWarnings: warnings,
 	}, nil
+}
+
+func (s Service) checkCollisions(ctx context.Context, branch, packageID, incomingVersion string, files []models.PackageFile) error {
+	for _, incoming := range files {
+		existingRows, err := s.Client.GetPackageFileSHAs(ctx, packageID, incoming.DestPath)
+		if err != nil {
+			return fmt.Errorf("catalog check failed: %w; import aborted to protect SHA immutability", err)
+		}
+		for _, existing := range existingRows {
+			if existing.Version != incomingVersion || existing.SHA256 == incoming.SHA256 {
+				continue
+			}
+			return &SHACollisionError{
+				File:        incoming.DestPath,
+				Package:     packageID,
+				Version:     incomingVersion,
+				Branch:      branch,
+				ExistingSHA: existing.SHA256,
+				IncomingSHA: incoming.SHA256,
+			}
+		}
+	}
+	return nil
 }
 
 type scannedPackage struct {

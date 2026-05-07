@@ -132,6 +132,30 @@ func (m *MockClient) GetPackageFiles(_ context.Context, packageID string) ([]mod
 	return m.Files[packageID], nil
 }
 
+// GetPackageFileSHAs returns version/SHA metadata for one package file path.
+func (m *MockClient) GetPackageFileSHAs(_ context.Context, packageID, docPath string) ([]PackageFileSHA, error) {
+	if m.FilesErr != nil {
+		return nil, m.FilesErr
+	}
+	pkg, ok := m.Packages[packageID]
+	if !ok {
+		return nil, nil
+	}
+	var result []PackageFileSHA
+	for _, file := range m.Files[packageID] {
+		if file.DestPath != docPath {
+			continue
+		}
+		result = append(result, PackageFileSHA{
+			PackageID: packageID,
+			Version:   pkg.Version,
+			DocPath:   docPath,
+			SHA256:    file.SHA256,
+		})
+	}
+	return result, nil
+}
+
 // GetPackageDeps returns dependencies for a package from the mock store.
 func (m *MockClient) GetPackageDeps(_ context.Context, packageID string) ([]models.PackageDep, error) {
 	if m.DepsErr != nil {

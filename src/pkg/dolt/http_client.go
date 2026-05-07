@@ -208,6 +208,27 @@ func (c *HTTPClient) GetPackageFiles(ctx context.Context, packageID string) ([]m
 	return files, nil
 }
 
+func (c *HTTPClient) GetPackageFileSHAs(ctx context.Context, packageID, docPath string) ([]PackageFileSHA, error) {
+	rows, err := c.query(ctx, `SELECT pf.package_id, p.version, pf.dest_path AS doc_path, pf.sha256
+FROM package_files AS pf
+JOIN packages AS p ON p.id = pf.package_id
+WHERE pf.package_id = `+httpSQLString(packageID)+` AND pf.dest_path = `+httpSQLString(docPath)+`
+ORDER BY p.version`)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]PackageFileSHA, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, PackageFileSHA{
+			PackageID: stringValue(row, "package_id"),
+			Version:   stringValue(row, "version"),
+			DocPath:   stringValue(row, "doc_path"),
+			SHA256:    stringValue(row, "sha256"),
+		})
+	}
+	return result, nil
+}
+
 func (c *HTTPClient) GetPackageDeps(ctx context.Context, packageID string) ([]models.PackageDep, error) {
 	rows, err := c.query(ctx, "SELECT package_id, dep_type, dep_name, dep_spec, install_cmd, cmd_sha256 FROM package_deps WHERE package_id = "+httpSQLString(packageID)+" ORDER BY dep_name")
 	if err != nil {

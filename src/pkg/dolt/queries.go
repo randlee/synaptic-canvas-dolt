@@ -98,6 +98,19 @@ func GetPackageFilesQuery(database, branch string) string {
 	)
 }
 
+// GetPackageFileSHAsQuery returns SQL for checking immutable package file SHAs.
+func GetPackageFileSHAsQuery(database, branch string) string {
+	return fmt.Sprintf(
+		`SELECT pf.package_id, p.version, pf.dest_path AS doc_path, pf.sha256
+FROM %s AS pf
+JOIN %s AS p ON p.id = pf.package_id
+WHERE pf.package_id = ? AND pf.dest_path = ?
+ORDER BY p.version`,
+		BranchQualifiedFrom(database, branch, "package_files"),
+		BranchQualifiedFrom(database, branch, "packages"),
+	)
+}
+
 // GetPackageDepsQuery returns the SQL for fetching package dependencies.
 func GetPackageDepsQuery(database, branch string) string {
 	return fmt.Sprintf(

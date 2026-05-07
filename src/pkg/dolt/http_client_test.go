@@ -120,6 +120,13 @@ func TestHTTPClientPackageRelatedRows(t *testing.T) {
 		sql := r.URL.Query().Get("q")
 		var rows []map[string]any
 		switch {
+		case strings.Contains(sql, "FROM package_files AS pf"):
+			rows = []map[string]any{{
+				"package_id": "pkg",
+				"version":    "1.2.3",
+				"doc_path":   "skills/pkg/SKILL.md",
+				"sha256":     "abc",
+			}}
 		case strings.Contains(sql, "FROM package_files"):
 			rows = []map[string]any{{
 				"package_id":     "pkg",
@@ -175,6 +182,14 @@ func TestHTTPClientPackageRelatedRows(t *testing.T) {
 	}
 	if files[0].FMDescription != nil || files[0].FMModel != nil {
 		t.Fatalf("expected nil string pointers for null optional fields: %+v", files[0])
+	}
+
+	fileSHAs, err := client.GetPackageFileSHAs(context.Background(), "pkg", "skills/pkg/SKILL.md")
+	if err != nil {
+		t.Fatalf("GetPackageFileSHAs() error = %v", err)
+	}
+	if len(fileSHAs) != 1 || fileSHAs[0].Version != "1.2.3" || fileSHAs[0].DocPath != "skills/pkg/SKILL.md" {
+		t.Fatalf("unexpected file SHAs: %+v", fileSHAs)
 	}
 
 	hooks, err := client.GetPackageHooks(context.Background(), "pkg")

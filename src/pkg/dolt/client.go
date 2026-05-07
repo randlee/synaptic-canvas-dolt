@@ -29,6 +29,14 @@ type ListOptions struct {
 	Tags []string
 }
 
+// PackageFileSHA is the immutable digest metadata for one package file path.
+type PackageFileSHA struct {
+	PackageID string `json:"package_id"`
+	Version   string `json:"version"`
+	DocPath   string `json:"doc_path"`
+	SHA256    string `json:"sha256"`
+}
+
 // Client defines the interface for querying the Synaptic Canvas Dolt database.
 // All methods accept a context for cancellation and timeout support.
 type Client interface {
@@ -43,6 +51,9 @@ type Client interface {
 
 	// GetPackageFiles retrieves all files belonging to a package.
 	GetPackageFiles(ctx context.Context, packageID string) ([]models.PackageFile, error)
+
+	// GetPackageFileSHAs retrieves existing version/SHA rows for one package file path.
+	GetPackageFileSHAs(ctx context.Context, packageID, docPath string) ([]PackageFileSHA, error)
 
 	// GetPackageDeps retrieves all dependencies for a package.
 	GetPackageDeps(ctx context.Context, packageID string) ([]models.PackageDep, error)
@@ -246,6 +257,29 @@ func (c *SQLClient) GetPackageFiles(ctx context.Context, packageID string) ([]mo
 	}
 	slog.Debug("got package files", "package_id", packageID, "count", len(files))
 	return files, nil
+}
+
+// GetPackageFileSHAs retrieves existing version/SHA rows for one package file path.
+func (c *SQLClient) GetPackageFileSHAs(ctx context.Context, packageID, docPath string) ([]PackageFileSHA, error) {
+	slog.Debug("getting package file shas", "package_id", packageID, "doc_path", docPath)
+	rows, err := c.db.QueryContext(ctx, GetPackageFileSHAsQuery(c.database, c.branch), packageID, docPath)
+	if err != nil {
+		return nil, fmt.Errorf("getting file SHAs for package %q path %q: %w", packageID, docPath, err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var result []PackageFileSHA
+	for rows.Next() {
+		var row PackageFileSHA
+		if err := rows.Scan(&row.PackageID, &row.Version, &row.DocPath, &row.SHA256); err != nil {
+			return nil, fmt.Errorf("scanning file SHA row: %w", err)
+		}
+		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating file SHAs: %w", err)
+	}
+	return result, nil
 }
 
 // GetPackageDeps retrieves all dependencies for a package.

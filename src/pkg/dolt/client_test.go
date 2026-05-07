@@ -160,6 +160,29 @@ func TestMockClientGetPackageFilesError(t *testing.T) {
 	}
 }
 
+func TestMockClientGetPackageFileSHAs(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	m := NewMockClient()
+	m.AddPackage(NewTestPackage("pkg-1", "alpha", "1.0.0", nil))
+	m.AddFiles("pkg-1", []models.PackageFile{
+		{PackageID: "pkg-1", DestPath: "agent.md", SHA256: "abc123"},
+		{PackageID: "pkg-1", DestPath: "other.md", SHA256: "def456"},
+	})
+
+	rows, err := m.GetPackageFileSHAs(ctx, "pkg-1", "agent.md")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(rows))
+	}
+	if rows[0].Version != "1.0.0" || rows[0].DocPath != "agent.md" || rows[0].SHA256 != "abc123" {
+		t.Fatalf("unexpected row: %+v", rows[0])
+	}
+}
+
 func TestMockClientGetPackageDeps(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
