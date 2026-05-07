@@ -5,3 +5,48 @@ agents:
   sc-log-debug:
     version: 1.0.0
     path: .claude/agents/sc-log-debug.md
+  sc-worktree-create:
+    version: 0.9.0
+    path: .claude/agents/sc-git-worktree-create.md
+  sc-worktree-scan:
+    version: 0.9.0
+    path: .claude/agents/sc-git-worktree-scan.md
+  sc-worktree-cleanup:
+    version: 0.9.0
+    path: .claude/agents/sc-git-worktree-cleanup.md
+  sc-worktree-abort:
+    version: 0.9.0
+    path: .claude/agents/sc-git-worktree-abort.md
+  sc-worktree-update:
+    version: 0.9.0
+    path: .claude/agents/sc-git-worktree-update.md
+  go-qa-agent:
+    version: 1.0.0
+    path: .claude/agents/go-qa-agent.md
+  req-qa-agent:
+    version: 1.0.0
+    path: .claude/agents/req-qa-agent.md
+  arch-qa-agent:
+    version: 1.0.0
+    path: .claude/agents/arch-qa-agent.md
+  quality-mgr:
+    version: 1.0.0
+    path: .claude/agents/quality-mgr.md
+
+skills:
+  sc-git-worktree:
+    depends_on:
+      sc-worktree-create: "0.9.x"
+      sc-worktree-scan: "0.9.x"
+      sc-worktree-cleanup: "0.9.x"
+      sc-worktree-abort: "0.9.x"
+      sc-worktree-update: "0.9.x"
+  quality-management-gh:
+    depends_on:
+      go-qa-agent: "1.x"
+      req-qa-agent: "1.x"
+      arch-qa-agent: "1.x"
+      quality-mgr: "1.x"
+  sprint-report:
+    depends_on:
+      quality-mgr: "1.x"
