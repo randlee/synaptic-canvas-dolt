@@ -408,7 +408,7 @@ package = "team-lead"
 version = "1.2.0"
 branch = "beta"
 dolt_commit = "abc123def456"
-scope = "project"
+install_scope = "project"
 install_root = "/repo/.claude/skills/team-lead"
 repo_path = "/repo"
 variant = ""
@@ -422,7 +422,7 @@ answers_sha = "5a9d..."
 question_ids = ["lang", "style"]
 
 [installs.files]
-"skills/team-lead/SKILL.md" = "c0ffee..." # key is doc_path, not materialized path
+".claude/skills/team-lead/SKILL.md" = "c0ffee..." # key is materialized path
 
 [installs.requirements.cli_provenance]
 gh = "preexisting"
@@ -604,19 +604,12 @@ func PlanBatchUpgrade(installs []TrackedInstall, req UpgradeRequest) ([]UpgradeP
     return plans, blocked
 }
 ```
-
 ### Sprint 3.5: HTTPClient, File Config, and read_helpers Rewire
 
 **Goal:** Three tightly coupled deliverables that must land together: (1) a
 file-based layered config system, (2) `HTTPClient` implementing `dolt.Client`
 via the DoltHub REST API, (3) `read_helpers.go` rewired to default to
 `HTTPClient` instead of requiring a local `.dolt` directory.
-
-**Scope note:** This sprint plan document is doc-only. The implementation
-artifacts listed (http_client.go, errors.go, keys.go, fileconfig.go,
-configcmd.go, read_helpers.go rewire) do not yet exist in source — they are
-deliverables for csc to implement in Sprint 3.5. Sprint 3.6 must not begin
-until all Sprint 3.5 source artifacts are merged.
 
 **Background:** DoltHub.com exposes HTTP REST only — not MySQL wire protocol.
 `openReadClient` currently requires a `.dolt` directory and uses `CLIReader` or
@@ -1348,13 +1341,23 @@ Do not write partial data.
 #### Deliverable B: Collision Check Logic
 
 Before writing any `package_files` row, query the current package version and
-file SHA for the same package/doc_path:
+file SHA for the same package/doc_path through the Sprint 3.5 `HTTPClient`.
+This is a DoltHub HTTP GET read path: the branch is selected by the URL and the
+SQL uses unqualified table names. Do not use MySQL-style
+`` `database/branch`.table `` references or `?` placeholders in the HTTP query.
 
 ```sql
 SELECT p.version, pf.dest_path AS doc_path, pf.sha256
-FROM `{database}/{branch}`.package_files AS pf
-JOIN `{database}/{branch}`.packages AS p ON p.id = pf.package_id
-WHERE pf.package_id = ? AND pf.dest_path = ?
+FROM package_files AS pf
+JOIN packages AS p ON p.id = pf.package_id
+WHERE pf.package_id = '{{escaped_package_id}}'
+  AND pf.dest_path = '{{escaped_doc_path}}'
+```
+
+HTTP request shape:
+
+```text
+GET https://www.dolthub.com/api/v1alpha1/{owner}/{database}/{branch}?q={urlencoded_sql}
 ```
 
 **Ordering:** The collision check READ query must execute BEFORE any DELETE or

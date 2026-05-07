@@ -1,0 +1,84 @@
+---
+name: qa-task
+version: 1.0.0
+description: quality-mgr QA assignment template for codex-orchestration phases.
+format: xml
+required_variables:
+  - task_id
+  - sprint
+  - description
+  - pr_number
+  - branch
+  - worktree_path
+  - commits
+  - deliverables
+  - references
+---
+<atm-qa-task id="{{ task_id }}" sprint="{{ sprint }}" assignee="quality-mgr">
+  <description>{{ description }}</description>
+
+  <pr-number>{{ pr_number }}</pr-number>
+  <branch>{{ branch }}</branch>
+  <worktree>{{ worktree_path }}</worktree>
+  <commits>{{ commits }}</commits>
+
+  <deliverables>
+{{ deliverables }}
+  </deliverables>
+
+  <references>
+{{ references }}
+  </references>
+
+  <workflow>
+    <step id="a">ACK this message immediately.</step>
+    <step id="b">
+      Spawn THREE background QA agents against the worktree.
+      MANDATORY: run_in_background=true on ALL agents. NO exceptions.
+      PROHIBITED: running go, golangci-lint, or any analysis yourself in the foreground.
+      PROHIBITED: spawning agents without run_in_background=true.
+      Use TaskOutput to retrieve results after agents complete.
+
+      Agent 1 — go-qa-agent:
+        subagent_type: go-qa-agent
+        run_in_background: true
+        prompt: Run gofmt, go vet, go test, go test -race, and golangci-lint on the worktree at {{ worktree_path }}.
+                Report: failing packages/tests, race conditions, lint findings, coverage summary.
+
+      Agent 2 — req-qa-agent:
+        subagent_type: req-qa-agent
+        run_in_background: true
+        prompt: Validate sprint {{ sprint }} implementation against requirements and sprint spec.
+                Worktree: {{ worktree_path }}. Deliverables: {{ deliverables }}.
+                Reference docs: {{ references }}.
+                Report findings as BLOCKING or NON-BLOCKING with file:line references.
+
+      Agent 3 — arch-qa-agent:
+        subagent_type: arch-qa-agent
+        run_in_background: true
+        prompt: Validate architectural fitness of sprint {{ sprint }}.
+                Worktree: {{ worktree_path }}. Branch: {{ branch }}. Commits: {{ commits }}.
+                Reference docs: {{ references }}.
+                Report RULE-based findings with file:line references and merge readiness verdict.
+    </step>
+    <step id="c">
+      Collect all three agent reports. Send consolidated findings to team-lead:
+      - Overall verdict: PASS or FAIL
+      - Blocking findings (if any) with finding IDs
+      - Non-blocking findings
+      - go-qa result summary
+      - req-qa result summary
+      - arch-qa result summary
+    </step>
+    <step id="d">
+      If CI is NOT yet green on the PR: spawn go-qa-agent to run targeted follow-up
+      verification for the failing packages or checks. Report results. Do NOT run Go checks yourself.
+      Skip this step if CI is already green.
+    </step>
+    <step id="e">
+      Send final QA report to team-lead:
+      PASS → "PR #{{ pr_number }} ready to merge"
+      FAIL → list blocking findings with recommended fixes for csc
+    </step>
+  </workflow>
+</atm-qa-task>

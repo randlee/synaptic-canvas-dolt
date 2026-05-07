@@ -23,6 +23,7 @@ The system has three main layers:
 
 The CLI executable name is `sc`. `Synaptic Canvas` remains the product name,
 but `synaptic` is not a separate supported command surface.
+
 ## 2. Dolt As The Source Of Truth
 
 Dolt remains the package system database because it provides:

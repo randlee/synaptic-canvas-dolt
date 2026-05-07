@@ -296,6 +296,11 @@ CREATE TABLE package_questions (
 );
 ```
 
+**Upgrade detection rule:** MVP does not add a `since_version` column to
+`package_questions`. New questions are detected by comparing the current
+`question_id` set from Dolt with the `question_snapshot.question_ids` stored in
+the install record inside `.synaptic/manifest.lock`.
+
 **`type` values:**
 
 | Type | Behavior |

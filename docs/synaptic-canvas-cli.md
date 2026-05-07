@@ -88,7 +88,7 @@ sc upgrade <package> [--all] [--scope <project|global|both>] [--branch <branch>]
     --branch    Explicitly retarget upgrade to a different branch
     --version   Explicitly target a specific version on the chosen branch
     --force     Override blocked-upgrade checks for a single targeted package.
-                NOT valid with --all; rejected with error if combined.
+                May not be combined with --all; exits with error if both are supplied.
 
 sc uninstall <package> [--scope <project|global|both>] [--yolo] [--force]
     Remove an installed package from the selected tracked install scope.
@@ -386,14 +386,16 @@ Per-file validation states:
 ```
 For each installed file:
   local_sha = SHA256(read file from disk)
-  expected_sha = query package_files.sha256 from Dolt
+  expected_sha = read package_files.sha256 from local catalog cache
+                 (.synaptic/catalog-{branch}.toml or ~/.synaptic/catalog-{branch}.toml)
   Compare → OK | MODIFIED | MISSING | UNREADABLE
 
-For extra files in the installed package's managed target paths that are not in Dolt:
+For extra files in the installed package's managed target paths that are not tracked
+by the installed package file inventory:
   Report → EXTRA (untracked)
 
 Compute aggregate from local file SHAs:
-  Compare against packages.sha256 → PASS | FAIL
+  Compare against catalog aggregate/package SHA when available → PASS | FAIL
 
 Verify tracked dependency and component state:
   required_tools present and version-compatible → PASS | FAIL
