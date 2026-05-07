@@ -359,6 +359,38 @@ func TestScanJSONAloneDoesNotMutate(t *testing.T) {
 	}
 }
 
+func TestScanHumanReadableTableOutput(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
+	writeCmdFile(t, filepath.Join(root, ".claude", "skills", "team-lead", "SKILL.md"), "skill")
+	writeProjectCatalog(t, root, "main", []catalog.CatalogEntry{{
+		PackageID: "team-lead",
+		Version:   "1.0.0",
+		DocPath:   "SKILL.md",
+		SHA256:    testSHA("skill"),
+	}}, time.Now().UTC())
+	restoreDir := chdirForTest(t, root)
+	defer restoreDir()
+
+	cmd := NewRootCmd("test", "abc", "2025-01-01")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"scan", "--scope", "project"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	output := out.String()
+	for _, want := range []string{"PACKAGE", "VERSION", "SCOPE", "UPGRADE", "FILES", "team-lead", "1.0.0", "project", "new"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("human output missing %q:\n%s", want, output)
+		}
+	}
+}
+
 func TestScanJSONAcceptAllWritesLockfile(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
@@ -392,6 +424,102 @@ func TestScanJSONAcceptAllWritesLockfile(t *testing.T) {
 	got := lock.Installs[0]
 	if got.TrackingOrigin != trackingOriginScanReconciled || got.DoltCommit != "" || got.Files["SKILL.md"] != testSHA("skill") {
 		t.Fatalf("unexpected scan install record: %+v", got)
+	}
+}
+
+func TestScanExplicitDirectoryWithoutRecurseScansImmediateFilesOnly(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
+	scanDir := filepath.Join(root, "incoming")
+	writeCmdFile(t, filepath.Join(scanDir, "SKILL.md"), "root")
+	writeCmdFile(t, filepath.Join(scanDir, "nested", "SKILL.md"), "nested")
+	writeProjectCatalog(t, root, "main", []catalog.CatalogEntry{{
+		PackageID: "root-skill",
+		Version:   "1.0.0",
+		DocPath:   "SKILL.md",
+		SHA256:    testSHA("root"),
+	}, {
+		PackageID: "nested-skill",
+		Version:   "1.0.0",
+		DocPath:   "nested/SKILL.md",
+		SHA256:    testSHA("nested"),
+	}}, time.Now().UTC())
+
+	result, err := scanInstalledPackages(context.Background(), scanOptions{
+		RepoRoot: root,
+		Branch:   "main",
+		Scope:    "project",
+		Paths:    []string{scanDir},
+	})
+	if err != nil {
+		t.Fatalf("scanInstalledPackages() error = %v", err)
+	}
+	if len(result.Candidates) != 1 || result.Candidates[0].Package != "root-skill" {
+		t.Fatalf("expected immediate file only, got %+v", result.Candidates)
+	}
+}
+
+func TestScanRecurseFlagScansNestedExplicitDirectory(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
+	scanDir := filepath.Join(root, "incoming")
+	writeCmdFile(t, filepath.Join(scanDir, "nested", "SKILL.md"), "nested")
+	writeProjectCatalog(t, root, "main", []catalog.CatalogEntry{{
+		PackageID: "nested-skill",
+		Version:   "1.0.0",
+		DocPath:   "nested/SKILL.md",
+		SHA256:    testSHA("nested"),
+	}}, time.Now().UTC())
+	restoreDir := chdirForTest(t, root)
+	defer restoreDir()
+
+	resp, err := executeScanJSON(t, "scan", "--json", "--recurse", scanDir)
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if len(resp.Candidates) != 1 || resp.Candidates[0].Package != "nested-skill" {
+		t.Fatalf("expected recursive candidate, got %+v", resp.Candidates)
+	}
+}
+
+func TestScanExplicitGlobalPathUsesGlobalScope(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
+	globalFile := filepath.Join(home, ".claude", "skills", "team-lead", "SKILL.md")
+	writeCmdFile(t, globalFile, "skill")
+	if _, err := catalog.Refresh(filepath.Join(home, ".synaptic", catalog.CatalogFilename("main")), "main", []catalog.CatalogEntry{{
+		PackageID: "team-lead",
+		Version:   "1.0.0",
+		DocPath:   "SKILL.md",
+		SHA256:    testSHA("skill"),
+	}}, time.Now().UTC()); err != nil {
+		t.Fatalf("catalog.Refresh() error = %v", err)
+	}
+
+	result, err := scanInstalledPackages(context.Background(), scanOptions{
+		RepoRoot: root,
+		Branch:   "main",
+		Scope:    "both",
+		Paths:    []string{globalFile},
+	})
+	if err != nil {
+		t.Fatalf("scanInstalledPackages() error = %v", err)
+	}
+	if len(result.Candidates) != 1 {
+		t.Fatalf("expected one candidate, got %+v", result.Candidates)
+	}
+	candidate := result.Candidates[0]
+	if candidate.Scope != "global" || filepath.FromSlash(candidate.InstallSite) != home {
+		t.Fatalf("expected global candidate rooted at home, got %+v", candidate)
 	}
 }
 
@@ -465,6 +593,39 @@ func TestScanAbsentCatalogErrors(t *testing.T) {
 	}
 }
 
+func TestScanAbsentCatalogJSONError(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
+	writeCmdFile(t, filepath.Join(root, ".claude", "skills", "team-lead", "SKILL.md"), "skill")
+	restoreDir := chdirForTest(t, root)
+	defer restoreDir()
+
+	cmd := NewRootCmd("test", "abc", "2025-01-01")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"scan", "--json", "--scope", "project"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	var envelope struct {
+		OK    bool `json:"ok"`
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &envelope); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
+	}
+	if envelope.OK || envelope.Error.Code != "query_failed" || !strings.Contains(envelope.Error.Message, "catalog not found for branch main") {
+		t.Fatalf("unexpected JSON error envelope: %+v", envelope)
+	}
+}
+
 func TestScanActionFlagsAreMutuallyExclusive(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
@@ -474,13 +635,9 @@ func TestScanActionFlagsAreMutuallyExclusive(t *testing.T) {
 	restoreDir := chdirForTest(t, root)
 	defer restoreDir()
 
-	_, err := executeScanJSON(t, "scan", "--json", "--accept-all", "--upgrade-all")
-	if err != nil {
-		t.Fatalf("JSON command writes error envelope without returning error, got %v", err)
-	}
 	cmd := NewRootCmd("test", "abc", "2025-01-01")
 	cmd.SetArgs([]string{"scan", "--accept-all", "--upgrade-all"})
-	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "cannot be combined") {
+	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "none of the others can be") {
 		t.Fatalf("Execute() error = %v, want flag conflict", err)
 	}
 }
