@@ -129,3 +129,17 @@ func ResolveVariantQuery(database, branch string) string {
 		BranchQualifiedFrom(database, branch, "package_variants"),
 	)
 }
+
+// GetPackageCatalogQuery returns package asset hashes for catalog refresh.
+func GetPackageCatalogQuery(database, branch string) string {
+	packagesTable := BranchQualifiedFrom(database, branch, "packages")
+	filesTable := BranchQualifiedFrom(database, branch, "package_files")
+	return fmt.Sprintf(
+		`SELECT f.package_id, p.version, f.dest_path AS doc_path, f.sha256
+FROM %s AS f
+JOIN %s AS p ON p.id = f.package_id
+WHERE COALESCE(f.sha256, '') <> ''
+ORDER BY f.package_id, p.version, f.dest_path`,
+		filesTable, packagesTable,
+	)
+}

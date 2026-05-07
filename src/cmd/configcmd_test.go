@@ -13,6 +13,7 @@ func TestConfigSetAndGetJSON(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
+	t.Setenv("USERPROFILE", home)
 
 	var out bytes.Buffer
 	cmd := NewRootCmd("test", "abc", "2025-01-01")
@@ -61,6 +62,7 @@ func TestConfigUnknownKeyJSON(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
+	t.Setenv("USERPROFILE", home)
 
 	var out bytes.Buffer
 	cmd := NewRootCmd("test", "abc", "2025-01-01")
@@ -83,6 +85,7 @@ func TestConfigUnknownKeyJSON(t *testing.T) {
 func TestConfigGetEnvPrecedenceJSON(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	t.Setenv("USERPROFILE", home)
 	t.Setenv("SC_DOLT_DATABASE", "env/repo")
 

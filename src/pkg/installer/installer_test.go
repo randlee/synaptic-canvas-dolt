@@ -128,6 +128,7 @@ func TestExecuteGlobalWritesTrackingUnderHome(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	resolvedHome, err := os.UserHomeDir()
 	if err != nil {
 		t.Fatalf("UserHomeDir() error = %v", err)
