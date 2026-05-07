@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func TestHTTPClientLiveDoltHub(t *testing.T) {
+func TestHTTPClientLive(t *testing.T) {
 	if os.Getenv("SC_RUN_LIVE_DOLTHUB") != "1" {
 		t.Skip("set SC_RUN_LIVE_DOLTHUB=1 for live DoltHub HTTP API integration testing")
 	}
@@ -33,7 +33,7 @@ func TestHTTPClientLiveDoltHub(t *testing.T) {
 	}
 }
 
-func TestSQLClientLiveDoltServer(t *testing.T) {
+func TestSQLClientLive(t *testing.T) {
 	if os.Getenv("SC_RUN_SQL_DOLT") != "1" {
 		t.Skip("set SC_RUN_SQL_DOLT=1 for live Dolt SQL server integration testing")
 	}
@@ -59,7 +59,7 @@ func TestSQLClientLiveDoltServer(t *testing.T) {
 	}
 }
 
-func TestCLIReaderLiveDoltCLI(t *testing.T) {
+func TestCLIReaderLive(t *testing.T) {
 	if os.Getenv("SC_RUN_CLI_DOLT") != "1" {
 		t.Skip("set SC_RUN_CLI_DOLT=1 for live Dolt CLI integration testing")
 	}

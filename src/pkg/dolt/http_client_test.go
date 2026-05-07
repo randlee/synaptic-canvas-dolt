@@ -22,7 +22,7 @@ func TestHTTPClientListPackages(t *testing.T) {
 		requestURI = r.RequestURI
 		authHeader = r.Header.Get("Authorization")
 		method = r.Method
-		if err := r.ParseForm(); err != nil {
+		if err := r.ParseForm(); err != nil { //nolint:gosec // G120: httptest.NewServer is in-process, never exposed to untrusted traffic.
 			t.Fatalf("ParseForm() error = %v", err)
 		}
 		if got := r.Form.Get("q"); !strings.Contains(got, "FROM packages AS p") {

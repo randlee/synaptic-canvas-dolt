@@ -29,7 +29,7 @@ func (c *Config) LoadFileConfig() error {
 	if err != nil {
 		return err
 	}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // G304: path is constructed from os.UserHomeDir() + fixed suffix, not user input.
 	if errors.Is(err, os.ErrNotExist) {
 		c.fileValues = map[string]string{}
 		return nil
@@ -96,7 +96,7 @@ func SetFileValue(key, value string) (string, error) {
 	}
 
 	cfg := fileConfig{Dolt: map[string]any{}}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // G304: path is constructed from os.UserHomeDir() + fixed suffix, not user input.
 	if err == nil && len(data) > 0 {
 		if err := toml.Unmarshal(data, &cfg); err != nil {
 			return "", fmt.Errorf("parsing %s: %w", path, err)
