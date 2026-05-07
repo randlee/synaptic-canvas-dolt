@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -158,6 +159,117 @@ func TestExecuteGlobalWritesTrackingUnderHome(t *testing.T) {
 	}
 	if _, statErr := os.Stat(filepath.Join(root, ".synaptic", "manifest.lock")); !os.IsNotExist(statErr) {
 		t.Fatalf("did not expect project manifest.lock for global install, got %v", statErr)
+	}
+}
+
+func TestConcurrentExecuteMergesManifestRecords(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	for _, pkgID := range []string{"alpha", "beta"} {
+		pkgID := pkgID
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			content := "skill " + pkgID
+			_, err := (Service{}).Execute(context.Background(), Request{
+				Package: &models.Package{
+					ID:           pkgID,
+					Version:      "1.0.0",
+					InstallScope: models.InstallScopeAny,
+					AgentVariant: "claude",
+				},
+				Files: []models.PackageFile{{
+					DestPath: "SKILL.md",
+					Content:  content,
+					SHA256:   shaHex([]byte(content)),
+					FileType: models.FileTypeSkill,
+				}},
+				Branch:   "main",
+				RepoRoot: root,
+				Now:      time.Date(2026, 4, 25, 0, 0, 0, 0, time.UTC),
+			})
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("Execute() concurrent error = %v", err)
+		}
+	}
+	lock, err := LoadManifestLock(root)
+	if err != nil {
+		t.Fatalf("LoadManifestLock() error = %v", err)
+	}
+	if len(lock.Installs) != 2 {
+		t.Fatalf("expected both concurrent install records, got %+v", lock.Installs)
+	}
+	seen := map[string]bool{}
+	for _, record := range lock.Installs {
+		seen[record.Package] = true
+	}
+	if !seen["alpha"] || !seen["beta"] {
+		t.Fatalf("missing concurrent install record, got %+v", lock.Installs)
+	}
+}
+
+func TestHookRegistryUpsertPreservesOtherPackages(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	installWithHook := func(pkgID, script string) {
+		t.Helper()
+		content := "#!/bin/sh\n"
+		_, err := (Service{}).Execute(context.Background(), Request{
+			Package: &models.Package{
+				ID:           pkgID,
+				Version:      "1.0.0",
+				InstallScope: models.InstallScopeAny,
+				AgentVariant: "claude",
+			},
+			Files: []models.PackageFile{{
+				DestPath: script,
+				Content:  content,
+				SHA256:   shaHex([]byte(content)),
+				FileType: models.FileTypeHook,
+			}},
+			Hooks: []models.PackageHook{{
+				Event:      models.HookPreToolUse,
+				Matcher:    ".*",
+				ScriptPath: script,
+				Priority:   10,
+				Blocking:   true,
+			}},
+			Branch:   "main",
+			RepoRoot: root,
+			Now:      time.Date(2026, 4, 25, 0, 0, 0, 0, time.UTC),
+		})
+		if err != nil {
+			t.Fatalf("Execute(%s) error = %v", pkgID, err)
+		}
+	}
+
+	installWithHook("alpha", "hooks/alpha-v1.sh")
+	installWithHook("beta", "hooks/beta.sh")
+	installWithHook("alpha", "hooks/alpha-v2.sh")
+
+	registry, err := LoadHookRegistry(root)
+	if err != nil {
+		t.Fatalf("LoadHookRegistry() error = %v", err)
+	}
+	if len(registry.Hooks) != 2 {
+		t.Fatalf("expected alpha replacement plus beta hook, got %+v", registry.Hooks)
+	}
+	seen := map[string]string{}
+	for _, hook := range registry.Hooks {
+		seen[hook.Skill] = filepath.Base(hook.Script)
+	}
+	if seen["alpha"] != "alpha-v2.sh" || seen["beta"] != "beta.sh" {
+		t.Fatalf("unexpected hook ownership after upsert: %+v", registry.Hooks)
 	}
 }
 

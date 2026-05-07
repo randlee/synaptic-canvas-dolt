@@ -75,7 +75,7 @@ func runStatusCmd(cmd *cobra.Command, _ []string) error {
 	grouped := map[string]*statusPackageRow{}
 	order := []string{}
 	for _, install := range installs {
-		summary, err := validateTrackedInstall(install.Record)
+		summary, err := validateTrackedInstall(cmd.Context(), install.Record)
 		if err != nil {
 			if cfg.JSON {
 				return writeJSONError(formatter, "query_failed", err.Error())

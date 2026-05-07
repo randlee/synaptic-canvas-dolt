@@ -124,6 +124,7 @@ func (Service) Execute(ctx context.Context, req Request) (Summary, error) {
 			Event:    string(hook.Event),
 			Matcher:  hook.Matcher,
 			Skill:    req.Package.ID,
+			Scope:    scope,
 			Script:   hookAbsolutePath(installBase, req.Package.ID, hook.ScriptPath),
 			Priority: hook.Priority,
 			Blocking: hook.Blocking,
@@ -168,11 +169,6 @@ func (Service) Execute(ctx context.Context, req Request) (Summary, error) {
 		}
 	}
 
-	lock, err := LoadManifestLock(stateRoot)
-	if err != nil {
-		rollbackFiles(writtenPaths)
-		return Summary{}, err
-	}
 	record := InstallRecord{
 		InstallID:        fmt.Sprintf("pkg_%s_%s", req.Package.ID, scope),
 		Package:          req.Package.ID,
@@ -211,27 +207,34 @@ func (Service) Execute(ctx context.Context, req Request) (Summary, error) {
 	for _, hash := range renderedFiles {
 		record.Files[hash.DestPath] = hash.SHA256
 	}
-	lock.UpsertInstall(record)
 	if err := ctx.Err(); err != nil {
 		rollbackFiles(writtenPaths)
 		return Summary{}, err
 	}
-	if err := SaveManifestLock(stateRoot, lock); err != nil {
+	if err := WithManifestLock(stateRoot, func(lock *ManifestLock) error {
+		lock.UpsertInstall(record)
+		return nil
+	}); err != nil {
 		rollbackFiles(writtenPaths)
 		return Summary{}, err
 	}
 
-	registry, err := LoadHookRegistry(stateRoot)
-	if err != nil {
-		rollbackFiles(writtenPaths)
-		return Summary{}, err
-	}
-	registry.Hooks = append(registry.Hooks, summary.HooksRegistered...)
 	if err := ctx.Err(); err != nil {
+		_ = WithManifestLock(stateRoot, func(lock *ManifestLock) error {
+			lock.RemoveInstall(record.InstallID)
+			return nil
+		})
 		rollbackFiles(writtenPaths)
 		return Summary{}, err
 	}
-	if err := SaveHookRegistry(stateRoot, registry); err != nil {
+	if err := WithHookRegistry(stateRoot, func(registry *HookRegistry) error {
+		registry.UpsertPackageHooks(req.Package.ID, scope, summary.HooksRegistered)
+		return nil
+	}); err != nil {
+		_ = WithManifestLock(stateRoot, func(lock *ManifestLock) error {
+			lock.RemoveInstall(record.InstallID)
+			return nil
+		})
 		rollbackFiles(writtenPaths)
 		return Summary{}, err
 	}

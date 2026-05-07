@@ -16,6 +16,7 @@ import (
 
 const DefaultHTTPTimeout = 30 * time.Second
 const maxHTTPQueryURLLength = 1800
+const maxHTTPRateLimitRetries = 3
 
 // HTTPConfig holds all parameters for NewHTTPClient.
 type HTTPConfig struct {
@@ -102,16 +103,29 @@ func (c *HTTPClient) query(ctx context.Context, sql string) ([]map[string]any, e
 		return nil, fmt.Errorf("%w: generated DoltHub GET query exceeds URL length budget", ErrBadQuery)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("creating DoltHub request: %w", err)
-	}
-	if c.token != "" {
-		req.Header.Set("Authorization", "token "+c.token)
-	}
-	resp, err := c.http.Do(req) //nolint:gosec // G704: URL comes from validated config, and requests are only issued by explicit CLI configuration.
-	if err != nil {
-		return nil, fmt.Errorf("querying DoltHub: %w", err)
+	var lastRetryAfter string
+	var resp *http.Response
+	for attempt := 0; ; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("creating DoltHub request: %w", err)
+		}
+		if c.token != "" {
+			req.Header.Set("Authorization", "token "+c.token)
+		}
+		resp, err = c.http.Do(req) //nolint:gosec // G704: URL comes from validated config, and requests are only issued by explicit CLI configuration.
+		if err != nil {
+			return nil, fmt.Errorf("querying DoltHub: %w", err)
+		}
+		if resp.StatusCode != http.StatusTooManyRequests || attempt >= maxHTTPRateLimitRetries {
+			break
+		}
+		lastRetryAfter = strings.TrimSpace(resp.Header.Get("Retry-After"))
+		delay := rateLimitRetryDelay(lastRetryAfter, attempt)
+		_ = resp.Body.Close()
+		if err := sleepWithContext(ctx, delay); err != nil {
+			return nil, err
+		}
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -123,6 +137,9 @@ func (c *HTTPClient) query(ctx context.Context, sql string) ([]map[string]any, e
 		return nil, fmt.Errorf("%w: DoltHub repository or branch not found", ErrNotFound)
 	case http.StatusTooManyRequests:
 		retryAfter := strings.TrimSpace(resp.Header.Get("Retry-After"))
+		if retryAfter == "" {
+			retryAfter = lastRetryAfter
+		}
 		if retryAfter != "" {
 			return nil, fmt.Errorf("%w: DoltHub returned HTTP 429; retry_after=%s", ErrRateLimited, retryAfter)
 		}
@@ -145,6 +162,40 @@ func (c *HTTPClient) query(ctx context.Context, sql string) ([]map[string]any, e
 		return []map[string]any{}, nil
 	}
 	return parsed.Rows, nil
+}
+
+func rateLimitRetryDelay(retryAfter string, attempt int) time.Duration {
+	if retryAfter != "" {
+		if seconds, err := strconv.Atoi(retryAfter); err == nil && seconds >= 0 {
+			return time.Duration(seconds) * time.Second
+		}
+		if when, err := http.ParseTime(retryAfter); err == nil {
+			delay := time.Until(when)
+			if delay > 0 {
+				return delay
+			}
+			return 0
+		}
+	}
+	delay := 100 * time.Millisecond
+	for i := 0; i < attempt; i++ {
+		delay *= 2
+	}
+	return delay
+}
+
+func sleepWithContext(ctx context.Context, delay time.Duration) error {
+	if delay <= 0 {
+		return ctx.Err()
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func (c *HTTPClient) ListPackages(ctx context.Context, opts ListOptions) ([]models.Package, error) {

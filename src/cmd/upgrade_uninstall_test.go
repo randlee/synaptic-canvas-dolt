@@ -93,6 +93,71 @@ func TestUpgradeCommandJSON(t *testing.T) {
 	}
 }
 
+func TestUpgradeWithoutBranchUsesTrackedBranch(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
+	restoreDir := chdirForTest(t, root)
+	defer restoreDir()
+
+	installRoot := filepath.Join(root, ".claude", "skills", "team-lead")
+	writeCmdFile(t, filepath.Join(installRoot, "SKILL.md"), "old")
+	if err := installer.SaveManifestLock(root, installer.ManifestLock{Installs: []installer.InstallRecord{{
+		InstallID:    "pkg_team-lead_project",
+		Package:      "team-lead",
+		Version:      "1.0.0",
+		Branch:       "beta",
+		Variant:      "claude",
+		InstallScope: "project",
+		InstallRoot:  installRoot,
+		InstallSite:  root,
+		Files:        map[string]string{"SKILL.md": integrity.ComputeContentSHA256([]byte("old"))},
+	}}}); err != nil {
+		t.Fatalf("SaveManifestLock() error = %v", err)
+	}
+
+	mock := dolt.NewMockClient()
+	pkg := dolt.NewTestPackage("team-lead", "team-lead", "2.0.0", nil)
+	pkg.AgentVariant = "claude"
+	mock.AddPackage(pkg)
+	mock.AddFiles("team-lead", []models.PackageFile{{
+		DestPath: "SKILL.md", Content: "new", SHA256: integrity.ComputeContentSHA256([]byte("new")), FileType: models.FileTypeSkill,
+	}})
+	openedBranches := []string{}
+	prevOpener := readClientOpener
+	readClientOpener = func(cfg *config.Config) (readClient, error) {
+		openedBranches = append(openedBranches, cfg.EffectiveBranch())
+		return mock, nil
+	}
+	defer func() { readClientOpener = prevOpener }()
+
+	cmd := NewRootCmd("test", "abc", "2025-01-01")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"upgrade", "team-lead", "--json", "--yolo"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	var resp upgradeResponse
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
+	}
+	if len(resp.Upgrades) != 1 || resp.Upgrades[0].ToBranch != "beta" {
+		t.Fatalf("expected upgrade to stay on beta branch, got %+v", resp.Upgrades)
+	}
+	if len(openedBranches) == 0 {
+		t.Fatal("read client was not opened")
+	}
+	for _, branch := range openedBranches {
+		if branch != "beta" {
+			t.Fatalf("read client opened branches = %+v, want only beta", openedBranches)
+		}
+	}
+}
+
 func TestUpgradeCommandWarnsOnLocalModification(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
@@ -178,9 +243,7 @@ func TestUpgradeAllForceRejectedJSON(t *testing.T) {
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{"upgrade", "--all", "--force", "--json"})
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
+	requireJSONCmdError(t, cmd.Execute())
 	var resp jsonErrorEnvelope
 	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
@@ -467,6 +530,55 @@ func TestUninstallRemovesHooksWithoutSiblingInstalls(t *testing.T) {
 	}
 }
 
+func TestUninstallRemovesOnlyPackageOwnedHooks(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
+	restoreDir := chdirForTest(t, root)
+	defer restoreDir()
+
+	alphaRoot := filepath.Join(root, ".claude", "skills", "alpha")
+	writeCmdFile(t, filepath.Join(alphaRoot, "SKILL.md"), "alpha")
+	if err := installer.SaveManifestLock(root, installer.ManifestLock{
+		Installs: []installer.InstallRecord{{
+			InstallID:    "pkg_alpha_project",
+			Package:      "alpha",
+			Version:      "1.0.0",
+			Branch:       "main",
+			InstallScope: "project",
+			InstallRoot:  alphaRoot,
+			InstallSite:  root,
+			Files:        map[string]string{"SKILL.md": integrity.ComputeContentSHA256([]byte("alpha"))},
+		}},
+	}); err != nil {
+		t.Fatalf("SaveManifestLock(local) error = %v", err)
+	}
+	if err := installer.SaveHookRegistry(root, installer.HookRegistry{Hooks: []installer.HookEntry{
+		{Skill: "alpha", Scope: "project", Script: "alpha-hook"},
+		{Skill: "beta", Scope: "project", Script: "beta-hook"},
+	}}); err != nil {
+		t.Fatalf("SaveHookRegistry() error = %v", err)
+	}
+
+	cmd := NewRootCmd("test", "abc", "2025-01-01")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"uninstall", "alpha", "--scope", "project", "--json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	registry, err := installer.LoadHookRegistry(root)
+	if err != nil {
+		t.Fatalf("LoadHookRegistry() error = %v", err)
+	}
+	if len(registry.Hooks) != 1 || registry.Hooks[0].Skill != "beta" {
+		t.Fatalf("expected beta hook preserved, got %+v", registry.Hooks)
+	}
+}
+
 func TestUninstallLocalModificationRequiresForceOrYolo(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
@@ -498,9 +610,7 @@ func TestUninstallLocalModificationRequiresForceOrYolo(t *testing.T) {
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{"uninstall", "team-lead", "--scope", "project", "--json"})
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
+	requireJSONCmdError(t, cmd.Execute())
 	var resp jsonErrorEnvelope
 	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())

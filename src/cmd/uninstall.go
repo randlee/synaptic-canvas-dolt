@@ -84,7 +84,7 @@ func runUninstallCmd(cmd *cobra.Command, args []string) error {
 
 	results := make([]uninstallResult, 0, len(targets))
 	for _, target := range targets {
-		validation, err := validateTrackedInstall(target.Record)
+		validation, err := validateTrackedInstall(cmd.Context(), target.Record)
 		if err != nil {
 			if cfg.JSON {
 				return writeJSONError(formatter, "query_failed", err.Error())
@@ -109,37 +109,28 @@ func runUninstallCmd(cmd *cobra.Command, args []string) error {
 			}
 			return err
 		}
-		lock, err := installer.LoadManifestLock(stateRoot)
-		if err != nil {
+		if err := installer.WithManifestLock(stateRoot, func(lock *installer.ManifestLock) error {
+			removeInstallRecord(lock, target.Record)
+			return nil
+		}); err != nil {
 			if cfg.JSON {
 				return writeJSONError(formatter, "query_failed", err.Error())
 			}
 			return err
 		}
-		registry, err := installer.LoadHookRegistry(stateRoot)
-		if err != nil {
+		hooksRemoved := 0
+		if err := installer.WithHookRegistry(stateRoot, func(registry *installer.HookRegistry) error {
+			hooksRemoved = registry.RemovePackageHooks(target.Record.Package, target.Record.InstallScope)
+			return nil
+		}); err != nil {
 			if cfg.JSON {
 				return writeJSONError(formatter, "query_failed", err.Error())
 			}
 			return err
 		}
-
 		removedFiles, err := removeOwnedFiles(stateRoot, target.Record)
 		if err != nil {
-			if cfg.JSON {
-				return writeJSONError(formatter, "query_failed", err.Error())
-			}
-			return err
-		}
-		lock.RemoveInstall(target.Record.InstallID)
-		if err := installer.SaveManifestLock(stateRoot, lock); err != nil {
-			if cfg.JSON {
-				return writeJSONError(formatter, "query_failed", err.Error())
-			}
-			return err
-		}
-		registry, hooksRemoved := removeHookEntries(registry, target.Record.Package, hasOtherInstall(installs, target.Record))
-		if err := installer.SaveHookRegistry(stateRoot, registry); err != nil {
+			writeWarning(formatter, "manifest updated but file removal failed: "+err.Error())
 			if cfg.JSON {
 				return writeJSONError(formatter, "query_failed", err.Error())
 			}

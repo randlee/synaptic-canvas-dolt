@@ -147,9 +147,7 @@ func TestInfoCommandNotFoundJSON(t *testing.T) {
 	restore := installReadClientTestHooks(dolt.NewMockClient())
 	defer restore()
 
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
+	requireJSONCmdError(t, cmd.Execute())
 
 	var resp jsonErrorEnvelope
 	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
@@ -189,9 +187,7 @@ func TestListCommandErrorJSON(t *testing.T) {
 	restore := installReadClientTestHooks(mock)
 	defer restore()
 
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
+	requireJSONCmdError(t, cmd.Execute())
 
 	var resp jsonErrorEnvelope
 	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {

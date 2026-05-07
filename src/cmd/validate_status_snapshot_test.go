@@ -115,6 +115,65 @@ func TestValidationSeverityMappings(t *testing.T) {
 	}
 }
 
+func TestValidateEmitsDependencyHookAndTemplateItems(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
+	restoreDir := chdirForTest(t, root)
+	defer restoreDir()
+
+	installRoot := filepath.Join(root, ".claude", "skills", "team-lead")
+	hookContent := "#!/bin/sh\n"
+	writeCmdFile(t, filepath.Join(installRoot, "hooks", "pre.sh"), hookContent)
+	lock := installer.ManifestLock{Installs: []installer.InstallRecord{{
+		InstallID:        "pkg_team-lead_project",
+		Package:          "team-lead",
+		Version:          "1.0.0",
+		Branch:           "main",
+		InstallScope:     "project",
+		InstallRoot:      installRoot,
+		InstallSite:      root,
+		TemplateRendered: true,
+		Files:            map[string]string{"hooks/pre.sh": integrity.ComputeContentSHA256([]byte(hookContent))},
+		Requirements: installer.RequirementSnapshot{
+			Tools:        []string{"gh>=2"},
+			CLIInstalled: []string{"atm"},
+		},
+		TemplateValidation: installer.TemplateValidationRecord{
+			TemplateFiles: []string{"SKILL.md.j2"},
+			Unresolved:    []string{"SKILL.md: contains unresolved template markers"},
+		},
+	}}}
+	if err := installer.SaveManifestLock(root, lock); err != nil {
+		t.Fatalf("SaveManifestLock() error = %v", err)
+	}
+
+	cmd := NewRootCmd("test", "abc", "2025-01-01")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"validate", "team-lead", "--json"})
+	if err := cmd.Execute(); err == nil || err.Error() != "validation failed" {
+		t.Fatalf("Execute() error = %v, want validation failed", err)
+	}
+
+	var resp validateResponse
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
+	}
+	statuses := map[string]int{}
+	for _, item := range resp.Packages[0].Files {
+		statuses[item.Status]++
+	}
+	for _, want := range []string{"DEPENDENCY_MISSING", "HOOK_NOT_REGISTERED", "TEMPLATE_INVALID"} {
+		if statuses[want] == 0 {
+			t.Fatalf("expected validation status %s, got %+v", want, resp.Packages[0].Files)
+		}
+	}
+}
+
 func TestValidateScopeBothMixedPassFailReturnsExitOneWithResults(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()

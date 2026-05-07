@@ -112,26 +112,46 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	client, err := readClientOpener(cfg)
-	if err != nil {
-		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
+	branchExplicit := branchFlagChanged(cmd)
+	clients := map[string]readClient{}
+	defer func() {
+		for _, client := range clients {
+			_ = client.Close()
 		}
-		return err
+	}()
+	clientForBranch := func(branch string) (readClient, error) {
+		if client := clients[branch]; client != nil {
+			return client, nil
+		}
+		branchCfg := *cfg
+		branchCfg.Branch = branch
+		client, err := readClientOpener(&branchCfg)
+		if err != nil {
+			return nil, err
+		}
+		clients[branch] = client
+		return client, nil
 	}
-	defer func() { _ = client.Close() }()
 
 	results := make([]upgradeResult, 0, len(targets))
 	successes := 0
 	for _, target := range targets {
-		validation, err := validateTrackedInstall(target.Record)
+		validation, err := validateTrackedInstall(cmd.Context(), target.Record)
 		if err != nil {
 			if cfg.JSON {
 				return writeJSONError(formatter, "query_failed", err.Error())
 			}
 			return err
 		}
-		pkg, files, deps, hooks, questions, err := fetchUpgradePackage(cmd.Context(), client, cfg.EffectiveBranch(), target.Record)
+		targetBranch := upgradeBranchForTarget(cfg.EffectiveBranch(), branchExplicit, target.Record)
+		client, err := clientForBranch(targetBranch)
+		if err != nil {
+			if cfg.JSON {
+				return writeJSONError(formatter, "query_failed", err.Error())
+			}
+			return err
+		}
+		pkg, files, deps, hooks, questions, err := fetchUpgradePackage(cmd.Context(), client, targetBranch, target.Record)
 		if err != nil {
 			if cfg.JSON {
 				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
@@ -139,14 +159,14 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		if targetVersion != "" && pkg.Version != targetVersion {
-			warning := fmt.Sprintf("requested version %s not available on branch %s", targetVersion, cfg.EffectiveBranch())
+			warning := fmt.Sprintf("requested version %s not available on branch %s", targetVersion, targetBranch)
 			results = append(results, upgradeResult{
 				Package:     target.Record.Package,
 				Scope:       target.Record.InstallScope,
 				FromVersion: target.Record.Version,
 				ToVersion:   target.Record.Version,
 				FromBranch:  target.Record.Branch,
-				ToBranch:    cfg.EffectiveBranch(),
+				ToBranch:    targetBranch,
 				InstallRoot: target.Record.InstallRoot,
 				Warnings:    []string{warning},
 				Skipped:     true,
@@ -162,7 +182,7 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 				FromVersion: target.Record.Version,
 				ToVersion:   target.Record.Version,
 				FromBranch:  target.Record.Branch,
-				ToBranch:    cfg.EffectiveBranch(),
+				ToBranch:    targetBranch,
 				InstallRoot: target.Record.InstallRoot,
 				Warnings:    append(warnings, append([]string{"skipped upgrade"}, blockers...)...),
 				Skipped:     true,
@@ -175,14 +195,14 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 			}
 			return err
 		}
-		if pkg.Version == target.Record.Version && cfg.EffectiveBranch() == target.Record.Branch && targetVersion == "" {
+		if pkg.Version == target.Record.Version && targetBranch == target.Record.Branch && targetVersion == "" {
 			results = append(results, upgradeResult{
 				Package:     target.Record.Package,
 				Scope:       target.Record.InstallScope,
 				FromVersion: target.Record.Version,
 				ToVersion:   target.Record.Version,
 				FromBranch:  target.Record.Branch,
-				ToBranch:    cfg.EffectiveBranch(),
+				ToBranch:    targetBranch,
 				InstallRoot: target.Record.InstallRoot,
 				Warnings:    append(warnings, "already on latest version for selected branch"),
 				Skipped:     true,
@@ -196,7 +216,7 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 			Deps:      deps,
 			Hooks:     hooks,
 			Questions: questions,
-			Branch:    cfg.EffectiveBranch(),
+			Branch:    targetBranch,
 			Global:    target.Record.InstallScope == "global",
 			RepoRoot:  repoRoot,
 		})
@@ -212,7 +232,7 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 			FromVersion:        target.Record.Version,
 			ToVersion:          pkg.Version,
 			FromBranch:         target.Record.Branch,
-			ToBranch:           cfg.EffectiveBranch(),
+			ToBranch:           targetBranch,
 			InstallRoot:        summary.InstallRoot,
 			Warnings:           warnings,
 			FilesWritten:       summary.FilesWritten,
@@ -247,4 +267,22 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("all upgrades failed or were skipped")
 	}
 	return nil
+}
+
+func branchFlagChanged(cmd *cobra.Command) bool {
+	flag := cmd.Flag("branch")
+	return flag != nil && flag.Changed
+}
+
+func upgradeBranchForTarget(defaultBranch string, branchExplicit bool, record installer.InstallRecord) string {
+	if branchExplicit {
+		return defaultBranch
+	}
+	if record.Branch != "" {
+		return record.Branch
+	}
+	if defaultBranch != "" {
+		return defaultBranch
+	}
+	return "main"
 }

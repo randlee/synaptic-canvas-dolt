@@ -131,6 +131,8 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 
 		summaries := make([]installer.Summary, 0, len(scopes))
 		failures := make([]installScopeFailure, 0, len(scopes))
+		rolledBack := make([]installer.Summary, 0, len(scopes))
+		partial := false
 		for _, targetScope := range scopes {
 			summary, err := (installer.Service{}).Execute(cmd.Context(), installer.Request{
 				Package:   pkg,
@@ -150,7 +152,22 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 						Scope:   targetScope,
 						Error:   err.Error(),
 					})
-					continue
+					remaining := summaries[:0]
+					for _, prior := range summaries {
+						if rollbackErr := rollbackInstallSummary(root, prior); rollbackErr != nil {
+							partial = true
+							failures = append(failures, installScopeFailure{
+								Package: prior.PackageID,
+								Scope:   prior.Scope,
+								Error:   "rollback failed: " + rollbackErr.Error(),
+							})
+							remaining = append(remaining, prior)
+							continue
+						}
+						rolledBack = append(rolledBack, prior)
+					}
+					summaries = remaining
+					break
 				}
 				if cfg.JSON {
 					return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
@@ -162,15 +179,20 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 		if len(summaries) == 0 {
 			if len(failures) > 0 {
 				if cfg.JSON {
+					message := "install failed for all selected scopes"
 					if err := formatter.WriteJSON(map[string]any{
-						"ok":       false,
-						"plan":     dryRun,
-						"scope":    scope,
-						"installs": summaries,
-						"failures": failures,
+						"ok":          false,
+						"error":       jsonErrorPayload{Code: "install_failed", Message: message},
+						"plan":        dryRun,
+						"scope":       scope,
+						"partial":     partial,
+						"installs":    summaries,
+						"rolled_back": rolledBack,
+						"failures":    failures,
 					}); err != nil {
 						return err
 					}
+					return jsonCmdError{cause: fmt.Errorf("%s", message)}
 				}
 				return fmt.Errorf("install failed for all selected scopes")
 			}
@@ -180,7 +202,6 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 			}
 			return err
 		}
-
 		catalogWarnings := []string{}
 		if !dryRun {
 			catalogWarnings = refreshCatalogNonFatal(cmd.Context(), formatter, root, cfg.EffectiveBranch(), client)
@@ -210,18 +231,25 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 					"answers":                      summary.Answers,
 				})
 			}
+			errorValue := any(nil)
+			if partialFailed {
+				errorValue = jsonErrorPayload{Code: "install_failed", Message: "install failed for one or more scopes"}
+			}
 			if err := formatter.WriteJSON(map[string]any{
-				"ok":       !partialFailed,
-				"plan":     dryRun,
-				"scope":    scope,
-				"installs": summaries,
-				"failures": failures,
-				"warnings": allWarnings,
+				"ok":          !partialFailed,
+				"error":       errorValue,
+				"plan":        dryRun,
+				"scope":       scope,
+				"partial":     partial,
+				"installs":    summaries,
+				"rolled_back": rolledBack,
+				"failures":    failures,
+				"warnings":    allWarnings,
 			}); err != nil {
 				return err
 			}
 			if partialFailed {
-				return fmt.Errorf("install failed for one or more scopes")
+				return jsonCmdError{cause: fmt.Errorf("install failed for one or more scopes")}
 			}
 			return nil
 		}

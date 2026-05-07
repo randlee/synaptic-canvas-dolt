@@ -608,9 +608,7 @@ func TestScanAbsentCatalogJSONError(t *testing.T) {
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{"scan", "--json", "--scope", "project"})
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
+	requireJSONCmdError(t, cmd.Execute())
 	var envelope struct {
 		OK    bool `json:"ok"`
 		Error struct {

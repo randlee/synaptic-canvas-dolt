@@ -128,8 +128,8 @@ func filterInstallsByScope(installs []trackedInstall, scope string) []trackedIns
 	return filtered
 }
 
-func validateTrackedInstall(record installer.InstallRecord) (validatedInstall, error) {
-	expected, warnings, err := resolveExpectedHashes(record)
+func validateTrackedInstall(ctx context.Context, record installer.InstallRecord) (validatedInstall, error) {
+	expected, warnings, err := resolveExpectedHashes(ctx, record)
 	if err != nil {
 		return validatedInstall{}, err
 	}
@@ -205,6 +205,7 @@ func validateTrackedInstall(record installer.InstallRecord) (validatedInstall, e
 		}
 	}
 
+	appendStateValidationItems(ctx, record, &summary)
 	return summary, nil
 }
 
@@ -250,7 +251,171 @@ func severityRank(severity string) int {
 	}
 }
 
-func resolveExpectedHashes(record installer.InstallRecord) ([]integrity.FileHash, []string, error) {
+func appendStateValidationItems(ctx context.Context, record installer.InstallRecord, summary *validatedInstall) {
+	if err := ctx.Err(); err != nil {
+		appendValidationItem(summary, validatedFile{
+			Path:     "(context)",
+			Status:   "UNREADABLE",
+			Severity: ValidationSeverityError,
+			Error:    err.Error(),
+		})
+		return
+	}
+	appendDependencyValidationItems(record, summary)
+	appendHookValidationItems(record, summary)
+	appendTemplateValidationItems(record, summary)
+}
+
+func appendDependencyValidationItems(record installer.InstallRecord, summary *validatedInstall) {
+	verified := record.Requirements.ToolsVerified
+	for _, tool := range record.Requirements.Tools {
+		if tool == "" {
+			continue
+		}
+		if verified != nil && strings.TrimSpace(verified[tool]) != "" {
+			continue
+		}
+		appendValidationItem(summary, validatedFile{
+			Path:     "dependency:" + tool,
+			Status:   "DEPENDENCY_MISSING",
+			Severity: ValidationSeverityCritical,
+			Error:    "dependency is not verified in install record",
+		})
+	}
+	provenance := record.Requirements.CLIProvenance
+	for _, dep := range record.Requirements.CLIInstalled {
+		if dep == "" {
+			continue
+		}
+		if provenance != nil && strings.TrimSpace(provenance[dep]) != "" {
+			continue
+		}
+		appendValidationItem(summary, validatedFile{
+			Path:     "dependency:" + dep,
+			Status:   "DEPENDENCY_MISSING",
+			Severity: ValidationSeverityCritical,
+			Error:    "installed dependency provenance is missing",
+		})
+	}
+}
+
+func appendHookValidationItems(record installer.InstallRecord, summary *validatedInstall) {
+	expectedScripts := expectedHookScripts(record)
+	if len(expectedScripts) == 0 {
+		return
+	}
+	stateRoot, err := stateRootForScope(record.InstallSite, record.InstallScope)
+	if err != nil {
+		appendValidationItem(summary, validatedFile{
+			Path:     "hooks:registry",
+			Status:   "HOOK_NOT_REGISTERED",
+			Severity: ValidationSeverityWarn,
+			Error:    err.Error(),
+		})
+		return
+	}
+	registry, err := installer.LoadHookRegistry(stateRoot)
+	if err != nil {
+		appendValidationItem(summary, validatedFile{
+			Path:     "hooks:registry",
+			Status:   "HOOK_NOT_REGISTERED",
+			Severity: ValidationSeverityWarn,
+			Error:    err.Error(),
+		})
+		return
+	}
+	for _, script := range expectedScripts {
+		if hasRegisteredHook(registry, record, script) {
+			continue
+		}
+		appendValidationItem(summary, validatedFile{
+			Path:     "hook:" + script,
+			Status:   "HOOK_NOT_REGISTERED",
+			Severity: ValidationSeverityWarn,
+			Error:    "tracked hook script is not registered",
+		})
+	}
+}
+
+func appendTemplateValidationItems(record installer.InstallRecord, summary *validatedInstall) {
+	if len(record.TemplateValidation.Unresolved) == 0 {
+		if record.TemplateRendered && len(record.TemplateValidation.TemplateFiles) == 0 {
+			appendValidationItem(summary, validatedFile{
+				Path:     "template:" + record.Package,
+				Status:   "TEMPLATE_INVALID",
+				Severity: ValidationSeverityWarn,
+				Error:    "template render was tracked without template file metadata",
+			})
+		}
+		return
+	}
+	path := "template:" + record.Package
+	if len(record.TemplateValidation.TemplateFiles) > 0 {
+		path = "template:" + filepath.ToSlash(record.TemplateValidation.TemplateFiles[0])
+	}
+	for _, unresolved := range record.TemplateValidation.Unresolved {
+		appendValidationItem(summary, validatedFile{
+			Path:     path,
+			Status:   "TEMPLATE_INVALID",
+			Severity: ValidationSeverityWarn,
+			Error:    unresolved,
+		})
+	}
+}
+
+func appendValidationItem(summary *validatedInstall, item validatedFile) {
+	if item.Severity == "" {
+		item.Severity = severityForValidationStatus(item.Status)
+	}
+	summary.Files = append(summary.Files, item)
+	summary.AggregateStatus = higherSeverity(summary.AggregateStatus, string(item.Severity))
+	if item.Severity == ValidationSeverityError || item.Severity == ValidationSeverityCritical {
+		summary.Pass = false
+		summary.Status = "FAIL"
+	}
+}
+
+func expectedHookScripts(record installer.InstallRecord) []string {
+	scripts := []string{}
+	for path := range record.Files {
+		rel := normalizeRecordPath(record, path)
+		if isHookScriptPath(rel) {
+			scripts = append(scripts, filepath.ToSlash(rel))
+		}
+	}
+	sort.Strings(scripts)
+	return scripts
+}
+
+func isHookScriptPath(path string) bool {
+	slashPath := filepath.ToSlash(path)
+	parts := strings.Split(slashPath, "/")
+	for _, part := range parts {
+		if part == "hooks" {
+			return true
+		}
+	}
+	return strings.HasPrefix(filepath.Base(slashPath), "hook-") || strings.Contains(filepath.Base(slashPath), ".hook.")
+}
+
+func hasRegisteredHook(registry installer.HookRegistry, record installer.InstallRecord, script string) bool {
+	absScript := filepath.ToSlash(filepath.Join(record.InstallRoot, filepath.FromSlash(script)))
+	for _, hook := range registry.Hooks {
+		if hook.Skill != record.Package {
+			continue
+		}
+		if hook.Scope != "" && hook.Scope != record.InstallScope {
+			continue
+		}
+		hookScript := filepath.ToSlash(hook.Script)
+		if hookScript == absScript || hookScript == script || strings.HasSuffix(hookScript, "/"+script) {
+			return true
+		}
+	}
+	return false
+}
+
+func resolveExpectedHashes(ctx context.Context, record installer.InstallRecord) ([]integrity.FileHash, []string, error) {
 	repoRoot := record.InstallSite
 	if repoRoot == "" {
 		root, err := currentRepoRoot()
@@ -282,13 +447,16 @@ func resolveExpectedHashes(record installer.InstallRecord) ([]integrity.FileHash
 		return expectedFromCatalog(record, cat, warnings)
 	}
 
-	entries, err := validateCatalogFetch(context.Background(), repoRoot, branch)
+	entries, err := validateCatalogFetch(ctx, repoRoot, branch)
 	if err == nil {
 		if _, writeErr := writeCatalogCaches(repoRoot, branch, "both", entries, snapshotNow()); writeErr != nil {
 			warnings := []string{"catalog fetched but cache write failed: " + writeErr.Error()}
 			return expectedFromCatalog(record, catalog.Catalog{Meta: catalog.CatalogMeta{Branch: branch, FetchedAt: snapshotNow(), SchemaVersion: catalog.SchemaVersion}, Entries: entries}, warnings)
 		}
 		return expectedFromCatalog(record, catalog.Catalog{Meta: catalog.CatalogMeta{Branch: branch, FetchedAt: snapshotNow(), SchemaVersion: catalog.SchemaVersion}, Entries: entries}, nil)
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, nil, err
 	}
 
 	warnings := []string{"catalog unavailable and Dolt offline; using lockfile SHAs (may be stale - run sc catalog update when online)"}

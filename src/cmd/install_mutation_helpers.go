@@ -157,6 +157,50 @@ func removeOwnedFiles(root string, record installer.InstallRecord) ([]string, er
 	return removed, nil
 }
 
+func removeInstallRecord(lock *installer.ManifestLock, record installer.InstallRecord) bool {
+	if lock.RemoveInstall(record.InstallID) {
+		return true
+	}
+	for i := range lock.Installs {
+		current := lock.Installs[i]
+		if current.Package == record.Package && current.InstallScope == record.InstallScope {
+			lock.Installs = append(lock.Installs[:i], lock.Installs[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+func rollbackInstallSummary(repoRoot string, summary installer.Summary) error {
+	stateRoot, err := stateRootForScope(repoRoot, summary.Scope)
+	if err != nil {
+		return err
+	}
+	errs := make([]error, 0, 3)
+	for _, file := range summary.Files {
+		path := filepath.FromSlash(file.Path)
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			errs = append(errs, fmt.Errorf("removing %s: %w", file.Path, err))
+			continue
+		}
+		pruneEmptyParents(filepath.Dir(path), summary.InstallRoot)
+	}
+	pruneEmptyParents(filepath.FromSlash(summary.InstallRoot), stateRoot)
+	if err := installer.WithManifestLock(stateRoot, func(lock *installer.ManifestLock) error {
+		lock.RemoveInstall(fmt.Sprintf("pkg_%s_%s", summary.PackageID, summary.Scope))
+		return nil
+	}); err != nil {
+		errs = append(errs, err)
+	}
+	if err := installer.WithHookRegistry(stateRoot, func(registry *installer.HookRegistry) error {
+		registry.RemovePackageHooks(summary.PackageID, summary.Scope)
+		return nil
+	}); err != nil {
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
+}
+
 func pruneEmptyParents(path, stop string) {
 	current := path
 	for strings.HasPrefix(current, stop) && current != stop {
@@ -166,31 +210,6 @@ func pruneEmptyParents(path, stop string) {
 		}
 		current = filepath.Dir(current)
 	}
-}
-
-func removeHookEntries(registry installer.HookRegistry, skill string, keep bool) (installer.HookRegistry, int) {
-	if keep {
-		return registry, 0
-	}
-	filtered := installer.HookRegistry{Hooks: make([]installer.HookEntry, 0, len(registry.Hooks))}
-	removed := 0
-	for _, hook := range registry.Hooks {
-		if hook.Skill == skill {
-			removed++
-			continue
-		}
-		filtered.Hooks = append(filtered.Hooks, hook)
-	}
-	return filtered, removed
-}
-
-func hasOtherInstall(installs []trackedInstall, record installer.InstallRecord) bool {
-	for _, install := range installs {
-		if install.Record.InstallID != record.InstallID && install.Record.Package == record.Package {
-			return true
-		}
-	}
-	return false
 }
 
 func currentProfileSnapshot(repoRoot string) map[string]any {

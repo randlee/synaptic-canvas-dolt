@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -104,7 +105,7 @@ func runSnapshotCmd(cmd *cobra.Command, args []string) error {
 	}
 
 	record := selected[0].Record
-	files, err := snapshotFiles(record, full)
+	files, err := snapshotFiles(cmd.Context(), record, full)
 	if err != nil {
 		if cfg.JSON {
 			return writeJSONError(formatter, "query_failed", err.Error())
@@ -180,7 +181,7 @@ func runSnapshotCmd(cmd *cobra.Command, args []string) error {
 	return formatter.Table([]string{"FIELD", "VALUE"}, rows)
 }
 
-func snapshotFiles(record installer.InstallRecord, full bool) ([]string, error) {
+func snapshotFiles(ctx context.Context, record installer.InstallRecord, full bool) ([]string, error) {
 	if full {
 		files := []string{}
 		err := filepath.Walk(record.InstallRoot, func(path string, info os.FileInfo, walkErr error) error {
@@ -200,7 +201,7 @@ func snapshotFiles(record installer.InstallRecord, full bool) ([]string, error) 
 		return files, err
 	}
 
-	summary, err := validateTrackedInstall(record)
+	summary, err := validateTrackedInstall(ctx, record)
 	if err != nil {
 		return nil, err
 	}
