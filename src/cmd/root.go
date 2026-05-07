@@ -63,7 +63,13 @@ stored in a Dolt database.`,
 
 	// Register persistent (global) flags.
 	pf := rootCmd.PersistentFlags()
+	pf.String("dolt-client", "", "Dolt client to use: http, sql, or cli")
+	pf.String("dolt-host", "", "DoltHub HTTP API host")
+	pf.String("dolt-database", "", "DoltHub database slug in owner/database format")
+	pf.String("dolt-token", "", "DoltHub API token")
+	pf.String("dolt-dsn", "", "Dolt SQL server DSN")
 	pf.String("dolt-dir", "", "Dolt database directory (default: auto-detect)")
+	pf.String("dolt-timeout", "", "Dolt HTTP timeout in seconds")
 	pf.String("remote", "", "DoltHub remote name")
 	pf.String("branch", "", "Branch override (default: SC_DOLT_BRANCH or main)")
 	pf.Bool("json", false, "output as JSON")

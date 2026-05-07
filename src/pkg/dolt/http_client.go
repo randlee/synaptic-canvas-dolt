@@ -14,7 +14,7 @@ import (
 	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
 )
 
-const defaultHTTPTimeout = 30 * time.Second
+const DefaultHTTPTimeout = 30 * time.Second
 const maxHTTPQueryURLLength = 1800
 
 // HTTPConfig holds all parameters for NewHTTPClient.
@@ -38,6 +38,10 @@ type HTTPClient struct {
 type apiResponse struct {
 	QueryExecutionStatus  string           `json:"query_execution_status"`
 	QueryExecutionMessage string           `json:"query_execution_message"`
+	RepositoryOwner       string           `json:"repository_owner"`
+	RepositoryName        string           `json:"repository_name"`
+	CommitRef             string           `json:"commit_ref"`
+	SQLQuery              string           `json:"sql_query"`
 	Schema                []apiColumn      `json:"schema"`
 	Rows                  []map[string]any `json:"rows"`
 }
@@ -58,7 +62,7 @@ func NewHTTPClient(cfg HTTPConfig) *HTTPClient {
 	}
 	timeout := cfg.Timeout
 	if timeout <= 0 {
-		timeout = defaultHTTPTimeout
+		timeout = DefaultHTTPTimeout
 	}
 	return &HTTPClient{
 		baseURL:  host + "/api/v1alpha1",
@@ -105,7 +109,7 @@ func (c *HTTPClient) query(ctx context.Context, sql string) ([]map[string]any, e
 	if c.token != "" {
 		req.Header.Set("Authorization", "token "+c.token)
 	}
-	resp, err := c.http.Do(req)
+	resp, err := c.http.Do(req) //nolint:gosec // G704: URL comes from validated config, and requests are only issued by explicit CLI configuration.
 	if err != nil {
 		return nil, fmt.Errorf("querying DoltHub: %w", err)
 	}
@@ -118,6 +122,10 @@ func (c *HTTPClient) query(ctx context.Context, sql string) ([]map[string]any, e
 	case http.StatusNotFound:
 		return nil, fmt.Errorf("%w: DoltHub repository or branch not found", ErrNotFound)
 	case http.StatusTooManyRequests:
+		retryAfter := strings.TrimSpace(resp.Header.Get("Retry-After"))
+		if retryAfter != "" {
+			return nil, fmt.Errorf("%w: DoltHub returned HTTP 429; retry_after=%s", ErrRateLimited, retryAfter)
+		}
 		return nil, fmt.Errorf("%w: DoltHub returned HTTP 429", ErrRateLimited)
 	default:
 		if resp.StatusCode >= 500 {

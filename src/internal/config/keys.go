@@ -10,7 +10,7 @@ const (
 	KeyDoltTimeout  = "dolt.timeout"
 )
 
-var knownKeys = map[string]string{
+var knownKeys = map[string]string{ //nolint:gosec // G101: string values are env var key names, not credentials.
 	KeyDoltClient:   "SC_DOLT_CLIENT",
 	KeyDoltHost:     "SC_DOLT_HOST",
 	KeyDoltDatabase: "SC_DOLT_DATABASE",

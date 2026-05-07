@@ -60,8 +60,8 @@ func runConfigGet(cmd *cobra.Command, args []string) error {
 	if cfg.JSON {
 		return formatter.WriteJSON(configGetResponse{OK: true, Key: key, Value: value})
 	}
-	_, err = fmt.Fprintln(cmd.OutOrStdout(), value)
-	return err
+	formatter.Success(value)
+	return nil
 }
 
 func runConfigSet(cmd *cobra.Command, args []string) error {

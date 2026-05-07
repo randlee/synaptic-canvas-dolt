@@ -12,6 +12,7 @@ import (
 func TestConfigSetAndGetJSON(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 
 	var out bytes.Buffer
 	cmd := NewRootCmd("test", "abc", "2025-01-01")
@@ -30,7 +31,7 @@ func TestConfigSetAndGetJSON(t *testing.T) {
 	if !setResp.OK || setResp.Key != "dolt.database" || setResp.Path != wantPath {
 		t.Fatalf("unexpected set response: %+v", setResp)
 	}
-	data, err := os.ReadFile(wantPath)
+	data, err := os.ReadFile(wantPath) //nolint:gosec // G304: test reads from t.TempDir()-based path, not user input.
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
@@ -57,7 +58,9 @@ func TestConfigSetAndGetJSON(t *testing.T) {
 }
 
 func TestConfigUnknownKeyJSON(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 
 	var out bytes.Buffer
 	cmd := NewRootCmd("test", "abc", "2025-01-01")
@@ -78,7 +81,9 @@ func TestConfigUnknownKeyJSON(t *testing.T) {
 }
 
 func TestConfigGetEnvPrecedenceJSON(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	t.Setenv("SC_DOLT_DATABASE", "env/repo")
 
 	var out bytes.Buffer

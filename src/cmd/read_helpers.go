@@ -1,15 +1,27 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"time"
 
 	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/dolt"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
 	"github.com/spf13/cobra"
 )
 
-type readClient = dolt.Client
+type readClient interface {
+	ListPackages(ctx context.Context, opts dolt.ListOptions) ([]models.Package, error)
+	GetPackage(ctx context.Context, id string) (*models.Package, error)
+	GetPackageDetail(ctx context.Context, id string) (*models.Package, error)
+	GetPackageFiles(ctx context.Context, packageID string) ([]models.PackageFile, error)
+	GetPackageDeps(ctx context.Context, packageID string) ([]models.PackageDep, error)
+	GetPackageHooks(ctx context.Context, packageID string) ([]models.PackageHook, error)
+	GetPackageQuestions(ctx context.Context, packageID string) ([]models.PackageQuestion, error)
+	ResolveVariant(ctx context.Context, logicalID, agentProfile string) (string, error)
+	Close() error
+}
 
 var readClientOpener = openReadClient
 

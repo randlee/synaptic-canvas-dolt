@@ -64,8 +64,18 @@ func NewConfigFromFlags(cmd *cobra.Command) (*Config, error) {
 		fileValues:    map[string]string{},
 		explicitFlags: map[string]string{},
 	}
-	if flags.Lookup("dolt-dir").Changed {
-		cfg.explicitFlags[KeyDoltDir] = doltDir
+	for _, spec := range doltFlagSpecs {
+		flag := flags.Lookup(spec.Flag)
+		if flag == nil {
+			continue
+		}
+		value, err := flags.GetString(spec.Flag)
+		if err != nil {
+			return nil, fmt.Errorf("reading --%s: %w", spec.Flag, err)
+		}
+		if flag.Changed {
+			cfg.explicitFlags[spec.Key] = value
+		}
 	}
 	return cfg, nil
 }
@@ -110,4 +120,19 @@ func ExpandPath(path string) string {
 		return filepath.Join(home, path[2:])
 	}
 	return path
+}
+
+type doltFlagSpec struct {
+	Flag string
+	Key  string
+}
+
+var doltFlagSpecs = []doltFlagSpec{
+	{Flag: "dolt-client", Key: KeyDoltClient},
+	{Flag: "dolt-host", Key: KeyDoltHost},
+	{Flag: "dolt-database", Key: KeyDoltDatabase},
+	{Flag: "dolt-token", Key: KeyDoltToken},
+	{Flag: "dolt-dsn", Key: KeyDoltDSN},
+	{Flag: "dolt-dir", Key: KeyDoltDir},
+	{Flag: "dolt-timeout", Key: KeyDoltTimeout},
 }
