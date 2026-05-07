@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"testing"
 	"time"
 )
 
@@ -84,7 +85,14 @@ func resolveConsoleLevel(verbose, quiet bool) slog.Level {
 
 // fileHandler returns a JSON handler that writes to the log file.
 // The file handler always uses Info level regardless of verbosity settings.
+// During test execution, file logging is skipped entirely to avoid holding
+// open file handles inside t.TempDir() directories, which causes cleanup
+// failures on Windows.
 func fileHandler() (slog.Handler, error) {
+	if testing.Testing() {
+		return nil, fmt.Errorf("file logging disabled during tests")
+	}
+
 	dir, err := logDirPath()
 	if err != nil {
 		return nil, err
@@ -99,11 +107,15 @@ func fileHandler() (slog.Handler, error) {
 		_ = err
 	}
 
+	// Close any previously opened log file before opening a new one.
+	Close()
+
 	path := filepath.Join(dir, logFile)
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600) //nolint:gosec // path derived from os.UserHomeDir
 	if err != nil {
 		return nil, err
 	}
+	activeLogFile = f
 	return slog.NewJSONHandler(f, &slog.HandlerOptions{Level: slog.LevelInfo}), nil
 }
 
@@ -199,6 +211,19 @@ func SetupWithWriter(w io.Writer, verbose, quiet bool) *slog.Logger {
 	logger := slog.New(handler)
 	slog.SetDefault(logger)
 	return logger
+}
+
+// activeLogFile holds the currently open log file so it can be closed.
+var activeLogFile *os.File //nolint:gochecknoglobals // needs to be accessible for Close()
+
+// Close closes the active log file handle, if any. This must be called before
+// process exit (or before temp-directory cleanup in tests) to avoid file-lock
+// errors on Windows.
+func Close() {
+	if activeLogFile != nil {
+		_ = activeLogFile.Close()
+		activeLogFile = nil
+	}
 }
 
 // multiHandler fans out log records to multiple handlers.

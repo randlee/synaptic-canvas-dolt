@@ -20,7 +20,16 @@ Channels are **branches, not data**. The `develop`, `beta`, and `main` branches 
 -- No WHERE channel = 'main' — the branch IS the channel
 ```
 
-This eliminates data duplication and makes promotion a pure `dolt_merge`, not a data update.
+This eliminates the need for a channel column. Promotion has two command paths:
+
+- `sc admin promote <package>` performs targeted SQL for one named package:
+  DELETE the package's existing rows on the target branch, then INSERT ... SELECT
+  the package rows from the source branch, followed by a Dolt commit.
+- `sc admin promote all` performs whole-branch promotion with `dolt_merge`
+  from the source branch into the target branch.
+
+Package-level promotion and whole-branch promotion are intentionally different
+operations; the schema supports both because branches carry the channel state.
 
 ### 2. Text + JSON storage in `package_files`
 
@@ -39,7 +48,10 @@ The `sha256` column provides integrity verification independent of Dolt internal
 ### 3. Composite primary keys
 
 Most tables use composite PKs that naturally express their relationships:
-- `package_files`: (`package_id`, `dest_path`) — one file per destination per package
+- `package_files`: (`package_id`, `dest_path`) — one file per package-root
+  artifact path. The column name is currently `dest_path`, but the semantic
+  value is `doc_path`: a path relative to the package root and independent of
+  where the package is installed.
 - `package_deps`: (`package_id`, `dep_name`) — one dep entry per name per package
 - `package_questions`: (`package_id`, `question_id`) — one question per ID per package
 - `package_hooks`: (`package_id`, `event`, `script_path`) — one hook per event+script per package
@@ -95,7 +107,14 @@ CREATE TABLE packages (
 
 ### `package_files`
 
-One row per file in the package. File content is stored as text with YAML frontmatter extracted into searchable columns and a JSON column.
+One row per file in the package. File content is stored as text with YAML
+frontmatter extracted into searchable columns and a JSON column.
+
+`dest_path` is the current schema column name for the canonical package
+`doc_path`. It must not include runtime roots such as `.claude/`,
+`~/.claude/`, `.agents/`, or `~/.agents/`. Package metadata and installer
+target mapping decide where a `doc_path` is materialized for a specific AI
+agent ecosystem.
 
 ```sql
 CREATE TABLE package_files (
@@ -130,6 +149,10 @@ CREATE TABLE package_files (
 | `script` | `.claude/skills/{pkg}/scripts/` | Executable scripts (Python, shell) |
 | `hook` | `.claude/skills/{pkg}/hooks/` | Hook scripts registered with dispatcher |
 | `config` | `.claude/skills/{pkg}/` | Configuration files (JSON, YAML) |
+
+The table above describes the MVP `.claude` target mapping. Future `.agents`
+support should be implemented through package metadata and target mapping, not
+by embedding `.claude` or `.agents` in the immutable `doc_path` identity.
 
 **`content_type` values:**
 
@@ -519,7 +542,11 @@ The `content` column always contains the exact original file — the frontmatter
 | `beta` | Validated, needs broader testing | Promoted from develop | Early adopters |
 | `main` | Proven, stable | Promoted from beta | All users, marketplace export |
 
-**Promotion:** `dolt_merge('develop')` on the beta branch; `dolt_merge('beta')` on main. Each merge is a Dolt commit with author and message — full audit trail.
+**Promotion:** `sc admin promote <package>` promotes one package via targeted
+DELETE + INSERT ... SELECT SQL from source branch to target branch, then commits.
+`sc admin promote all` promotes the whole branch using `dolt_merge('develop')`
+on beta or `dolt_merge('beta')` on main. Each path creates a Dolt commit with
+author and message for auditability.
 
 **Rollback:** `dolt_reset('--hard', 'HEAD~1')` on any branch reverts the last promotion.
 

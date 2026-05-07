@@ -48,7 +48,7 @@
 
 **Layer 2 — `sc:plugin` skill:** A Claude Code skill that wraps the `sc` CLI. Allows Claude to manage packages conversationally ("install the delay package"). Thin wrapper — delegates all logic to the CLI.
 
-**Layer 3 — Dolt Database:** Source of truth. Packages, files, dependencies, and metadata stored in relational tables. Branches (`develop`, `beta`, `main`) serve as release channels. Promotion copies specific package rows between branches via targeted SQL (DELETE + INSERT ... SELECT) followed by a Dolt commit — not a full branch merge.
+**Layer 3 — Dolt Database:** Source of truth. Packages, files, dependencies, and metadata stored in relational tables. Branches (`develop`, `beta`, `main`) serve as release channels. Package promotion copies specific package rows between branches via targeted SQL (DELETE + INSERT ... SELECT) followed by a Dolt commit. Whole-branch promotion uses `dolt_merge`.
 
 ### Installer
 
@@ -76,20 +76,24 @@ sc info <package>
 sc init
     Initialize `.synaptic/` state for the current repository.
 
-sc install <package> [--global] [--branch <branch>] [--dry-run] [--yolo]
+sc install <package> [--scope <project|global|both>] [--branch <branch>] [--dry-run] [--yolo]
     Install a package from Dolt.
-    --global    Install to ~/.claude/ (default: .claude/ in current repo)
+    --scope     Install to project .claude/, global ~/.claude/, or both (default: both)
     --branch    Install from specific branch (default: main)
     --dry-run   Show the install plan and template preview without side effects
     --yolo      Execute the computed install plan without interactive confirmation
 
-sc upgrade <package> [--all] [--scope <project|global|both>] [--branch <branch>] [--version <version>] [--yolo]
+sc upgrade <package> [--all] [--scope <project|global|both>] [--branch <branch>] [--version <version>] [--yolo] [--force]
     Upgrade installed package(s) to latest version on their tracked branch and scope by default.
     --branch    Explicitly retarget upgrade to a different branch
     --version   Explicitly target a specific version on the chosen branch
+    --force     Override blocked-upgrade checks for a single targeted package.
+                May not be combined with --all; exits with error if both are supplied.
 
-sc uninstall <package> [--scope <project|global|both>] [--yolo]
+sc uninstall <package> [--scope <project|global|both>] [--yolo] [--force]
     Remove an installed package from the selected tracked install scope.
+    --force     Remove package files even when local modifications are detected.
+                Without --force, locally modified files cause a prompt [y/N] or error in non-TTY mode.
 
 sc validate [<package>] [--all] [--scope <project|global|both>]
     Verify installed files, dependency state, and tracked install health.
@@ -101,9 +105,37 @@ sc validate [<package>] [--all] [--scope <project|global|both>]
 sc status [--scope <project|global|both>]
     Show installed packages, their versions, branches, scopes, and validation state.
 
-sc scan [<path> ...]
-    Scan repository folders for installed packages and reconcile them into local tracking state.
-    Defaults to the current folder and supports `--recurse`.
+sc scan [<path> ...] [--recurse] [--scope <project|global|both>] [--accept-all] [--upgrade-all]
+    Scan for installed packages and reconcile them into local tracking state.
+    Default mode: walks .claude/ (project) and ~/.claude/ (global).
+    Custom paths as positional args override scope. Discovers installs by mapping on-disk files
+    to package doc_path values and SHA-matching against the local catalog.
+    Default mode lists candidates only — no tracking state mutation.
+    --accept-all   Write lockfile entries for all discovered untracked installs
+    --upgrade-all  Upgrade existing tracked installs to the catalog version
+    --accept-all and --upgrade-all are mutually exclusive.
+    --json controls output format only; mutation still depends on explicit action flags.
+    Requires local catalog; never triggers a live Dolt connection. Run sc catalog update first.
+
+sc catalog update [--branch <branch>] [--scope <project|global|both>]
+    Fetch the SHA catalog for the effective branch from Dolt and write it to the local cache
+    at .synaptic/catalog-{branch}.toml (local) or ~/.synaptic/catalog-{branch}.toml (global).
+    --scope controls write target:
+      project → .synaptic/catalog-{branch}.toml
+      global  → ~/.synaptic/catalog-{branch}.toml
+      both    → writes both locations
+    Default scope: both.
+    Also triggered implicitly by sc install and sc init.
+
+sc config get <key>
+    Read a configuration value. Prints the resolved value using explicit flag,
+    environment, ~/.sc/config.toml, then default precedence. Unknown keys are
+    rejected with an error.
+
+sc config set <key> <value>
+    Write a configuration value to ~/.sc/config.toml, creating the file if absent.
+    Unknown keys are rejected. Valid keys: dolt.client, dolt.host, dolt.database,
+    dolt.token, dolt.dsn, dolt.dir, dolt.timeout.
 
 sc snapshot <package> [--scope <project|global|both>] [--full]
     Export local modifications for the selected package into global snapshot staging.
@@ -120,6 +152,10 @@ sc admin import <path> --branch <branch>
     Computes SHA256 per file and aggregate package SHA.
     Creates a Dolt commit with package metadata.
     Runs template variable validation on .j2 files (warning, non-blocking).
+    Enforces CA-007 before writing: hard-fails if any file's
+    (package_id, dest_path, branch) tuple already exists in the catalog with a
+    different SHA. The error names the colliding file plus existing and incoming
+    SHAs.
 
 sc admin export <package> --output <dir> [--branch <branch>]
     Export a package from Dolt to filesystem.
@@ -132,6 +168,16 @@ sc admin publish <package> --from <branch> --to <branch>
     Promotes a package by copying its rows (packages, package_files, deps, hooks, questions) from the source branch to the target branch via targeted SQL, then commits.
     Runs template variable validation as a BLOCKING gate — publish
     fails if any .j2 template references undeclared variables.
+
+sc admin promote <package> --from <branch> --to <branch>
+    Targeted package promotion. Copies only the named package's rows from source
+    branch to target branch using DELETE + INSERT ... SELECT targeted SQL, then
+    creates a Dolt commit. This does not merge unrelated branch changes.
+
+sc admin promote all --from <branch> --to <branch>
+    Whole-branch promotion. Runs a Dolt branch merge (`dolt_merge`) from source
+    into target and commits the branch-level result. Use only when the entire
+    source branch is ready to promote.
 
 sc admin verify <package> [--branch <branch>]
     Full integrity check within Dolt: recompute all SHA256 hashes
@@ -152,6 +198,14 @@ sc admin diff <package> --branch1 <b1> --branch2 <b2>
 --quiet               Suppress non-essential output
 --verbose             Detailed output including SHA hashes
 ```
+
+`--json` is strictly an output-format selector. It must not change whether a
+command mutates state; mutation is controlled by command action flags such as
+`--accept-all`, `--upgrade-all`, `--yolo`, and `--dry-run`. If a future
+interactive/session mode is started with `--json`, all commands in that session
+inherit JSON output. Any future command that accepts JSON arguments or a JSON
+request payload also emits JSON output for that invocation even if `--json` is
+omitted.
 
 Read-path branch resolution order:
 
@@ -233,9 +287,13 @@ Rules:
 
 ### `sc install --json`
 
+`plan: true` indicates a dry-run response — no files were written.
+`dependency_warnings` lists unmet or uninstalled dependency warnings.
+
 ```json
 {
   "ok": true,
+  "plan": false,
   "package": "team-lead",
   "branch": "beta",
   "version": "1.2.0",
@@ -256,9 +314,39 @@ Rules:
   "template_validation": {
     "status": "ok",
     "warnings": []
-  }
+  },
+  "dependency_warnings": []
 }
 ```
+
+### `sc upgrade --json`
+
+Each result item carries a `warnings` array for per-package upgrade notes
+(local modification warnings, already-on-latest, dependency warnings).
+
+```json
+{
+  "ok": true,
+  "results": [
+    {
+      "package": "team-lead",
+      "branch": "main",
+      "version": "1.3.0",
+      "scope": "project",
+      "status": "upgraded",
+      "warnings": [],
+      "dependency_warnings": []
+    }
+  ]
+}
+```
+
+### File Mode Policy
+
+Script and hook files (`file_type: script` or `hook`) are written with mode
+`0755`. All other files are written with mode `0644`. Mode is set atomically
+alongside the file content write. This behavior is stable and automation may
+depend on it.
 
 Other Phase 3 commands follow the same top-level `ok` convention and emit
 command-specific structured payloads for automation.
@@ -278,11 +366,11 @@ Package SHA (aggregate)
 
 **Per-file SHA256:** Computed over the raw file content bytes at ingest time. Stored in `package_files.sha256`. Verified on export and install.
 
-**Package-level SHA256:** Deterministic aggregate hash computed over sorted `(dest_path, sha256)` pairs. Stored in `packages.sha256` (column to be added). Provides a single value for quick "has anything changed?" checks.
+**Package-level SHA256:** Deterministic aggregate hash computed over sorted `(doc_path, sha256)` pairs. Stored in `packages.sha256` (column to be added). Provides a single value for quick "has anything changed?" checks. `doc_path` is the package-root-relative artifact path, not the materialized install path under `.claude/`, `~/.claude/`, `.agents/`, or another target root.
 
 ```
 package_sha = SHA256(
-    sorted([f"{dest_path}:{sha256}" for each file])
+    sorted([f"{doc_path}:{sha256}" for each file])
     joined by newline
 )
 ```
@@ -304,6 +392,8 @@ This is a Merkle-like construction — changing any file changes the package SHA
 Per-file validation states:
 - `OK` — file exists and SHA matches
 - `MODIFIED` — file exists but SHA does not match
+- `SHA_MISMATCH` — file exists on disk but SHA does not match the catalog entry;
+  severity = `error`
 - `MISSING` — file does not exist
 - `UNREADABLE` — file exists but cannot be read (permission denied or I/O error); `Err` field contains the underlying cause
 - `EXTRA` — file exists on disk but has no entry in the package
@@ -312,14 +402,16 @@ Per-file validation states:
 ```
 For each installed file:
   local_sha = SHA256(read file from disk)
-  expected_sha = query package_files.sha256 from Dolt
+  expected_sha = read package_files.sha256 from local catalog cache
+                 (.synaptic/catalog-{branch}.toml or ~/.synaptic/catalog-{branch}.toml)
   Compare → OK | MODIFIED | MISSING | UNREADABLE
 
-For extra files in the installed package's managed target paths that are not in Dolt:
+For extra files in the installed package's managed target paths that are not tracked
+by the installed package file inventory:
   Report → EXTRA (untracked)
 
 Compute aggregate from local file SHAs:
-  Compare against packages.sha256 → PASS | FAIL
+  Compare against catalog aggregate/package SHA when available → PASS | FAIL
 
 Verify tracked dependency and component state:
   required_tools present and version-compatible → PASS | FAIL
@@ -399,6 +491,8 @@ synaptic-canvas-dolt/
 │   │   ├── info.go               # sc info
 │   │   ├── install.go            # sc install
 │   │   ├── scan.go               # sc scan
+│   │   ├── catalog.go            # sc catalog
+│   │   ├── configcmd.go          # sc config get/set
 │   │   ├── snapshot.go           # sc snapshot
 │   │   ├── upgrade.go            # sc upgrade
 │   │   ├── uninstall.go          # sc uninstall
@@ -413,15 +507,21 @@ synaptic-canvas-dolt/
 │   │       └── diff.go           # sc admin diff
 │   ├── pkg/                      # Public packages
 │   │   ├── dolt/                 # Dolt database client
+│   │   │   ├── http_client.go    # HTTPClient — DoltHub REST API (MVP)
+│   │   │   ├── errors.go         # Sentinel errors (ErrNotFound, ErrUnauthorized, etc.)
 │   │   ├── integrity/            # SHA computation and verification
 │   │   ├── manifest/             # manifest.yaml reconstruction
 │   │   ├── plugin/               # plugin.json reconstruction
+│   │   ├── catalog/              # SHA catalog: TOML cache, writeTOMLAtomic
 │   │   ├── installer/            # File installation logic
 │   │   ├── questionnaire/        # Install/upgrade question prompting + answer tracking
 │   │   ├── repo/                 # Repo detection/profile generation and scan helpers
 │   │   └── models/               # Data structures (Package, File, Dep)
 │   └── internal/                 # Private implementation
 │       ├── config/               # CLI configuration
+│       │   ├── config.go         # Config struct, NewConfigFromFlags, EffectiveBranch
+│       │   ├── fileconfig.go     # Layered file config (~/.sc/config.toml)
+│       │   └── keys.go           # Config key constants (KeyDoltClient, etc.)
 │       └── output/               # Output formatters (table, JSON)
 ├── sql/                          # DDL scripts
 │   └── 001-create-tables.sql
@@ -500,7 +600,7 @@ For package authors who want Claude to help with admin operations:
 "publish to beta"      → sc admin publish <pkg> --from develop --to beta --json
 ```
 
-Not installed by default. Available via `sc install sc-admin-skill --global`.
+Not installed by default. Available via `sc install sc-admin-skill --scope global`.
 
 ---
 

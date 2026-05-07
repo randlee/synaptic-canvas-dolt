@@ -397,8 +397,9 @@ then format the result by scope when needed.
 - `any` permits either local install (`.claude/`) or global install (`~/.claude/`)
 - `local-only` permits only project-local install
 
-If a user requests `sc install --global` for a `local-only` package, the CLI
-must fail with a clear error before writing files or changing lockfile state.
+If a user requests `sc install --scope global` or `sc install --scope both` for
+a `local-only` package, the CLI must fail with a clear error before writing
+files or changing lockfile state.
 
 ### Approval, Provenance, And `--yolo`
 
@@ -570,7 +571,7 @@ Template variables come from three namespaces with well-defined schemas:
 |-----------|--------|--------|
 | `repo.*` | Auto-detected repo profile (Phase 1) | Fixed set: `name`, `root`, `primary_language`, `languages`, `frameworks`, `test_frameworks`, `ci_system`, `monorepo`, `git_conventions` |
 | `answers.*` | User answers to `package_questions` (Phase 2) | Dynamic: one variable per `question_id` in `package_questions` for this package |
-| `env.*` | Synaptic Canvas environment | Fixed set: `synaptic_root`, `sc_dolt_branch`, `synaptic_agents` |
+| `env.*` | Synaptic Canvas environment | Fixed set: `synaptic_root`, `sc_dolt_branch`, `synaptic_agents`, `synaptic_shared`, `synaptic_skills`, `synaptic_project_root` |
 
 No new database table is needed — the mapping is implicit. `{{ answers.style }}` is satisfied by `package_questions WHERE question_id = 'style'`. The `repo.*` and `env.*` schemas are fixed and known to the validator.
 
