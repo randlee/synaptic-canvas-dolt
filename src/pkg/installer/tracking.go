@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	toml "github.com/pelletier/go-toml/v2"
+	"github.com/randlee/synaptic-canvas-dolt/internal/atomicfile"
 )
 
 const (
@@ -15,6 +17,8 @@ const (
 	EnvPath          = ".synaptic/env.toml"
 	HooksRegistry    = ".synaptic/hooks/registry.toml"
 )
+
+var stateFileMutexes sync.Map // map[string]*sync.Mutex, keyed by canonical lock path.
 
 // ManifestLock is the normative install tracking file.
 type ManifestLock struct {
@@ -129,7 +133,7 @@ func SaveManifestLock(root string, lock ManifestLock) error {
 
 func saveManifestLockNoLock(root string, lock ManifestLock) error {
 	lock.Version = 1
-	return writeTOMLAtomic(filepath.Join(root, ManifestLockPath), lock)
+	return atomicfile.WriteTOML(filepath.Join(root, ManifestLockPath), lock, 0o750)
 }
 
 // WithManifestLock holds the manifest advisory lock for a full load-modify-save cycle.
@@ -203,7 +207,7 @@ func SaveHookRegistry(root string, registry HookRegistry) error {
 }
 
 func saveHookRegistryNoLock(root string, registry HookRegistry) error {
-	return writeTOMLAtomic(filepath.Join(root, HooksRegistry), registry)
+	return atomicfile.WriteTOML(filepath.Join(root, HooksRegistry), registry, 0o750)
 }
 
 // WithHookRegistry holds the hook registry advisory lock for a full mutation.
@@ -261,42 +265,12 @@ func hookEntryOwnedBy(hook HookEntry, packageID, scope string) bool {
 
 // SaveRepoProfile writes the repo profile TOML atomically.
 func SaveRepoProfile(root string, profile any) error {
-	return writeTOMLAtomic(filepath.Join(root, RepoProfilePath), profile)
+	return atomicfile.WriteTOML(filepath.Join(root, RepoProfilePath), profile, 0o750)
 }
 
 // SaveEnv writes env.toml atomically.
 func SaveEnv(root string, env any) error {
-	return writeTOMLAtomic(filepath.Join(root, EnvPath), env)
-}
-
-// NOTE: duplicate of catalog.writeTOMLAtomic; a future refactor may extract this to src/internal/atomicfile/.
-func writeTOMLAtomic(path string, value any) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-		return fmt.Errorf("creating parent dir: %w", err)
-	}
-	data, err := toml.Marshal(value)
-	if err != nil {
-		return fmt.Errorf("encoding toml: %w", err)
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
-	if err != nil {
-		return fmt.Errorf("creating temp file: %w", err)
-	}
-	tmpName := tmp.Name()
-	defer func() { _ = os.Remove(tmpName) }()
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("writing temp file: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("closing temp file: %w", err)
-	}
-	cleanTmp := filepath.Clean(tmpName)
-	cleanPath := filepath.Clean(path)
-	if err := os.Rename(cleanTmp, cleanPath); err != nil { //nolint:gosec // both paths are confined to Synaptic-managed state and an installer-created temp file.
-		return fmt.Errorf("atomic replace %s: %w", path, err)
-	}
-	return nil
+	return atomicfile.WriteTOML(filepath.Join(root, EnvPath), env, 0o750)
 }
 
 func manifestLockFile(root string) string {
@@ -311,6 +285,13 @@ func withStateFileLock(lockPath string, fn func() error) (err error) {
 	if err := os.MkdirAll(filepath.Dir(lockPath), 0o750); err != nil {
 		return fmt.Errorf("creating lock dir: %w", err)
 	}
+	inProcessMu, err := stateFileMutex(lockPath)
+	if err != nil {
+		return err
+	}
+	inProcessMu.Lock()
+	defer inProcessMu.Unlock()
+
 	file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600) //nolint:gosec // lock path is derived from Synaptic-managed state paths.
 	if err != nil {
 		return fmt.Errorf("opening lock file %s: %w", lockPath, err)
@@ -329,4 +310,28 @@ func withStateFileLock(lockPath string, fn func() error) (err error) {
 	}
 	locked = true
 	return fn()
+}
+
+func stateFileMutex(path string) (*sync.Mutex, error) {
+	key, err := canonicalLockPath(path)
+	if err != nil {
+		return nil, err
+	}
+	mu, _ := stateFileMutexes.LoadOrStore(key, &sync.Mutex{})
+	return mu.(*sync.Mutex), nil
+}
+
+func canonicalLockPath(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolving lock path %s: %w", path, err)
+	}
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		return filepath.Clean(resolved), nil
+	}
+	dir, err := filepath.EvalSymlinks(filepath.Dir(abs))
+	if err != nil {
+		return filepath.Clean(abs), nil
+	}
+	return filepath.Clean(filepath.Join(dir, filepath.Base(abs))), nil
 }

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
 )
@@ -270,6 +271,56 @@ func TestHTTPClientRetriesRateLimit(t *testing.T) {
 	}
 	if got := attempts.Load(); got != maxHTTPRateLimitRetries+1 {
 		t.Fatalf("attempts = %d, want %d", got, maxHTTPRateLimitRetries+1)
+	}
+}
+
+func TestHTTPClientRateLimitRetryDelay(t *testing.T) {
+	t.Parallel()
+
+	future := time.Now().Add(2 * time.Second).UTC().Truncate(time.Second)
+	tests := []struct {
+		name       string
+		retryAfter string
+		attempt    int
+		wantMin    time.Duration
+		wantMax    time.Duration
+	}{
+		{name: "http date", retryAfter: future.Format(http.TimeFormat), wantMin: time.Second, wantMax: 3 * time.Second},
+		{name: "default backoff", retryAfter: "", attempt: 1, wantMin: 200 * time.Millisecond, wantMax: 200 * time.Millisecond},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := rateLimitRetryDelay(tt.retryAfter, tt.attempt)
+			if got < tt.wantMin || got > tt.wantMax {
+				t.Fatalf("rateLimitRetryDelay() = %v, want between %v and %v", got, tt.wantMin, tt.wantMax)
+			}
+		})
+	}
+}
+
+func TestHTTPClientRateLimitRetrySleepHonorsContextCancellation(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attempts.Add(1)
+		cancel()
+		http.Error(w, http.StatusText(http.StatusTooManyRequests), http.StatusTooManyRequests)
+	}))
+	defer server.Close()
+
+	client := NewHTTPClient(HTTPConfig{Host: server.URL, Database: "owner/repo"})
+	start := time.Now()
+	_, err := client.ListPackages(ctx, ListOptions{})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("retry sleep ignored cancellation; elapsed=%v", elapsed)
+	}
+	if got := attempts.Load(); got != 1 {
+		t.Fatalf("attempts = %d, want 1", got)
 	}
 }
 

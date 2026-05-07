@@ -94,8 +94,14 @@ func NewImportCmd() *cobra.Command {
 }
 
 type importSHACollisionJSON struct {
-	Error       string `json:"error"`
-	File        string `json:"file"`
+	OK    bool                        `json:"ok"`
+	Error importSHACollisionErrorJSON `json:"error"`
+	File  string                      `json:"file"`
+}
+
+type importSHACollisionErrorJSON struct {
+	Code        string `json:"code"`
+	Message     string `json:"message"`
 	Package     string `json:"package"`
 	Version     string `json:"version"`
 	Branch      string `json:"branch"`
@@ -108,15 +114,23 @@ func writeImportJSONError(formatter *output.Formatter, err error) (bool, error) 
 	if !errors.As(err, &collision) {
 		return false, nil
 	}
-	return true, formatter.WriteJSON(importSHACollisionJSON{
-		Error:       "sha_collision",
-		File:        collision.File,
-		Package:     collision.Package,
-		Version:     collision.Version,
-		Branch:      collision.Branch,
-		ExistingSHA: collision.ExistingSHA,
-		IncomingSHA: collision.IncomingSHA,
-	})
+	message := fmt.Sprintf("SHA collision for %s in package %s %s on branch %s", collision.File, collision.Package, collision.Version, collision.Branch)
+	if writeErr := formatter.WriteJSON(importSHACollisionJSON{
+		OK:   false,
+		File: collision.File,
+		Error: importSHACollisionErrorJSON{
+			Code:        "sha_collision",
+			Message:     message,
+			Package:     collision.Package,
+			Version:     collision.Version,
+			Branch:      collision.Branch,
+			ExistingSHA: collision.ExistingSHA,
+			IncomingSHA: collision.IncomingSHA,
+		},
+	}); writeErr != nil {
+		return true, writeErr
+	}
+	return true, err
 }
 
 func openImportReadClient(cfg *config.Config, doltDir, branch string) (dolt.Client, error) {

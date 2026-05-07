@@ -179,8 +179,10 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 		if len(summaries) == 0 {
 			if len(failures) > 0 {
 				if cfg.JSON {
+					message := "install failed for all selected scopes"
 					if err := formatter.WriteJSON(map[string]any{
 						"ok":          false,
+						"error":       jsonErrorPayload{Code: "install_failed", Message: message},
 						"plan":        dryRun,
 						"scope":       scope,
 						"partial":     partial,
@@ -190,7 +192,7 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 					}); err != nil {
 						return err
 					}
-					return jsonCmdError{cause: fmt.Errorf("install failed for all selected scopes")}
+					return jsonCmdError{cause: fmt.Errorf("%s", message)}
 				}
 				return fmt.Errorf("install failed for all selected scopes")
 			}
@@ -229,8 +231,13 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 					"answers":                      summary.Answers,
 				})
 			}
+			errorValue := any(nil)
+			if partialFailed {
+				errorValue = jsonErrorPayload{Code: "install_failed", Message: "install failed for one or more scopes"}
+			}
 			if err := formatter.WriteJSON(map[string]any{
 				"ok":          !partialFailed,
+				"error":       errorValue,
 				"plan":        dryRun,
 				"scope":       scope,
 				"partial":     partial,

@@ -17,6 +17,8 @@ type jsonErrorPayload struct {
 	Message string `json:"message"`
 }
 
+// jsonCmdError is a sentinel error for JSON-mode failures that have already
+// rendered their standard error envelope and should not be printed again.
 type jsonCmdError struct {
 	cause error
 }
@@ -41,6 +43,12 @@ func isJSONCmdError(err error) bool {
 // that has already been rendered to stdout/stderr.
 func IsJSONCmdError(err error) bool {
 	return isJSONCmdError(err)
+}
+
+// JSONErrorExitCode is intentionally shared with all command failures so scripts
+// only need to check non-zero status while reading the structured JSON envelope.
+func JSONErrorExitCode(error) int {
+	return 1
 }
 
 func writeJSONError(formatter *output.Formatter, code, message string) error {

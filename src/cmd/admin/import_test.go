@@ -133,29 +133,37 @@ func TestWriteImportJSONErrorShape(t *testing.T) {
 		ExistingSHA: "existing",
 		IncomingSHA: "incoming",
 	})
-	if err != nil {
-		t.Fatalf("writeImportJSONError() error = %v", err)
-	}
 	if !handled {
 		t.Fatal("collision error was not handled")
 	}
-	var got map[string]string
+	if err == nil {
+		t.Fatal("writeImportJSONError() error = nil, want collision error")
+	}
+	var got struct {
+		OK    bool `json:"ok"`
+		File  string
+		Error struct {
+			Code        string `json:"code"`
+			Message     string `json:"message"`
+			Package     string `json:"package"`
+			Version     string `json:"version"`
+			Branch      string `json:"branch"`
+			ExistingSHA string `json:"existing_sha"`
+			IncomingSHA string `json:"incoming_sha"`
+		} `json:"error"`
+	}
 	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
 	}
-	want := map[string]string{
-		"error":        "sha_collision",
-		"file":         "skills/sample-skill/SKILL.md.j2",
-		"package":      "sample-skill",
-		"version":      "1.2.3",
-		"branch":       "develop",
-		"existing_sha": "existing",
-		"incoming_sha": "incoming",
+	if got.OK || got.File != "skills/sample-skill/SKILL.md.j2" || got.Error.Code != "sha_collision" {
+		t.Fatalf("unexpected envelope: %+v", got)
 	}
-	for key, value := range want {
-		if got[key] != value {
-			t.Fatalf("json field %s = %q, want %q; full=%+v", key, got[key], value, got)
-		}
+	if got.Error.Package != "sample-skill" || got.Error.Version != "1.2.3" || got.Error.Branch != "develop" ||
+		got.Error.ExistingSHA != "existing" || got.Error.IncomingSHA != "incoming" {
+		t.Fatalf("unexpected collision detail: %+v", got.Error)
+	}
+	if !strings.Contains(got.Error.Message, "SHA collision") {
+		t.Fatalf("message = %q, want collision text", got.Error.Message)
 	}
 }
 

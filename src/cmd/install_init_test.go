@@ -389,6 +389,7 @@ func TestInstallScopeBothMixedWriteAndFailureReturnsExitOne(t *testing.T) {
 
 	var resp struct {
 		OK         bool                  `json:"ok"`
+		Error      jsonErrorPayload      `json:"error"`
 		Partial    bool                  `json:"partial"`
 		Installs   []map[string]any      `json:"installs"`
 		RolledBack []map[string]any      `json:"rolled_back"`
@@ -399,6 +400,9 @@ func TestInstallScopeBothMixedWriteAndFailureReturnsExitOne(t *testing.T) {
 	}
 	if resp.OK || resp.Partial || len(resp.Installs) != 0 || len(resp.RolledBack) != 1 || len(resp.Failures) != 1 {
 		t.Fatalf("expected project rollback after global failure, got %+v", resp)
+	}
+	if resp.Error.Code != "install_failed" || resp.Error.Message != "install failed for all selected scopes" {
+		t.Fatalf("unexpected error envelope: %+v", resp.Error)
 	}
 	if resp.Failures[0].Scope != "global" {
 		t.Fatalf("failure scope = %q, want global", resp.Failures[0].Scope)
