@@ -15,6 +15,7 @@ import (
 	// MySQL driver for database/sql — Dolt exposes a MySQL-compatible interface.
 	mysql "github.com/go-sql-driver/mysql"
 
+	"github.com/randlee/synaptic-canvas-dolt/pkg/catalog"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
 )
 
@@ -55,6 +56,9 @@ type Client interface {
 	// ResolveVariant resolves a logical package ID and agent profile to a
 	// concrete variant package ID. Returns empty string if no variant exists.
 	ResolveVariant(ctx context.Context, logicalID, agentProfile string) (string, error)
+
+	// GetPackageCatalog returns package asset hashes visible on this client's branch.
+	GetPackageCatalog(ctx context.Context) ([]catalog.CatalogEntry, error)
 
 	// Close releases database resources.
 	Close() error
@@ -339,4 +343,27 @@ func (c *SQLClient) ResolveVariant(ctx context.Context, logicalID, agentProfile 
 		return "", fmt.Errorf("resolving variant %q/%q: %w", logicalID, agentProfile, err)
 	}
 	return variantID, nil
+}
+
+// GetPackageCatalog returns current package file SHAs for the configured branch.
+func (c *SQLClient) GetPackageCatalog(ctx context.Context) ([]catalog.CatalogEntry, error) {
+	slog.Debug("getting package catalog", "branch", c.branch)
+	rows, err := c.db.QueryContext(ctx, GetPackageCatalogQuery(c.database, c.branch))
+	if err != nil {
+		return nil, fmt.Errorf("getting package catalog: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var entries []catalog.CatalogEntry
+	for rows.Next() {
+		var entry catalog.CatalogEntry
+		if err := rows.Scan(&entry.PackageID, &entry.Version, &entry.DocPath, &entry.SHA256); err != nil {
+			return nil, fmt.Errorf("scanning package catalog row: %w", err)
+		}
+		entries = append(entries, entry)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating package catalog: %w", err)
+	}
+	return entries, nil
 }

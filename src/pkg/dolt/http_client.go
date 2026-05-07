@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/randlee/synaptic-canvas-dolt/pkg/catalog"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
 )
 
@@ -274,6 +275,27 @@ func (c *HTTPClient) ResolveVariant(ctx context.Context, logicalID, agentProfile
 		return "", nil
 	}
 	return stringValue(rows[0], "variant_package_id"), nil
+}
+
+func (c *HTTPClient) GetPackageCatalog(ctx context.Context) ([]catalog.CatalogEntry, error) {
+	rows, err := c.query(ctx, `SELECT f.package_id, p.version, f.dest_path AS doc_path, f.sha256
+FROM package_files AS f
+JOIN packages AS p ON p.id = f.package_id
+WHERE COALESCE(f.sha256, '') <> ''
+ORDER BY f.package_id, p.version, f.dest_path`)
+	if err != nil {
+		return nil, err
+	}
+	entries := make([]catalog.CatalogEntry, 0, len(rows))
+	for _, row := range rows {
+		entries = append(entries, catalog.CatalogEntry{
+			PackageID: stringValue(row, "package_id"),
+			Version:   stringValue(row, "version"),
+			DocPath:   stringValue(row, "doc_path"),
+			SHA256:    stringValue(row, "sha256"),
+		})
+	}
+	return catalog.SortedEntries(entries), nil
 }
 
 func httpListPackagesSQL(tags []string) string {

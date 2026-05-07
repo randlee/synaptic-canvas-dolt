@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/randlee/synaptic-canvas-dolt/pkg/catalog"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
 )
 
@@ -18,6 +19,7 @@ type MockClient struct {
 	Hooks     map[string][]models.PackageHook
 	Questions map[string][]models.PackageQuestion
 	Variants  map[string]string // key: "logicalID/agentProfile" -> variantPackageID
+	Catalog   []catalog.CatalogEntry
 
 	// Error fields allow tests to inject errors for specific operations.
 	ListErr      error
@@ -27,6 +29,7 @@ type MockClient struct {
 	HooksErr     error
 	QuestionsErr error
 	VariantErr   error
+	CatalogErr   error
 	CloseErr     error
 
 	Closed bool
@@ -160,6 +163,33 @@ func (m *MockClient) ResolveVariant(_ context.Context, logicalID, agentProfile s
 	}
 	key := logicalID + "/" + agentProfile
 	return m.Variants[key], nil
+}
+
+// GetPackageCatalog returns the configured mock catalog entries.
+func (m *MockClient) GetPackageCatalog(_ context.Context) ([]catalog.CatalogEntry, error) {
+	if m.CatalogErr != nil {
+		return nil, m.CatalogErr
+	}
+	if m.Catalog != nil {
+		result := make([]catalog.CatalogEntry, len(m.Catalog))
+		copy(result, m.Catalog)
+		return result, nil
+	}
+	result := []catalog.CatalogEntry{}
+	for _, pkg := range m.Packages {
+		for _, file := range m.Files[pkg.ID] {
+			if file.SHA256 == "" {
+				continue
+			}
+			result = append(result, catalog.CatalogEntry{
+				PackageID: pkg.ID,
+				Version:   pkg.Version,
+				DocPath:   file.DestPath,
+				SHA256:    file.SHA256,
+			})
+		}
+	}
+	return catalog.SortedEntries(result), nil
 }
 
 func matchesTags(have, want []string) bool {

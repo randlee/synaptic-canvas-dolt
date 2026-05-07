@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/randlee/synaptic-canvas-dolt/pkg/catalog"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
 )
 
@@ -153,6 +154,16 @@ func (r *CLIReader) ResolveVariant(ctx context.Context, logicalID, agentProfile 
 		return "", nil
 	}
 	return rows[0].VariantPackageID, nil
+}
+
+func (r *CLIReader) GetPackageCatalog(ctx context.Context) ([]catalog.CatalogEntry, error) {
+	return runCLIQuery[catalog.CatalogEntry](ctx, r.DoltDir, r.Branch,
+		`SELECT f.package_id, p.version, f.dest_path AS doc_path, f.sha256
+FROM package_files AS f
+JOIN packages AS p ON p.id = f.package_id
+WHERE COALESCE(f.sha256, '') <> ''
+ORDER BY f.package_id, p.version, f.dest_path`,
+	)
 }
 
 func runCLIQuery[T any](ctx context.Context, doltDir, branch, query string) ([]T, error) {
