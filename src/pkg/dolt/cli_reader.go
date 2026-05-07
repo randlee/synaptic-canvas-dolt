@@ -121,6 +121,17 @@ func (r *CLIReader) GetPackageFiles(ctx context.Context, packageID string) ([]mo
 	return files, nil
 }
 
+func (r *CLIReader) GetPackageFileSHAs(ctx context.Context, packageID, docPath string) ([]PackageFileSHA, error) {
+	return runCLIQuery[PackageFileSHA](ctx, r.DoltDir, r.Branch, fmt.Sprintf(
+		`SELECT pf.package_id, p.version, pf.dest_path AS doc_path, pf.sha256
+FROM package_files AS pf
+JOIN packages AS p ON p.id = pf.package_id
+WHERE pf.package_id = %s AND pf.dest_path = %s
+ORDER BY p.version`,
+		cliSQLString(packageID), cliSQLString(docPath),
+	))
+}
+
 func (r *CLIReader) GetPackageDeps(ctx context.Context, packageID string) ([]models.PackageDep, error) {
 	return runCLIQuery[models.PackageDep](ctx, r.DoltDir, r.Branch, fmt.Sprintf(
 		"SELECT package_id, dep_type, dep_name, dep_spec, install_cmd, cmd_sha256 FROM package_deps WHERE package_id = %s ORDER BY dep_name",

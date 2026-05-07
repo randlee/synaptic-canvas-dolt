@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
@@ -26,6 +27,12 @@ func NewImportCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("reading config flags: %w", err)
 			}
+			if err := cfg.LoadFileConfig(); err != nil {
+				return err
+			}
+			formatter := output.NewFormatter(cfg.JSON, cfg.Quiet)
+			formatter.Writer = cmd.OutOrStdout()
+			formatter.ErrW = cmd.ErrOrStderr()
 
 			path, err := filepath.Abs(args[0])
 			if err != nil {
@@ -33,13 +40,19 @@ func NewImportCmd() *cobra.Command {
 			}
 			branch := cfg.EffectiveBranch()
 
-			doltDir, err := detectDoltDir(cfg.DoltDirExpanded())
+			doltDir, err := detectDoltDir(config.ExpandPath(cfg.Get(config.KeyDoltDir, cfg.DoltDir)))
 			if err != nil {
 				return err
 			}
+			readClient, err := openImportReadClient(cfg, doltDir, branch)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = readClient.Close() }()
 
 			svc := importer.Service{
 				Writer: dolt.NewCLIWriter(doltDir),
+				Client: readClient,
 			}
 
 			summary, err := svc.Import(context.Background(), importer.ImportRequest{
@@ -47,10 +60,14 @@ func NewImportCmd() *cobra.Command {
 				Branch:     branch,
 			})
 			if err != nil {
+				if cfg.JSON {
+					if handled, writeErr := writeImportJSONError(formatter, err); handled {
+						return writeErr
+					}
+				}
 				return err
 			}
 
-			formatter := output.NewFormatter(cfg.JSON, cfg.Quiet)
 			if cfg.JSON {
 				return formatter.WriteJSON(summary)
 			}
@@ -75,6 +92,67 @@ func NewImportCmd() *cobra.Command {
 	}
 
 	return cmd
+}
+
+type importSHACollisionJSON struct {
+	Error       string `json:"error"`
+	File        string `json:"file"`
+	Package     string `json:"package"`
+	Version     string `json:"version"`
+	Branch      string `json:"branch"`
+	ExistingSHA string `json:"existing_sha"`
+	IncomingSHA string `json:"incoming_sha"`
+}
+
+func writeImportJSONError(formatter *output.Formatter, err error) (bool, error) {
+	var collision *importer.SHACollisionError
+	if !errors.As(err, &collision) {
+		return false, nil
+	}
+	return true, formatter.WriteJSON(importSHACollisionJSON{
+		Error:       "sha_collision",
+		File:        collision.File,
+		Package:     collision.Package,
+		Version:     collision.Version,
+		Branch:      collision.Branch,
+		ExistingSHA: collision.ExistingSHA,
+		IncomingSHA: collision.IncomingSHA,
+	})
+}
+
+func openImportReadClient(cfg *config.Config, doltDir, branch string) (dolt.Client, error) {
+	clientType := cfg.Get(config.KeyDoltClient, "http")
+	switch clientType {
+	case "http":
+		database := cfg.Get(config.KeyDoltDatabase, "")
+		if database == "" {
+			return nil, fmt.Errorf("dolt.database is not configured; run: sc config set dolt.database <owner/database>")
+		}
+		return dolt.NewHTTPClient(dolt.HTTPConfig{
+			Host:     cfg.Get(config.KeyDoltHost, "www.dolthub.com"),
+			Database: database,
+			Branch:   branch,
+			Token:    cfg.Get(config.KeyDoltToken, ""),
+			Timeout:  time.Duration(cfg.GetInt(config.KeyDoltTimeout, 30)) * time.Second,
+		}), nil
+	case "sql":
+		dsn := cfg.Get(config.KeyDoltDSN, "")
+		if dsn == "" {
+			return nil, fmt.Errorf("dolt.dsn is not configured; run: sc config set dolt.dsn <dsn>")
+		}
+		sqlCfg, err := dolt.ParseDSN(dsn)
+		if err != nil {
+			return nil, err
+		}
+		return dolt.OpenForBranch(sqlCfg, branch)
+	case "cli":
+		if doltDir == "" {
+			return nil, fmt.Errorf("dolt.dir is not configured; run: sc config set dolt.dir <path>")
+		}
+		return dolt.NewCLIReader(doltDir, branch), nil
+	default:
+		return nil, fmt.Errorf("unsupported dolt.client %q", clientType)
+	}
 }
 
 func detectDoltDir(configured string) (string, error) {

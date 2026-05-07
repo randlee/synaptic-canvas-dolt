@@ -179,6 +179,7 @@ func TestFileConfigGetPrecedence(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
+	t.Setenv("USERPROFILE", home)
 	t.Setenv("SC_DOLT_DIR", "env-dir")
 
 	if _, err := SetFileValue(KeyDoltDir, "file-dir"); err != nil {
@@ -229,6 +230,7 @@ func TestAllDoltConfigFlagsOverrideEnvAndFile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
+	t.Setenv("USERPROFILE", home)
 
 	tests := []struct {
 		key   string
@@ -277,6 +279,7 @@ func TestAllDoltConfigFlagsOverrideEnvAndFile(t *testing.T) {
 func TestSetFileValueWritesConfig(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	t.Setenv("USERPROFILE", home)
 
 	path, err := SetFileValue(KeyDoltDatabase, "randlee/synaptic-canvas")
