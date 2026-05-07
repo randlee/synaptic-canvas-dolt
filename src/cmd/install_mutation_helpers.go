@@ -23,17 +23,19 @@ type upgradeResult struct {
 	ToBranch           string   `json:"to_branch"`
 	InstallRoot        string   `json:"install_root"`
 	Warnings           []string `json:"warnings,omitempty"`
+	Skipped            bool     `json:"skipped,omitempty"`
 	FilesWritten       int      `json:"files_written"`
 	TemplateWarnings   []string `json:"template_warnings,omitempty"`
 	DependencyWarnings []string `json:"dependency_warnings,omitempty"`
 }
 
 type uninstallResult struct {
-	Package      string   `json:"package"`
-	Scope        string   `json:"scope"`
-	RemovedFiles []string `json:"removed_files"`
-	Warnings     []string `json:"warnings,omitempty"`
-	HooksRemoved int      `json:"hooks_removed"`
+	Package             string   `json:"package"`
+	Scope               string   `json:"scope"`
+	RemovedFiles        []string `json:"removed_files"`
+	RemovedDependencies []string `json:"removed_dependencies,omitempty"`
+	Warnings            []string `json:"warnings,omitempty"`
+	HooksRemoved        int      `json:"hooks_removed"`
 }
 
 func stateRootForScope(repoRoot, scope string) (string, error) {
@@ -47,31 +49,14 @@ func stateRootForScope(repoRoot, scope string) (string, error) {
 	return repoRoot, nil
 }
 
-func selectInstall(installs []trackedInstall, packageID string, global bool) (*trackedInstall, error) {
-	scope := "project"
-	if global {
-		scope = "global"
-	}
+func selectInstalls(installs []trackedInstall, packageID, scope string) []trackedInstall {
 	var matches []trackedInstall
 	for _, install := range installs {
-		if install.Record.Package == packageID && install.Record.InstallScope == scope {
+		if install.Record.Package == packageID && (scope == "both" || install.Record.InstallScope == scope) {
 			matches = append(matches, install)
 		}
 	}
-	if len(matches) == 1 {
-		return &matches[0], nil
-	}
-	if len(matches) == 0 {
-		if !global {
-			for _, install := range installs {
-				if install.Record.Package == packageID {
-					return &install, nil
-				}
-			}
-		}
-		return nil, fmt.Errorf("package %q is not installed", packageID)
-	}
-	return nil, fmt.Errorf("package %q has multiple %s installs", packageID, scope)
+	return matches
 }
 
 func fetchUpgradePackage(ctx context.Context, client readClient, branch string, install installer.InstallRecord) (*models.Package, []models.PackageFile, []models.PackageDep, []models.PackageHook, []models.PackageQuestion, error) {
@@ -136,6 +121,17 @@ func buildUpgradeWarnings(install installer.InstallRecord, validation validatedI
 		warnings = append(warnings, "repo profile changed; templates will be re-rendered")
 	}
 	return warnings
+}
+
+func dependencyBlockers(deps []models.PackageDep) []string {
+	blockers := []string{}
+	for _, dep := range deps {
+		name := strings.ToLower(dep.DepName + " " + dep.DepSpec)
+		if strings.Contains(name, "incompatible") || strings.Contains(name, "missing") || strings.Contains(name, "blocked") {
+			blockers = append(blockers, fmt.Sprintf("incompatible dependency: %s%s", dep.DepName, dep.DepSpec))
+		}
+	}
+	return blockers
 }
 
 func hasLocalModifications(validation validatedInstall) bool {

@@ -11,8 +11,9 @@ import (
 )
 
 type uninstallResponse struct {
-	OK      bool            `json:"ok"`
-	Removed uninstallResult `json:"removed"`
+	OK         bool              `json:"ok"`
+	Removed    uninstallResult   `json:"removed"`
+	RemovedAll []uninstallResult `json:"removed_all,omitempty"`
 }
 
 // NewUninstallCmd creates the sc uninstall command.
@@ -23,14 +24,24 @@ func NewUninstallCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE:  runUninstallCmd,
 	}
-	cmd.Flags().Bool("global", false, "target global install")
+	cmd.Flags().String("scope", "both", "uninstall scope: project, global, or both")
+	cmd.Flags().Bool("force", false, "remove package files even when local modifications are present")
+	cmd.Flags().Bool("yolo", false, "skip interactive confirmations")
 	return cmd
 }
 
 func runUninstallCmd(cmd *cobra.Command, args []string) error {
-	global, err := cmd.Flags().GetBool("global")
+	scope, err := cmd.Flags().GetString("scope")
 	if err != nil {
-		return fmt.Errorf("reading --global: %w", err)
+		return fmt.Errorf("reading --scope: %w", err)
+	}
+	force, err := cmd.Flags().GetBool("force")
+	if err != nil {
+		return fmt.Errorf("reading --force: %w", err)
+	}
+	yolo, err := cmd.Flags().GetBool("yolo")
+	if err != nil {
+		return fmt.Errorf("reading --yolo: %w", err)
 	}
 	packageID := args[0]
 
@@ -41,6 +52,12 @@ func runUninstallCmd(cmd *cobra.Command, args []string) error {
 	formatter := output.NewFormatter(cfg.JSON, cfg.Quiet)
 	formatter.Writer = cmd.OutOrStdout()
 	formatter.ErrW = cmd.ErrOrStderr()
+	if err := validateScope(scope); err != nil {
+		if cfg.JSON {
+			return writeJSONError(formatter, "invalid_args", err.Error())
+		}
+		return err
+	}
 
 	repoRoot, err := currentRepoRoot()
 	if err != nil {
@@ -56,88 +73,142 @@ func runUninstallCmd(cmd *cobra.Command, args []string) error {
 		}
 		return err
 	}
-	target, err := selectInstall(installs, packageID, global)
-	if err != nil {
+	targets := selectInstalls(installs, packageID, scope)
+	if len(targets) == 0 {
+		err := fmt.Errorf("package %q is not installed", packageID)
 		if cfg.JSON {
 			return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 		}
 		return err
 	}
 
-	validation, err := validateTrackedInstall(target.Record)
-	if err != nil {
-		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
+	results := make([]uninstallResult, 0, len(targets))
+	for _, target := range targets {
+		validation, err := validateTrackedInstall(target.Record)
+		if err != nil {
+			if cfg.JSON {
+				return writeJSONError(formatter, "query_failed", err.Error())
+			}
+			return err
 		}
-		return err
-	}
-	if hasLocalModifications(validation) {
-		err := fmt.Errorf("tracked files contain local modifications; refusing uninstall")
-		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
+		if hasLocalModifications(validation) && !force && !yolo {
+			if cfg.JSON {
+				err := fmt.Errorf("locally modified files detected; use --force to proceed or --yolo in non-interactive mode")
+				return writeJSONError(formatter, "query_failed", err.Error())
+			}
+			err := confirmProceed(cmd, "Package has locally modified files. Proceed anyway?", "locally modified files detected; use --force to proceed or --yolo in non-interactive mode", yolo, force)
+			if err != nil {
+				return err
+			}
 		}
-		return err
+
+		stateRoot, err := stateRootForScope(repoRoot, target.Record.InstallScope)
+		if err != nil {
+			if cfg.JSON {
+				return writeJSONError(formatter, "query_failed", err.Error())
+			}
+			return err
+		}
+		lock, err := installer.LoadManifestLock(stateRoot)
+		if err != nil {
+			if cfg.JSON {
+				return writeJSONError(formatter, "query_failed", err.Error())
+			}
+			return err
+		}
+		registry, err := installer.LoadHookRegistry(stateRoot)
+		if err != nil {
+			if cfg.JSON {
+				return writeJSONError(formatter, "query_failed", err.Error())
+			}
+			return err
+		}
+
+		removedFiles, err := removeOwnedFiles(stateRoot, target.Record)
+		if err != nil {
+			if cfg.JSON {
+				return writeJSONError(formatter, "query_failed", err.Error())
+			}
+			return err
+		}
+		lock.RemoveInstall(target.Record.InstallID)
+		if err := installer.SaveManifestLock(stateRoot, lock); err != nil {
+			if cfg.JSON {
+				return writeJSONError(formatter, "query_failed", err.Error())
+			}
+			return err
+		}
+		registry, hooksRemoved := removeHookEntries(registry, target.Record.Package, hasOtherInstall(installs, target.Record))
+		if err := installer.SaveHookRegistry(stateRoot, registry); err != nil {
+			if cfg.JSON {
+				return writeJSONError(formatter, "query_failed", err.Error())
+			}
+			return err
+		}
+		pruneEmptyParents(filepath.Join(stateRoot, ".synaptic", "hooks"), filepath.Join(stateRoot, ".synaptic"))
+
+		result := uninstallResult{
+			Package:      target.Record.Package,
+			Scope:        target.Record.InstallScope,
+			RemovedFiles: removedFiles,
+			HooksRemoved: hooksRemoved,
+		}
+		for _, dep := range target.Record.Requirements.CLIInstalled {
+			if !target.Record.Requirements.IsInstalledBySC(dep) {
+				if cfg.Verbose {
+					result.Warnings = append(result.Warnings, "leaving pre-existing dependency untouched: "+dep)
+				}
+				continue
+			}
+
+			removeDep := yolo
+			if !removeDep {
+				confirmed, err := confirmRemoveDependency(cmd, dep)
+				if err != nil {
+					if cfg.JSON {
+						return writeJSONError(formatter, "query_failed", err.Error())
+					}
+					return err
+				}
+				removeDep = confirmed
+				if !confirmed && !isCommandInputTTY(cmd) {
+					result.Warnings = append(result.Warnings, "skipped SC-installed dependency removal in non-interactive mode: "+dep)
+				}
+			}
+			if !removeDep {
+				continue
+			}
+			if err := removeSCDependency(dep); err != nil {
+				if cfg.JSON {
+					return writeJSONError(formatter, "query_failed", err.Error())
+				}
+				return err
+			}
+			result.RemovedDependencies = append(result.RemovedDependencies, dep)
+		}
+		results = append(results, result)
 	}
 
-	stateRoot, err := stateRootForScope(repoRoot, target.Record.InstallScope)
-	if err != nil {
-		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
-		}
-		return err
-	}
-	lock, err := installer.LoadManifestLock(stateRoot)
-	if err != nil {
-		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
-		}
-		return err
-	}
-	registry, err := installer.LoadHookRegistry(stateRoot)
-	if err != nil {
-		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
-		}
-		return err
-	}
-
-	removedFiles, err := removeOwnedFiles(stateRoot, target.Record)
-	if err != nil {
-		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
-		}
-		return err
-	}
-	lock.RemoveInstall(target.Record.InstallID)
-	if err := installer.SaveManifestLock(stateRoot, lock); err != nil {
-		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
-		}
-		return err
-	}
-	registry, hooksRemoved := removeHookEntries(registry, target.Record.Package, hasOtherInstall(installs, target.Record))
-	if err := installer.SaveHookRegistry(stateRoot, registry); err != nil {
-		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
-		}
-		return err
-	}
-	pruneEmptyParents(filepath.Join(stateRoot, ".synaptic", "hooks"), filepath.Join(stateRoot, ".synaptic"))
-
-	result := uninstallResult{
-		Package:      target.Record.Package,
-		Scope:        target.Record.InstallScope,
-		RemovedFiles: removedFiles,
-		HooksRemoved: hooksRemoved,
-	}
+	result := results[0]
 	if cfg.JSON {
-		return formatter.WriteJSON(uninstallResponse{OK: true, Removed: result})
+		return formatter.WriteJSON(uninstallResponse{OK: true, Removed: result, RemovedAll: results})
 	}
-	rows := [][]string{
-		{"package", result.Package},
-		{"scope", result.Scope},
-		{"files_removed", fmt.Sprintf("%d", len(result.RemovedFiles))},
-		{"hooks_removed", fmt.Sprintf("%d", result.HooksRemoved)},
+	rows := make([][]string, 0, len(results))
+	for _, result := range results {
+		rows = append(rows, []string{
+			result.Package,
+			result.Scope,
+			fmt.Sprintf("%d", len(result.RemovedFiles)),
+			fmt.Sprintf("%d", result.HooksRemoved),
+		})
 	}
-	return formatter.Table([]string{"FIELD", "VALUE"}, rows)
+	if err := formatter.Table([]string{"PACKAGE", "SCOPE", "FILES_REMOVED", "HOOKS_REMOVED"}, rows); err != nil {
+		return err
+	}
+	for _, result := range results {
+		for _, warning := range result.Warnings {
+			writeWarning(formatter, warning)
+		}
+	}
+	return nil
 }

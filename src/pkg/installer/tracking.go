@@ -58,6 +58,11 @@ type RequirementSnapshot struct {
 	CLIProvenance map[string]string `toml:"cli_provenance"`
 }
 
+// IsInstalledBySC reports whether Synaptic installed an external CLI dependency.
+func (r RequirementSnapshot) IsInstalledBySC(depName string) bool {
+	return r.CLIProvenance[depName] == "installed-by-synaptic"
+}
+
 type TemplateValidationRecord struct {
 	ValidatedAt       string   `toml:"validated_at"`
 	TemplateFiles     []string `toml:"template_files"`
@@ -95,6 +100,11 @@ func LoadManifestLock(root string) (ManifestLock, error) {
 	}
 	if lock.Version == 0 {
 		lock.Version = 1
+	}
+	for i := range lock.Installs {
+		if lock.Installs[i].TrackingOrigin == "" {
+			lock.Installs[i].TrackingOrigin = "local-install"
+		}
 	}
 	return lock, nil
 }

@@ -31,19 +31,30 @@ type validatedInstall struct {
 	Scope             string          `json:"scope"`
 	InstallRoot       string          `json:"install_root"`
 	InstallSite       string          `json:"install_site"`
-	Files             []validatedFile `json:"files"`
+	Files             []validatedFile `json:"items"`
 	AggregateExpected string          `json:"aggregate_expected"`
 	AggregateActual   string          `json:"aggregate_actual,omitempty"`
 	AggregatePass     bool            `json:"aggregate_pass"`
+	AggregateStatus   string          `json:"aggregate_status"`
 	Warnings          []string        `json:"warnings,omitempty"`
 	Pass              bool            `json:"pass"`
 	Status            string          `json:"status"`
 }
 
+type ValidationSeverity string
+
+const (
+	ValidationSeverityInfo     ValidationSeverity = "info"
+	ValidationSeverityWarn     ValidationSeverity = "warn"
+	ValidationSeverityError    ValidationSeverity = "error"
+	ValidationSeverityCritical ValidationSeverity = "critical"
+)
+
 type validatedFile struct {
-	Path   string `json:"path"`
-	Status string `json:"status"`
-	Error  string `json:"error,omitempty"`
+	Path     string             `json:"path"`
+	Status   string             `json:"status"`
+	Severity ValidationSeverity `json:"severity"`
+	Error    string             `json:"error,omitempty"`
 }
 
 var snapshotNow = func() time.Time { return time.Now().UTC() }
@@ -76,9 +87,19 @@ func loadTrackedInstalls(repoRoot string) ([]trackedInstall, error) {
 		if installs[i].Record.Package != installs[j].Record.Package {
 			return installs[i].Record.Package < installs[j].Record.Package
 		}
-		return installs[i].Record.InstallScope < installs[j].Record.InstallScope
+		return scopeSortRank(installs[i].Record.InstallScope) < scopeSortRank(installs[j].Record.InstallScope)
 	})
 	return installs, nil
+}
+
+func scopeSortRank(scope string) int {
+	if scope == "project" {
+		return 0
+	}
+	if scope == "global" {
+		return 1
+	}
+	return 2
 }
 
 func filterInstalls(installs []trackedInstall, packageID string) []trackedInstall {
@@ -130,6 +151,7 @@ func validateTrackedInstall(record installer.InstallRecord) (validatedInstall, e
 		Warnings:          warnings,
 		Pass:              true,
 		Status:            "PASS",
+		AggregateStatus:   string(ValidationSeverityInfo),
 	}
 
 	expectedSet := make(map[string]struct{}, len(expected))
@@ -140,13 +162,15 @@ func validateTrackedInstall(record installer.InstallRecord) (validatedInstall, e
 	canAggregate := true
 	for _, result := range results {
 		item := validatedFile{
-			Path:   result.Path,
-			Status: result.Status.String(),
+			Path:     result.Path,
+			Status:   result.Status.String(),
+			Severity: severityForValidationStatus(result.Status.String()),
 		}
 		if result.Err != nil {
 			item.Error = result.Err.Error()
 		}
 		summary.Files = append(summary.Files, item)
+		summary.AggregateStatus = higherSeverity(summary.AggregateStatus, string(item.Severity))
 		if result.Status != integrity.StatusOK {
 			summary.Pass = false
 			summary.Status = "FAIL"
@@ -170,9 +194,60 @@ func validateTrackedInstall(record installer.InstallRecord) (validatedInstall, e
 	if !summary.AggregatePass {
 		summary.Pass = false
 		summary.Status = "FAIL"
+		if summary.AggregateActual != "" {
+			item := validatedFile{
+				Path:     "(aggregate)",
+				Status:   "AGGREGATE_MISMATCH",
+				Severity: ValidationSeverityError,
+			}
+			summary.Files = append(summary.Files, item)
+			summary.AggregateStatus = higherSeverity(summary.AggregateStatus, string(item.Severity))
+		}
 	}
 
 	return summary, nil
+}
+
+func severityForValidationStatus(status string) ValidationSeverity {
+	switch status {
+	case "OK", "":
+		return ValidationSeverityInfo
+	case "MODIFIED", "HOOK_NOT_REGISTERED", "TEMPLATE_INVALID":
+		return ValidationSeverityWarn
+	case "EXTRA":
+		return ValidationSeverityInfo
+	case "MISSING", "UNREADABLE", "SHA_MISMATCH", "DEPENDENCY_VERSION_INCOMPATIBLE", "AGGREGATE_MISMATCH":
+		return ValidationSeverityError
+	case "DEPENDENCY_MISSING":
+		return ValidationSeverityCritical
+	default:
+		return ValidationSeverityError
+	}
+}
+
+func higherSeverity(a, b string) string {
+	if severityRank(b) > severityRank(a) {
+		return b
+	}
+	if a == "" {
+		return b
+	}
+	return a
+}
+
+func severityRank(severity string) int {
+	switch ValidationSeverity(severity) {
+	case ValidationSeverityCritical:
+		return 4
+	case ValidationSeverityError:
+		return 3
+	case ValidationSeverityWarn:
+		return 2
+	case ValidationSeverityInfo:
+		return 1
+	default:
+		return 0
+	}
 }
 
 func resolveExpectedHashes(record installer.InstallRecord) ([]integrity.FileHash, []string, error) {
