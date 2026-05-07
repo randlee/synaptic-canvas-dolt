@@ -2,12 +2,15 @@ package admin
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/importer"
@@ -73,6 +76,46 @@ func TestFormatImportAck(t *testing.T) {
 	t.Parallel()
 	if got := FormatImportAck("pkg", "develop"); got != "importing pkg into develop" {
 		t.Fatalf("FormatImportAck() = %q", got)
+	}
+}
+
+func TestImportCommandPropagatesCommandContext(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a POSIX shell fake dolt executable")
+	}
+
+	tempDir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(tempDir, ".dolt"), 0o755); err != nil { //nolint:gosec // G301: test directory permissions are intentional.
+		t.Fatal(err)
+	}
+	scriptPath := filepath.Join(tempDir, "dolt")
+	script := "#!/bin/sh\nsleep 10\n"
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil { //nolint:gosec // G306: test helper script permissions are intentional.
+		t.Fatal(err)
+	}
+	oldPath := os.Getenv("PATH")
+	t.Setenv("PATH", tempDir+string(os.PathListSeparator)+oldPath)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cmd := NewImportCmd()
+	cmd.SetContext(ctx)
+	cmd.Root().PersistentFlags().String("dolt-dir", "", "")
+	cmd.Root().PersistentFlags().String("dolt-client", "", "")
+	cmd.Root().PersistentFlags().String("remote", "", "")
+	cmd.Root().PersistentFlags().String("branch", "", "")
+	cmd.Root().PersistentFlags().Bool("json", false, "")
+	cmd.Root().PersistentFlags().Bool("quiet", false, "")
+	cmd.Root().PersistentFlags().Bool("verbose", false, "")
+	cmd.SetArgs([]string{"--dolt-dir", tempDir, "--dolt-client", "cli", filepath.Join("..", "..", "pkg", "importer", "testdata", "basic-package")})
+
+	start := time.Now()
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("Execute() error = nil, want context cancellation")
+	}
+	if time.Since(start) > time.Second {
+		t.Fatalf("Execute() did not return promptly after context cancellation: %v", err)
 	}
 }
 

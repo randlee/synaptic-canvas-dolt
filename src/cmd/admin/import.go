@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -55,7 +54,7 @@ func NewImportCmd() *cobra.Command {
 				Client: readClient,
 			}
 
-			summary, err := svc.Import(context.Background(), importer.ImportRequest{
+			summary, err := svc.Import(cmd.Context(), importer.ImportRequest{
 				PackageDir: path,
 				Branch:     branch,
 			})

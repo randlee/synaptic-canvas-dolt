@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
@@ -242,6 +243,33 @@ func TestHTTPClientHTTPStatusErrors(t *testing.T) {
 				t.Fatalf("unauthorized error missing token guidance: %v", err)
 			}
 		})
+	}
+}
+
+func TestHTTPClientRetriesRateLimit(t *testing.T) {
+	t.Parallel()
+
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attempt := attempts.Add(1)
+		if attempt <= maxHTTPRateLimitRetries {
+			w.Header().Set("Retry-After", "0")
+			http.Error(w, http.StatusText(http.StatusTooManyRequests), http.StatusTooManyRequests)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"query_execution_status": "success",
+			"rows":                   []map[string]any{},
+		})
+	}))
+	defer server.Close()
+
+	client := NewHTTPClient(HTTPConfig{Host: server.URL, Database: "owner/repo"})
+	if _, err := client.ListPackages(context.Background(), ListOptions{}); err != nil {
+		t.Fatalf("ListPackages() error = %v", err)
+	}
+	if got := attempts.Load(); got != maxHTTPRateLimitRetries+1 {
+		t.Fatalf("attempts = %d, want %d", got, maxHTTPRateLimitRetries+1)
 	}
 }
 

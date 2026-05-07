@@ -79,6 +79,7 @@ type HookEntry struct {
 	Event    string `toml:"event"`
 	Matcher  string `toml:"matcher"`
 	Skill    string `toml:"skill"`
+	Scope    string `toml:"scope,omitempty"`
 	Script   string `toml:"script"`
 	Priority int    `toml:"priority"`
 	Blocking bool   `toml:"blocking"`
@@ -86,6 +87,16 @@ type HookEntry struct {
 
 // LoadManifestLock reads manifest.lock or returns an empty lock if it does not exist.
 func LoadManifestLock(root string) (ManifestLock, error) {
+	var lock ManifestLock
+	err := withStateFileLock(manifestLockFile(root), func() error {
+		var err error
+		lock, err = loadManifestLockNoLock(root)
+		return err
+	})
+	return lock, err
+}
+
+func loadManifestLockNoLock(root string) (ManifestLock, error) {
 	path := filepath.Join(root, ManifestLockPath)
 	data, err := os.ReadFile(path) //nolint:gosec // path is confined to Synaptic-managed state under the chosen root.
 	if errors.Is(err, os.ErrNotExist) {
@@ -111,9 +122,28 @@ func LoadManifestLock(root string) (ManifestLock, error) {
 
 // SaveManifestLock writes manifest.lock atomically.
 func SaveManifestLock(root string, lock ManifestLock) error {
-	path := filepath.Join(root, ManifestLockPath)
+	return withStateFileLock(manifestLockFile(root), func() error {
+		return saveManifestLockNoLock(root, lock)
+	})
+}
+
+func saveManifestLockNoLock(root string, lock ManifestLock) error {
 	lock.Version = 1
-	return writeTOMLAtomic(path, lock)
+	return writeTOMLAtomic(filepath.Join(root, ManifestLockPath), lock)
+}
+
+// WithManifestLock holds the manifest advisory lock for a full load-modify-save cycle.
+func WithManifestLock(root string, mutate func(*ManifestLock) error) error {
+	return withStateFileLock(manifestLockFile(root), func() error {
+		lock, err := loadManifestLockNoLock(root)
+		if err != nil {
+			return err
+		}
+		if err := mutate(&lock); err != nil {
+			return err
+		}
+		return saveManifestLockNoLock(root, lock)
+	})
 }
 
 // UpsertInstall replaces an install record with the same install id or appends it.
@@ -140,6 +170,16 @@ func (m *ManifestLock) RemoveInstall(installID string) bool {
 
 // LoadHookRegistry loads the project hook registry or returns an empty registry.
 func LoadHookRegistry(root string) (HookRegistry, error) {
+	var registry HookRegistry
+	err := withStateFileLock(hookRegistryLockFile(root), func() error {
+		var err error
+		registry, err = loadHookRegistryNoLock(root)
+		return err
+	})
+	return registry, err
+}
+
+func loadHookRegistryNoLock(root string) (HookRegistry, error) {
 	path := filepath.Join(root, HooksRegistry)
 	data, err := os.ReadFile(path) //nolint:gosec // path is confined to Synaptic-managed state under the chosen root.
 	if errors.Is(err, os.ErrNotExist) {
@@ -157,7 +197,66 @@ func LoadHookRegistry(root string) (HookRegistry, error) {
 
 // SaveHookRegistry writes registry.toml atomically.
 func SaveHookRegistry(root string, registry HookRegistry) error {
+	return withStateFileLock(hookRegistryLockFile(root), func() error {
+		return saveHookRegistryNoLock(root, registry)
+	})
+}
+
+func saveHookRegistryNoLock(root string, registry HookRegistry) error {
 	return writeTOMLAtomic(filepath.Join(root, HooksRegistry), registry)
+}
+
+// WithHookRegistry holds the hook registry advisory lock for a full mutation.
+func WithHookRegistry(root string, mutate func(*HookRegistry) error) error {
+	return withStateFileLock(hookRegistryLockFile(root), func() error {
+		registry, err := loadHookRegistryNoLock(root)
+		if err != nil {
+			return err
+		}
+		if err := mutate(&registry); err != nil {
+			return err
+		}
+		return saveHookRegistryNoLock(root, registry)
+	})
+}
+
+// UpsertPackageHooks replaces this package/scope's hook entries while preserving all others.
+func (r *HookRegistry) UpsertPackageHooks(packageID, scope string, hooks []HookEntry) {
+	filtered := r.Hooks[:0]
+	for _, hook := range r.Hooks {
+		if hookEntryOwnedBy(hook, packageID, scope) {
+			continue
+		}
+		filtered = append(filtered, hook)
+	}
+	r.Hooks = filtered
+	for _, hook := range hooks {
+		hook.Skill = packageID
+		hook.Scope = scope
+		r.Hooks = append(r.Hooks, hook)
+	}
+}
+
+// RemovePackageHooks removes hook entries owned by packageID in the requested scope.
+func (r *HookRegistry) RemovePackageHooks(packageID, scope string) int {
+	filtered := r.Hooks[:0]
+	removed := 0
+	for _, hook := range r.Hooks {
+		if hookEntryOwnedBy(hook, packageID, scope) {
+			removed++
+			continue
+		}
+		filtered = append(filtered, hook)
+	}
+	r.Hooks = filtered
+	return removed
+}
+
+func hookEntryOwnedBy(hook HookEntry, packageID, scope string) bool {
+	if hook.Skill != packageID {
+		return false
+	}
+	return hook.Scope == "" || scope == "" || hook.Scope == scope
 }
 
 // SaveRepoProfile writes the repo profile TOML atomically.
@@ -198,4 +297,36 @@ func writeTOMLAtomic(path string, value any) error {
 		return fmt.Errorf("atomic replace %s: %w", path, err)
 	}
 	return nil
+}
+
+func manifestLockFile(root string) string {
+	return filepath.Join(root, ManifestLockPath) + ".lock"
+}
+
+func hookRegistryLockFile(root string) string {
+	return filepath.Join(root, HooksRegistry) + ".lock"
+}
+
+func withStateFileLock(lockPath string, fn func() error) (err error) {
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o750); err != nil {
+		return fmt.Errorf("creating lock dir: %w", err)
+	}
+	file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600) //nolint:gosec // lock path is derived from Synaptic-managed state paths.
+	if err != nil {
+		return fmt.Errorf("opening lock file %s: %w", lockPath, err)
+	}
+	locked := false
+	defer func() {
+		var unlockErr error
+		if locked {
+			unlockErr = unlockFile(file)
+		}
+		closeErr := file.Close()
+		err = errors.Join(err, unlockErr, closeErr)
+	}()
+	if err := lockFileExclusive(file); err != nil {
+		return fmt.Errorf("locking %s: %w", lockPath, err)
+	}
+	locked = true
+	return fn()
 }

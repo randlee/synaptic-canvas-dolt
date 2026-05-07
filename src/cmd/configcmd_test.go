@@ -69,9 +69,7 @@ func TestConfigUnknownKeyJSON(t *testing.T) {
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{"config", "get", "dolt.nope", "--json"})
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("config get Execute() error = %v", err)
-	}
+	requireJSONCmdError(t, cmd.Execute())
 
 	var resp jsonErrorEnvelope
 	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {

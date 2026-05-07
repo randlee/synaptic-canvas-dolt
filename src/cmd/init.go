@@ -90,11 +90,9 @@ func initializeRepo(root string) (initResponse, error) {
 		"SYNAPTIC_AGENTS":       "claude",
 	}
 
-	lock, err := installer.LoadManifestLock(root)
-	if err != nil {
-		return initResponse{}, err
-	}
-	if err := installer.SaveManifestLock(root, lock); err != nil {
+	if err := installer.WithManifestLock(root, func(_ *installer.ManifestLock) error {
+		return nil
+	}); err != nil {
 		return initResponse{}, err
 	}
 	if err := installer.SaveRepoProfile(root, profile); err != nil {
@@ -103,7 +101,9 @@ func initializeRepo(root string) (initResponse, error) {
 	if err := installer.SaveEnv(root, env); err != nil {
 		return initResponse{}, err
 	}
-	if err := installer.SaveHookRegistry(root, installer.HookRegistry{}); err != nil {
+	if err := installer.WithHookRegistry(root, func(_ *installer.HookRegistry) error {
+		return nil
+	}); err != nil {
 		return initResponse{}, err
 	}
 

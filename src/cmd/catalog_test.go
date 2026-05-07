@@ -163,7 +163,7 @@ func TestValidateIgnoresCatalogEntryWithNoMatchingLockfileEntry(t *testing.T) {
 		t.Fatalf("catalog.Refresh() error = %v", err)
 	}
 
-	summary, err := validateTrackedInstall(lock.Installs[0])
+	summary, err := validateTrackedInstall(context.Background(), lock.Installs[0])
 	if err != nil {
 		t.Fatalf("validateTrackedInstall() error = %v", err)
 	}
@@ -287,6 +287,57 @@ func TestValidateAbsentCatalogDoltOfflineFallbackWarning(t *testing.T) {
 	}
 	if len(resp.Packages[0].Warnings) != 1 || !strings.Contains(resp.Packages[0].Warnings[0], "catalog unavailable and Dolt offline") {
 		t.Fatalf("expected offline fallback warning, got %+v", resp.Packages[0].Warnings)
+	}
+}
+
+func TestValidateCatalogFallbackUsesCommandContext(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
+	restoreDir := chdirForTest(t, root)
+	defer restoreDir()
+
+	installRoot := filepath.Join(root, ".claude", "skills", "team-lead")
+	writeCmdFile(t, filepath.Join(installRoot, "SKILL.md"), "good")
+	if err := installer.SaveManifestLock(root, installer.ManifestLock{Installs: []installer.InstallRecord{{
+		InstallID:    "pkg_team-lead_project",
+		Package:      "team-lead",
+		Version:      "1.0.0",
+		Branch:       "main",
+		InstallScope: "project",
+		InstallRoot:  installRoot,
+		InstallSite:  root,
+		Files:        map[string]string{"SKILL.md": integrity.ComputeContentSHA256([]byte("good"))},
+	}}}); err != nil {
+		t.Fatalf("SaveManifestLock() error = %v", err)
+	}
+	started := make(chan struct{})
+	prevFetch := validateCatalogFetch
+	validateCatalogFetch = func(ctx context.Context, _ string, _ string) ([]catalog.CatalogEntry, error) {
+		close(started)
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	defer func() { validateCatalogFetch = prevFetch }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cmd := NewRootCmd("test", "abc", "2025-01-01")
+	cmd.SetContext(ctx)
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"validate", "team-lead", "--json"})
+	done := make(chan error, 1)
+	go func() { done <- cmd.Execute() }()
+	<-started
+	cancel()
+	select {
+	case err := <-done:
+		requireJSONCmdError(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("validate did not return after context cancellation")
 	}
 }
 

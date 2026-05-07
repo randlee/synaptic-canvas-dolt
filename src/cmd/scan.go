@@ -683,21 +683,22 @@ func applyScanMutations(ctx context.Context, candidates []scanCandidate, acceptA
 		if err := ctx.Err(); err != nil {
 			return accepted, upgraded, err
 		}
-		lock, err := installer.LoadManifestLock(stateRoot)
-		if err != nil {
-			return accepted, upgraded, err
-		}
-		for _, candidate := range scoped {
-			if candidate.NeedsUpgrade {
-				if upgradeScanRecord(&lock, candidate) {
-					upgraded++
+		if err := installer.WithManifestLock(stateRoot, func(lock *installer.ManifestLock) error {
+			for _, candidate := range scoped {
+				if err := ctx.Err(); err != nil {
+					return err
 				}
-				continue
+				if candidate.NeedsUpgrade {
+					if upgradeScanRecord(lock, candidate) {
+						upgraded++
+					}
+					continue
+				}
+				lock.UpsertInstall(scanInstallRecord(candidate))
+				accepted++
 			}
-			lock.UpsertInstall(scanInstallRecord(candidate))
-			accepted++
-		}
-		if err := installer.SaveManifestLock(stateRoot, lock); err != nil {
+			return nil
+		}); err != nil {
 			return accepted, upgraded, err
 		}
 	}

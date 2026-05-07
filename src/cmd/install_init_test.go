@@ -13,6 +13,7 @@ import (
 
 	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/dolt"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/installer"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
 )
 
@@ -62,9 +63,7 @@ func TestInitCommandErrorJSON(t *testing.T) {
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{"init", "--json"})
 
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
+	requireJSONCmdError(t, cmd.Execute())
 	var resp jsonErrorEnvelope
 	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
@@ -137,9 +136,7 @@ func TestInstallDependencyAcknowledgementRequiresYoloInNonTTY(t *testing.T) {
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{"install", "team-lead", "--scope", "project", "--json"})
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
+	requireJSONCmdError(t, cmd.Execute())
 	var resp jsonErrorEnvelope
 	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
@@ -336,9 +333,7 @@ func TestInstallLocalOnlyGlobalScopeHardFailsBeforeWrite(t *testing.T) {
 		cmd.SetOut(&out)
 		cmd.SetErr(&out)
 		cmd.SetArgs([]string{"install", "local-only", "--scope", scope, "--json"})
-		if err := cmd.Execute(); err != nil {
-			t.Fatalf("Execute(%s) error = %v", scope, err)
-		}
+		requireJSONCmdError(t, cmd.Execute())
 		var resp jsonErrorEnvelope
 		if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
 			t.Fatalf("json.Unmarshal(%s) error = %v\noutput=%s", scope, err, out.String())
@@ -388,29 +383,35 @@ func TestInstallScopeBothMixedWriteAndFailureReturnsExitOne(t *testing.T) {
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{"install", "team-lead", "--scope", "both", "--json"})
-	if err := cmd.Execute(); err == nil || err.Error() != "install failed for one or more scopes" {
-		t.Fatalf("Execute() error = %v, want partial install failure", err)
+	if err := cmd.Execute(); err == nil || err.Error() != "install failed for all selected scopes" {
+		t.Fatalf("Execute() error = %v, want rolled-back install failure", err)
 	}
 
 	var resp struct {
-		OK       bool                  `json:"ok"`
-		Installs []map[string]any      `json:"installs"`
-		Failures []installScopeFailure `json:"failures"`
+		OK         bool                  `json:"ok"`
+		Partial    bool                  `json:"partial"`
+		Installs   []map[string]any      `json:"installs"`
+		RolledBack []map[string]any      `json:"rolled_back"`
+		Failures   []installScopeFailure `json:"failures"`
 	}
 	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
 	}
-	if resp.OK || len(resp.Installs) != 1 || len(resp.Failures) != 1 {
-		t.Fatalf("expected one success and one failure, got %+v", resp)
-	}
-	if got := resp.Installs[0]["scope"]; got != "project" {
-		t.Fatalf("successful scope = %v, want project", got)
+	if resp.OK || resp.Partial || len(resp.Installs) != 0 || len(resp.RolledBack) != 1 || len(resp.Failures) != 1 {
+		t.Fatalf("expected project rollback after global failure, got %+v", resp)
 	}
 	if resp.Failures[0].Scope != "global" {
 		t.Fatalf("failure scope = %q, want global", resp.Failures[0].Scope)
 	}
-	if _, err := os.Stat(filepath.Join(root, ".claude", "skills", "team-lead", "SKILL.md")); err != nil {
-		t.Fatalf("project install should succeed, got err=%v", err)
+	if _, err := os.Stat(filepath.Join(root, ".claude", "skills", "team-lead", "SKILL.md")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("project install should have been rolled back, got err=%v", err)
+	}
+	localLock, err := installer.LoadManifestLock(root)
+	if err != nil {
+		t.Fatalf("LoadManifestLock(local) error = %v", err)
+	}
+	if len(localLock.Installs) != 0 {
+		t.Fatalf("project lock should have been rolled back, got %+v", localLock.Installs)
 	}
 	if info, err := os.Stat(globalDest); err != nil || !info.IsDir() {
 		t.Fatalf("global failure fixture should remain a directory, info=%+v err=%v", info, err)
@@ -435,9 +436,7 @@ func TestInstallCommandErrorJSON(t *testing.T) {
 	restore := installReadTestHooks(mock)
 	defer restore()
 
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
+	requireJSONCmdError(t, cmd.Execute())
 	var resp jsonErrorEnvelope
 	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
