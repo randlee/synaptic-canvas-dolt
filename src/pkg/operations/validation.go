@@ -414,7 +414,7 @@ func expectedHooks(record installer.InstallRecord) []installer.HookEntry {
 	}
 	hooks := make([]installer.HookEntry, 0, len(record.Files))
 	for path := range record.Files {
-		rel := normalizeRecordPath(record, path)
+		rel := NormalizeRecordPath(record, path)
 		if isHookScriptPath(rel) {
 			hooks = append(hooks, installer.HookEntry{
 				Skill:  record.Package,
@@ -462,18 +462,4 @@ func registeredHook(registry installer.HookRegistry, record installer.InstallRec
 		}
 	}
 	return installer.HookEntry{}, false
-}
-
-func normalizeRecordPath(record installer.InstallRecord, path string) string {
-	slashPath := filepath.ToSlash(path)
-	slashRoot := filepath.ToSlash(record.InstallRoot)
-	if filepath.IsAbs(path) {
-		if rel, err := filepath.Rel(record.InstallRoot, path); err == nil {
-			return filepath.ToSlash(rel)
-		}
-	}
-	if slashRoot != "" && strings.HasPrefix(slashPath, slashRoot+"/") {
-		return strings.TrimPrefix(slashPath, slashRoot+"/")
-	}
-	return slashPath
 }

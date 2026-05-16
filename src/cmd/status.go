@@ -51,14 +51,14 @@ func runStatusCmd(cmd *cobra.Command, _ []string) error {
 		}
 		return err
 	}
-	installs, err := loadTrackedInstalls(repoRoot)
+	installs, err := operations.LoadTrackedInstalls(repoRoot)
 	if err != nil {
 		if cfg.JSON {
 			return writeClassifiedJSONError(formatter, cfg, err)
 		}
 		return err
 	}
-	installs = filterInstallsByScope(installs, scope)
+	installs = operations.FilterInstallsByScope(installs, scope)
 
 	grouped := map[string]*statusPackageRow{}
 	order := []string{}
