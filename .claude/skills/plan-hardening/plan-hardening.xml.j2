@@ -13,7 +13,7 @@ required_variables:
   - source_of_truth
   - references
 ---
-<atm-task id="{{ task_id }}" sprint="{{ phase }}" assignee="arch-ctm" mode="plan-hardening">
+<atm-task id="{{ task_id }}" sprint="{{ phase }}" assignee="csc" mode="plan-hardening">
   <description>{{ description }}</description>
 
   <worktree>{{ worktree_path }}</worktree>
@@ -87,8 +87,8 @@ required_variables:
         <doc id="architecture">
           Product architecture document.
         </doc>
-        <doc id="crate-docs">
-          Requirements and architecture docs for every crate affected by this phase.
+        <doc id="package-docs">
+          Requirements and architecture docs for every package affected by this phase.
         </doc>
         <doc id="adrs">
           An ADR for every significant architectural decision, plus an up-to-date ADR index.
@@ -125,7 +125,7 @@ required_variables:
         <type id="CONTRA">Two or more documents contradict each other.</type>
         <type id="MISSING-ADR">A significant architectural decision is made inline without a corresponding ADR.</type>
         <type id="BOUNDARY">An architectural boundary, module ownership rule, or interface contract is undefined or incompletely specified.</type>
-        <type id="UNDEF">An important type, trait, struct, enum, or protocol is referenced but not explicitly defined in any document.</type>
+        <type id="UNDEF">An important type, interface, struct, or protocol is referenced but not explicitly defined in any document.</type>
         <type id="CROSS-DOC">A definition or decision in one document is not reflected consistently in documents that depend on it.</type>
         <type id="ORDERING">Task dependencies are missing or incorrectly ordered such that a dev agent could begin work out of sequence.</type>
       </finding-types>
