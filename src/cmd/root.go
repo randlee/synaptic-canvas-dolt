@@ -4,8 +4,9 @@ import (
 	"fmt"
 
 	"github.com/randlee/synaptic-canvas-dolt/cmd/admin"
-	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/internal/logging"
+	"github.com/randlee/synaptic-canvas-dolt/internal/output"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/api"
 	"github.com/spf13/cobra"
 )
 
@@ -13,7 +14,7 @@ import (
 func Execute(version, commit, date string) error {
 	defer logging.Close()
 	rootCmd := NewRootCmd(version, commit, date)
-	return rootCmd.Execute()
+	return executeCommand(rootCmd)
 }
 
 // NewRootCmd creates and returns the root cobra.Command for the sc CLI.
@@ -31,13 +32,16 @@ stored in a Dolt database.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},
-		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, err := config.NewConfigFromFlags(cmd)
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			if skipRootBootstrap(cmd, args) {
+				return nil
+			}
+			cfg, err := loadConfig(cmd)
 			if err != nil {
-				return fmt.Errorf("reading config flags: %w", err)
+				return renderRootJSONError(cmd, classifyJSONError(err.Error()), err)
 			}
 			if err := cfg.Validate(); err != nil {
-				return fmt.Errorf("invalid configuration: %w", err)
+				return renderRootJSONError(cmd, api.ErrorCodeInvalidArgs, fmt.Errorf("invalid configuration: %w", err))
 			}
 			logger := logging.Setup(cfg.Verbose, cfg.Quiet)
 			logger = logging.WithContext(logger, "cli", "init")
@@ -91,6 +95,53 @@ stored in a Dolt database.`,
 	rootCmd.AddCommand(admin.NewAdminCmd())
 
 	return rootCmd
+}
+
+func executeCommand(rootCmd *cobra.Command) error {
+	err := rootCmd.Execute()
+	if err == nil || isJSONCmdError(err) || !jsonRequested(rootCmd) {
+		return err
+	}
+	return renderRootJSONError(rootCmd, classifyJSONError(err.Error()), err)
+}
+
+func renderRootJSONError(cmd *cobra.Command, code api.ErrorCode, err error) error {
+	if !jsonRequested(cmd) {
+		return err
+	}
+	formatter := output.NewFormatter(true, quietRequested(cmd))
+	formatter.Writer = cmd.OutOrStdout()
+	formatter.ErrW = cmd.ErrOrStderr()
+	if writeErr := writeJSONError(formatter, code, err.Error()); writeErr != nil {
+		return writeErr
+	}
+	return jsonCmdError{cause: err}
+}
+
+func jsonRequested(cmd *cobra.Command) bool {
+	return persistentBoolFlag(cmd, "json")
+}
+
+func quietRequested(cmd *cobra.Command) bool {
+	return persistentBoolFlag(cmd, "quiet")
+}
+
+func persistentBoolFlag(cmd *cobra.Command, name string) bool {
+	value, err := cmd.Root().PersistentFlags().GetBool(name)
+	return err == nil && value
+}
+
+func skipRootBootstrap(cmd *cobra.Command, args []string) bool {
+	if cmd == cmd.Root() && len(args) == 0 && cmd.Flags().NFlag() == 0 {
+		return true
+	}
+	if flag := cmd.Flags().Lookup("help"); flag != nil && flag.Changed {
+		return true
+	}
+	if flag := cmd.Flags().Lookup("version"); flag != nil && flag.Changed {
+		return true
+	}
+	return false
 }
 
 // formatVersion returns a human-readable version string.

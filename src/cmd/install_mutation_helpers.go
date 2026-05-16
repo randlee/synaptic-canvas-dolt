@@ -9,34 +9,14 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/randlee/synaptic-canvas-dolt/pkg/api"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/installer"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/repo"
 )
 
-type upgradeResult struct {
-	Package            string   `json:"package"`
-	Scope              string   `json:"scope"`
-	FromVersion        string   `json:"from_version"`
-	ToVersion          string   `json:"to_version"`
-	FromBranch         string   `json:"from_branch"`
-	ToBranch           string   `json:"to_branch"`
-	InstallRoot        string   `json:"install_root"`
-	Warnings           []string `json:"warnings,omitempty"`
-	Skipped            bool     `json:"skipped,omitempty"`
-	FilesWritten       int      `json:"files_written"`
-	TemplateWarnings   []string `json:"template_warnings,omitempty"`
-	DependencyWarnings []string `json:"dependency_warnings,omitempty"`
-}
-
-type uninstallResult struct {
-	Package             string   `json:"package"`
-	Scope               string   `json:"scope"`
-	RemovedFiles        []string `json:"removed_files"`
-	RemovedDependencies []string `json:"removed_dependencies,omitempty"`
-	Warnings            []string `json:"warnings,omitempty"`
-	HooksRemoved        int      `json:"hooks_removed"`
-}
+type upgradeResult = api.UpgradeResult
+type uninstallResult = api.UninstallResult
 
 func stateRootForScope(repoRoot, scope string) (string, error) {
 	if scope == "global" {

@@ -15,7 +15,7 @@ import (
 	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
 )
 
-func TestUpgradeCommandJSON(t *testing.T) {
+func TestJSONUpgradeCommand(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -229,7 +229,7 @@ func TestUpgradeCommandWarnsOnLocalModification(t *testing.T) {
 	}
 }
 
-func TestUpgradeAllForceRejectedJSON(t *testing.T) {
+func TestJSONUpgradeAllForceRejected(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)

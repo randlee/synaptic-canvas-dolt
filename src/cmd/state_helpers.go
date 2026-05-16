@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/randlee/synaptic-canvas-dolt/internal/config"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/api"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/catalog"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/installer"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/integrity"
@@ -24,38 +25,16 @@ type trackedInstall struct {
 	Source string
 }
 
-type validatedInstall struct {
-	Package           string          `json:"package"`
-	Version           string          `json:"version"`
-	Branch            string          `json:"branch"`
-	Scope             string          `json:"scope"`
-	InstallRoot       string          `json:"install_root"`
-	InstallSite       string          `json:"install_site"`
-	Files             []validatedFile `json:"items"`
-	AggregateExpected string          `json:"aggregate_expected"`
-	AggregateActual   string          `json:"aggregate_actual,omitempty"`
-	AggregatePass     bool            `json:"aggregate_pass"`
-	AggregateStatus   string          `json:"aggregate_status"`
-	Warnings          []string        `json:"warnings,omitempty"`
-	Pass              bool            `json:"pass"`
-	Status            string          `json:"status"`
-}
-
-type ValidationSeverity string
+type validatedInstall = api.ValidatedInstall
+type ValidationSeverity = api.ValidationSeverity
+type validatedFile = api.ValidationItem
 
 const (
-	ValidationSeverityInfo     ValidationSeverity = "info"
-	ValidationSeverityWarn     ValidationSeverity = "warn"
-	ValidationSeverityError    ValidationSeverity = "error"
-	ValidationSeverityCritical ValidationSeverity = "critical"
+	ValidationSeverityInfo     ValidationSeverity = api.ValidationSeverityInfo
+	ValidationSeverityWarn     ValidationSeverity = api.ValidationSeverityWarn
+	ValidationSeverityError    ValidationSeverity = api.ValidationSeverityError
+	ValidationSeverityCritical ValidationSeverity = api.ValidationSeverityCritical
 )
-
-type validatedFile struct {
-	Path     string             `json:"path"`
-	Status   string             `json:"status"`
-	Severity ValidationSeverity `json:"severity"`
-	Error    string             `json:"error,omitempty"`
-}
 
 var snapshotNow = func() time.Time { return time.Now().UTC() }
 var snapshotGitRemoteURL = gitRemoteURL

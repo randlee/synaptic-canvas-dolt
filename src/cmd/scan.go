@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/api"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/catalog"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/installer"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/integrity"
@@ -19,35 +20,9 @@ import (
 
 const trackingOriginScanReconciled = "scan-reconciled"
 
-type scanResponse struct {
-	OK         bool            `json:"ok"`
-	Branch     string          `json:"branch"`
-	Mutated    bool            `json:"mutated"`
-	Accepted   int             `json:"accepted"`
-	Upgraded   int             `json:"upgraded"`
-	Candidates []scanCandidate `json:"candidates"`
-	Warnings   []string        `json:"warnings,omitempty"`
-}
-
-type scanCandidate struct {
-	Package         string              `json:"package"`
-	Version         string              `json:"version"`
-	Branch          string              `json:"branch"`
-	Scope           string              `json:"scope"`
-	InstallRoot     string              `json:"install_root"`
-	InstallSite     string              `json:"install_site"`
-	TrackingOrigin  string              `json:"tracking_origin"`
-	NeedsUpgrade    bool                `json:"needs_upgrade"`
-	ExistingVersion string              `json:"existing_version,omitempty"`
-	ExistingBranch  string              `json:"existing_branch,omitempty"`
-	Files           []scanCandidateFile `json:"files"`
-}
-
-type scanCandidateFile struct {
-	Path    string `json:"path"`
-	DocPath string `json:"doc_path"`
-	SHA256  string `json:"sha256"`
-}
+type scanResponse = api.ScanResponse
+type scanCandidate = api.ScanCandidate
+type scanCandidateFile = api.ScanCandidateFile
 
 type scanOptions struct {
 	RepoRoot string
@@ -143,7 +118,7 @@ func runScanCmd(cmd *cobra.Command, args []string) error {
 	repoRoot, err := currentRepoRoot()
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
+			return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 		}
 		return err
 	}
@@ -157,7 +132,7 @@ func runScanCmd(cmd *cobra.Command, args []string) error {
 	})
 	if scanErr != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", scanErr.Error())
+			return writeJSONError(formatter, classifyJSONError(scanErr.Error()), scanErr.Error())
 		}
 		return scanErr
 	}
@@ -167,7 +142,7 @@ func runScanCmd(cmd *cobra.Command, args []string) error {
 		accepted, upgraded, err = applyScanMutations(cmd.Context(), result.Candidates, acceptAll, upgradeAll)
 		if err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, "query_failed", err.Error())
+				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 			}
 			return err
 		}
@@ -186,7 +161,7 @@ func runScanCmd(cmd *cobra.Command, args []string) error {
 		return formatter.WriteJSON(resp)
 	}
 	for _, warning := range resp.Warnings {
-		writeWarning(formatter, warning)
+		formatter.Warn(warning)
 	}
 	rows := make([][]string, 0, len(resp.Candidates))
 	for _, candidate := range resp.Candidates {

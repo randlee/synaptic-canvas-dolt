@@ -9,17 +9,12 @@ import (
 
 	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/api"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/catalog"
 	"github.com/spf13/cobra"
 )
 
-type catalogUpdateResponse struct {
-	OK      bool     `json:"ok"`
-	Branch  string   `json:"branch"`
-	Entries int      `json:"entries"`
-	Path    string   `json:"path"`
-	Paths   []string `json:"paths,omitempty"`
-}
+type catalogUpdateResponse = api.CatalogUpdateResponse
 
 // NewCatalogCmd creates the sc catalog command group.
 func NewCatalogCmd() *cobra.Command {
@@ -57,14 +52,14 @@ func runCatalogUpdateCmd(cmd *cobra.Command, _ []string) error {
 	repoRoot, err := currentRepoRoot()
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
+			return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 		}
 		return err
 	}
 	client, err := readClientOpener(cfg)
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
+			return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 		}
 		return err
 	}
@@ -73,7 +68,7 @@ func runCatalogUpdateCmd(cmd *cobra.Command, _ []string) error {
 	paths, entries, err := updateCatalogCaches(cmd.Context(), repoRoot, cfg.EffectiveBranch(), scope, client)
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
+			return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 		}
 		return err
 	}
@@ -142,7 +137,7 @@ func refreshCatalogNonFatal(ctx context.Context, formatter *output.Formatter, re
 	warnings := []string{"catalog refresh failed: " + err.Error()}
 	if !formatter.JSON {
 		for _, warning := range warnings {
-			writeWarning(formatter, warning)
+			formatter.Warn(warning)
 		}
 	}
 	return warnings
@@ -154,7 +149,7 @@ func refreshCatalogWithConfigNonFatal(ctx context.Context, formatter *output.For
 		warnings := []string{"catalog refresh failed: " + err.Error()}
 		if !formatter.JSON {
 			for _, warning := range warnings {
-				writeWarning(formatter, warning)
+				formatter.Warn(warning)
 			}
 		}
 		return warnings
@@ -191,15 +186,4 @@ func displayCatalogPath(path string) string {
 		return "~" + string(os.PathSeparator) + strings.TrimPrefix(path, prefix)
 	}
 	return path
-}
-
-func writeWarning(formatter *output.Formatter, warning string) {
-	if formatter.Quiet {
-		return
-	}
-	w := formatter.ErrW
-	if w == nil {
-		w = os.Stderr
-	}
-	_, _ = fmt.Fprintln(w, "warning: "+warning)
 }

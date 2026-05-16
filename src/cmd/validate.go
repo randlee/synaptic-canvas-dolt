@@ -7,14 +7,11 @@ import (
 
 	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/api"
 	"github.com/spf13/cobra"
 )
 
-type validateResponse struct {
-	OK       bool               `json:"ok"`
-	Pass     bool               `json:"pass"`
-	Packages []validatedInstall `json:"packages"`
-}
+type validateResponse = api.ValidateResponse
 
 // NewValidateCmd creates the sc validate command.
 func NewValidateCmd() *cobra.Command {
@@ -68,14 +65,14 @@ func runValidateCmd(cmd *cobra.Command, args []string) error {
 	repoRoot, err := currentRepoRoot()
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
+			return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 		}
 		return err
 	}
 	installs, err := loadTrackedInstalls(repoRoot)
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
+			return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 		}
 		return err
 	}
@@ -96,7 +93,7 @@ func runValidateCmd(cmd *cobra.Command, args []string) error {
 		summary, err := validateTrackedInstall(cmd.Context(), install.Record)
 		if err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, "query_failed", err.Error())
+				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 			}
 			return err
 		}
@@ -115,7 +112,7 @@ func runValidateCmd(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		if !pass {
-			return errors.New("validation failed")
+			return jsonCmdError{cause: errors.New("validation failed")}
 		}
 		return nil
 	}
@@ -136,7 +133,7 @@ func runValidateCmd(cmd *cobra.Command, args []string) error {
 	for _, summary := range summaries {
 		formatter.Success(fmt.Sprintf("%s [%s]", summary.Package, summary.Scope))
 		for _, warning := range summary.Warnings {
-			writeWarning(formatter, warning)
+			formatter.Warn(warning)
 		}
 		fileRows := make([][]string, 0, len(summary.Files))
 		for _, file := range summary.Files {

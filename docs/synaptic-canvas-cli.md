@@ -264,29 +264,17 @@ switch.
 ## JSON Contracts
 
 Structured JSON is the canonical automation contract. Human-readable rendering
-may simplify presentation, but `--json` remains explicit and stable.
+may simplify presentation, but `--json` remains explicit and stable. Shared
+request/response DTOs for end-user commands live in `src/pkg/api/`; Cobra
+handlers render those DTOs directly rather than inventing command-local JSON
+shapes.
 
 ### Error Envelope
 
 All commands that support `--json` return errors in this envelope:
 
 ```json
-{
-  "ok": false,
-  "error": {
-    "code": "backend_unavailable",
-    "message": "failed to query package catalog",
-    "command": "install",
-    "retryable": true,
-    "details": {
-      "client": "http",
-      "operation": "list_packages",
-      "cause_code": "http_timeout",
-      "branch": "main"
-    },
-    "suggested_action": "retry the request or switch to a reachable backend"
-  }
-}
+{"ok": false, "error": {"code": "backend_unavailable", "message": "failed to query package catalog"}}
 ```
 
 Rules:
@@ -298,6 +286,8 @@ Rules:
 - `retryable` is explicit when retry behavior matters for automation
 - `suggested_action` is included when caller recovery is possible
 - bootstrap failures in `--json` mode use the same error envelope family
+- root-level config, branch, and argument failures must render through the same
+  envelope instead of escaping as raw Go/Cobra stderr
 
 Shared top-level `error.code` vocabulary:
 - `invalid_args`
@@ -344,53 +334,57 @@ never in a new top-level error-code family invented by one command.
 
 ### `sc install --json`
 
-`plan: true` indicates a dry-run response — no files were written.
-`dependency_warnings` lists unmet or uninstalled dependency warnings.
+Single-scope installs and dry-runs return one typed install payload. `plan:
+true` indicates a dry-run response and no files were written.
 
 ```json
 {
   "ok": true,
   "plan": false,
-  "package": "team-lead",
-  "branch": "beta",
-  "version": "1.2.0",
   "scope": "project",
-  "install_root": "/repo/.claude/skills/team-lead",
-  "install_id": "pkg_team-lead_project_ab12cd34",
-  "files_written": 4,
-  "dependencies": {
-    "preexisting": ["gh"],
-    "installed": ["agent-teams-mail"]
+  "package": {
+    "id": "team-lead",
+    "version": "1.2.0",
+    "branch": "beta"
   },
+  "install_root": "/repo/.claude/skills/team-lead",
+  "files_written": 4,
+  "dependencies": ["gh", "agent-teams-mail"],
+  "dependency_warnings": [],
   "hooks_registered": [
     {
       "event": "PreToolUse",
-      "script": ".claude/skills/team-lead/hooks/pre-commit.sh"
+      "matcher": "git commit",
+      "script_path": ".claude/skills/team-lead/hooks/pre-commit.sh"
     }
   ],
-  "template_validation": {
-    "status": "ok",
-    "warnings": []
-  },
-  "dependency_warnings": []
+  "template_validation_warnings": [],
+  "warnings": [],
+  "files": [],
+  "answers": {}
 }
 ```
 
-### `sc upgrade --json`
+Multi-scope installs use the same response type with `installs`,
+`rolled_back`, and `failures`. Partial multi-scope failures keep the standard
+top-level schema and set `error.code` from the shared vocabulary rather than
+inventing a command-specific top-level code.
 
-Each result item carries a `warnings` array for per-package upgrade notes
-(local modification warnings, already-on-latest, dependency warnings).
+### `sc upgrade --json`
 
 ```json
 {
   "ok": true,
-  "results": [
+  "upgrades": [
     {
       "package": "team-lead",
-      "branch": "main",
-      "version": "1.3.0",
       "scope": "project",
-      "status": "upgraded",
+      "from_version": "1.2.0",
+      "to_version": "1.3.0",
+      "from_branch": "main",
+      "to_branch": "main",
+      "install_root": "/repo/.claude/skills/team-lead",
+      "files_written": 4,
       "warnings": [],
       "dependency_warnings": []
     }
@@ -406,19 +400,17 @@ Each result item carries a `warnings` array for per-package upgrade notes
   "packages": [
     {
       "package": "team-lead",
-      "project": {
-        "installed": true,
+      "global": {
+        "branch": "main",
+        "version": "1.4.0",
+        "install_root": "/Users/randlee/.claude/skills/team-lead",
+        "validation": "PASS"
+      },
+      "local": {
         "branch": "main",
         "version": "1.3.0",
         "install_root": "/repo/.claude/skills/team-lead",
-        "validation": "ok"
-      },
-      "global": {
-        "installed": true,
-        "branch": "beta",
-        "version": "1.4.0",
-        "install_root": "/Users/randlee/.claude/skills/team-lead",
-        "validation": "warn"
+        "validation": "FAIL"
       }
     }
   ]
@@ -430,34 +422,30 @@ Each result item carries a `warnings` array for per-package upgrade notes
 ```json
 {
   "ok": true,
-  "package": "team-lead",
-  "scope": "project",
-  "branch": "main",
-  "version": "1.3.0",
-  "install_root": "/repo/.claude/skills/team-lead",
-  "items": [
+  "pass": false,
+  "packages": [
     {
-      "kind": "file",
-      "severity": "warn",
-      "state": "modified",
-      "doc_path": "skills/team-lead/SKILL.md",
-      "install_path": "/repo/.claude/skills/team-lead/SKILL.md",
-      "message": "local file differs from tracked package content"
-    },
-    {
-      "kind": "dependency",
-      "severity": "error",
-      "state": "missing",
-      "dependency": "gh",
-      "message": "required dependency not found on PATH"
+      "package": "team-lead",
+      "version": "1.3.0",
+      "branch": "main",
+      "scope": "project",
+      "install_root": "/repo/.claude/skills/team-lead",
+      "install_site": "/repo",
+      "aggregate_expected": "abc123",
+      "aggregate_actual": "def456",
+      "aggregate_pass": false,
+      "aggregate_status": "error",
+      "status": "FAIL",
+      "warnings": [],
+      "items": [
+        {
+          "path": "SKILL.md",
+          "status": "MODIFIED",
+          "severity": "warn"
+        }
+      ]
     }
-  ],
-  "summary": {
-    "info": 0,
-    "warn": 1,
-    "error": 1,
-    "critical": 0
-  }
+  ]
 }
 ```
 
@@ -473,9 +461,8 @@ Representative error details:
 {
   "ok": false,
   "error": {
-    "code": "blocked",
-    "message": "install failed and rollback was only partially successful",
-    "command": "install",
+    "code": "internal_error",
+    "message": "install failed for all selected scopes",
     "details": {
       "rollback": {
         "attempted": true,
@@ -498,8 +485,123 @@ Script and hook files (`file_type: script` or `hook`) are written with mode
 alongside the file content write. This behavior is stable and automation may
 depend on it.
 
-Other Phase 3 commands follow the same top-level `ok` convention and emit
-command-specific structured payloads for automation.
+Other end-user commands such as `snapshot`, `scan`, `catalog update`,
+`config get`, and `config set` follow the same top-level `ok` convention and
+emit command-specific typed payloads from `src/pkg/api/`.
+
+### `sc uninstall --json`
+
+```json
+{
+  "ok": true,
+  "removed": {
+    "package": "team-lead",
+    "scope": "project",
+    "removed_files": [
+      "/repo/.claude/skills/team-lead/SKILL.md"
+    ],
+    "removed_dependencies": [
+      "gh"
+    ],
+    "hooks_removed": 1
+  },
+  "removed_all": [
+    {
+      "package": "team-lead",
+      "scope": "project",
+      "removed_files": [
+        "/repo/.claude/skills/team-lead/SKILL.md"
+      ],
+      "removed_dependencies": [
+        "gh"
+      ],
+      "hooks_removed": 1
+    }
+  ]
+}
+```
+
+### `sc scan --json`
+
+```json
+{
+  "ok": true,
+  "branch": "main",
+  "mutated": false,
+  "accepted": 0,
+  "upgraded": 0,
+  "candidates": [
+    {
+      "package": "team-lead",
+      "version": "1.3.0",
+      "branch": "main",
+      "scope": "project",
+      "install_root": "/repo/.claude/skills/team-lead",
+      "install_site": "/repo",
+      "tracking_origin": "scan-reconciled",
+      "needs_upgrade": false,
+      "files": [
+        {
+          "path": "/repo/.claude/skills/team-lead/SKILL.md",
+          "doc_path": "SKILL.md",
+          "sha256": "abc123"
+        }
+      ]
+    }
+  ],
+  "warnings": []
+}
+```
+
+### `sc catalog update --json`
+
+```json
+{
+  "ok": true,
+  "branch": "beta",
+  "entries": 42,
+  "path": "~/.synaptic/catalog-beta.toml",
+  "paths": [
+    "/repo/.synaptic/catalog-beta.toml",
+    "~/.synaptic/catalog-beta.toml"
+  ]
+}
+```
+
+### `sc config get --json`
+
+```json
+{
+  "ok": true,
+  "key": "dolt.database",
+  "value": "randlee/synaptic-canvas"
+}
+```
+
+### `sc config set --json`
+
+```json
+{
+  "ok": true,
+  "key": "dolt.database",
+  "path": "/Users/example/.sc/config.toml"
+}
+```
+
+### `sc snapshot --json`
+
+```json
+{
+  "ok": true,
+  "package": "team-lead",
+  "scope": "project",
+  "output_dir": "/Users/example/.synaptic/mod-snapshots/team-lead/main/repo/20260425T120000Z",
+  "files": [
+    "SKILL.md",
+    "README.md"
+  ]
+}
+```
 ---
 
 ## Integrity Model
@@ -815,3 +917,4 @@ ALTER TABLE packages ADD COLUMN signed_by VARCHAR(256) AFTER signature;
 |------|--------|
 | 2026-02-22 | Initial design document |
 | 2026-02-22 | Add template variable validation to admin publish (blocking gate) and import (warning) |
+| 2026-05-15 | Sprint 4.1 hardening: shared JSON contract, typed error coverage, warning formatter, and command JSON shape examples |

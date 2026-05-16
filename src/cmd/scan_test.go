@@ -327,7 +327,7 @@ func TestScanAcceptAllZeroCandidatesNoOp(t *testing.T) {
 	}
 }
 
-func TestScanJSONAloneDoesNotMutate(t *testing.T) {
+func TestJSONScanAloneDoesNotMutate(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -391,7 +391,7 @@ func TestScanHumanReadableTableOutput(t *testing.T) {
 	}
 }
 
-func TestScanJSONAcceptAllWritesLockfile(t *testing.T) {
+func TestJSONScanAcceptAllWritesLockfile(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -593,7 +593,7 @@ func TestScanAbsentCatalogErrors(t *testing.T) {
 	}
 }
 
-func TestScanAbsentCatalogJSONError(t *testing.T) {
+func TestJSONScanAbsentCatalogError(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -619,7 +619,7 @@ func TestScanAbsentCatalogJSONError(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &envelope); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
 	}
-	if envelope.OK || envelope.Error.Code != "query_failed" || !strings.Contains(envelope.Error.Message, "catalog not found for branch main") {
+	if envelope.OK || envelope.Error.Code != "not_found" || !strings.Contains(envelope.Error.Message, "catalog not found for branch main") {
 		t.Fatalf("unexpected JSON error envelope: %+v", envelope)
 	}
 }

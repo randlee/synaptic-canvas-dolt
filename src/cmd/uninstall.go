@@ -6,15 +6,12 @@ import (
 
 	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/api"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/installer"
 	"github.com/spf13/cobra"
 )
 
-type uninstallResponse struct {
-	OK         bool              `json:"ok"`
-	Removed    uninstallResult   `json:"removed"`
-	RemovedAll []uninstallResult `json:"removed_all,omitempty"`
-}
+type uninstallResponse = api.UninstallResponse
 
 // NewUninstallCmd creates the sc uninstall command.
 func NewUninstallCmd() *cobra.Command {
@@ -62,14 +59,14 @@ func runUninstallCmd(cmd *cobra.Command, args []string) error {
 	repoRoot, err := currentRepoRoot()
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
+			return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 		}
 		return err
 	}
 	installs, err := loadTrackedInstalls(repoRoot)
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
+			return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 		}
 		return err
 	}
@@ -87,14 +84,14 @@ func runUninstallCmd(cmd *cobra.Command, args []string) error {
 		validation, err := validateTrackedInstall(cmd.Context(), target.Record)
 		if err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, "query_failed", err.Error())
+				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 			}
 			return err
 		}
 		if hasLocalModifications(validation) && !force && !yolo {
 			if cfg.JSON {
 				err := fmt.Errorf("locally modified files detected; use --force to proceed or --yolo in non-interactive mode")
-				return writeJSONError(formatter, "query_failed", err.Error())
+				return writeJSONError(formatter, api.ErrorCodeBlocked, err.Error())
 			}
 			err := confirmProceed(cmd, "Package has locally modified files. Proceed anyway?", "locally modified files detected; use --force to proceed or --yolo in non-interactive mode", yolo, force)
 			if err != nil {
@@ -105,7 +102,7 @@ func runUninstallCmd(cmd *cobra.Command, args []string) error {
 		stateRoot, err := stateRootForScope(repoRoot, target.Record.InstallScope)
 		if err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, "query_failed", err.Error())
+				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 			}
 			return err
 		}
@@ -114,7 +111,7 @@ func runUninstallCmd(cmd *cobra.Command, args []string) error {
 			return nil
 		}); err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, "query_failed", err.Error())
+				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 			}
 			return err
 		}
@@ -124,15 +121,15 @@ func runUninstallCmd(cmd *cobra.Command, args []string) error {
 			return nil
 		}); err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, "query_failed", err.Error())
+				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 			}
 			return err
 		}
 		removedFiles, err := removeOwnedFiles(stateRoot, target.Record)
 		if err != nil {
-			writeWarning(formatter, "manifest updated but file removal failed: "+err.Error())
+			formatter.Warn("manifest updated but file removal failed: " + err.Error())
 			if cfg.JSON {
-				return writeJSONError(formatter, "query_failed", err.Error())
+				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 			}
 			return err
 		}
@@ -157,7 +154,7 @@ func runUninstallCmd(cmd *cobra.Command, args []string) error {
 				confirmed, err := confirmRemoveDependency(cmd, dep)
 				if err != nil {
 					if cfg.JSON {
-						return writeJSONError(formatter, "query_failed", err.Error())
+						return writeJSONError(formatter, api.ErrorCodeConfirmationNeeded, err.Error())
 					}
 					return err
 				}
@@ -171,7 +168,7 @@ func runUninstallCmd(cmd *cobra.Command, args []string) error {
 			}
 			if err := removeSCDependency(dep); err != nil {
 				if cfg.JSON {
-					return writeJSONError(formatter, "query_failed", err.Error())
+					return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 				}
 				return err
 			}
@@ -198,7 +195,7 @@ func runUninstallCmd(cmd *cobra.Command, args []string) error {
 	}
 	for _, result := range results {
 		for _, warning := range result.Warnings {
-			writeWarning(formatter, warning)
+			formatter.Warn(warning)
 		}
 	}
 	return nil
