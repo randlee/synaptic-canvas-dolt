@@ -60,14 +60,14 @@ func runUninstallCmd(cmd *cobra.Command, args []string) error {
 	repoRoot, err := currentRepoRoot()
 	if err != nil {
 		if cfg.JSON {
-			return writeClassifiedJSONError(formatter, cfg, err)
+			return writeClassifiedJSONError(formatter, cfg, err, cmd.Name())
 		}
 		return err
 	}
 	installs, err := operations.LoadTrackedInstalls(repoRoot)
 	if err != nil {
 		if cfg.JSON {
-			return writeClassifiedJSONError(formatter, cfg, err)
+			return writeClassifiedJSONError(formatter, cfg, err, cmd.Name())
 		}
 		return err
 	}
@@ -75,7 +75,7 @@ func runUninstallCmd(cmd *cobra.Command, args []string) error {
 	if len(targets) == 0 {
 		err := fmt.Errorf("package %q is not installed", packageID)
 		if cfg.JSON {
-			return writeClassifiedJSONError(formatter, cfg, err)
+			return writeClassifiedJSONError(formatter, cfg, err, cmd.Name())
 		}
 		return err
 	}
@@ -85,7 +85,7 @@ func runUninstallCmd(cmd *cobra.Command, args []string) error {
 		validation, err := validateTrackedInstall(cmd.Context(), target.Record)
 		if err != nil {
 			if cfg.JSON {
-				return writeClassifiedJSONError(formatter, cfg, err)
+				return writeClassifiedJSONError(formatter, cfg, err, cmd.Name())
 			}
 			return err
 		}
@@ -103,7 +103,7 @@ func runUninstallCmd(cmd *cobra.Command, args []string) error {
 		stateRoot, err := stateRootForScope(repoRoot, target.Record.InstallScope)
 		if err != nil {
 			if cfg.JSON {
-				return writeClassifiedJSONError(formatter, cfg, err)
+				return writeClassifiedJSONError(formatter, cfg, err, cmd.Name())
 			}
 			return err
 		}
@@ -112,7 +112,7 @@ func runUninstallCmd(cmd *cobra.Command, args []string) error {
 			return nil
 		}); err != nil {
 			if cfg.JSON {
-				return writeClassifiedJSONError(formatter, cfg, err)
+				return writeClassifiedJSONError(formatter, cfg, err, cmd.Name())
 			}
 			return err
 		}
@@ -122,7 +122,7 @@ func runUninstallCmd(cmd *cobra.Command, args []string) error {
 			return nil
 		}); err != nil {
 			if cfg.JSON {
-				return writeClassifiedJSONError(formatter, cfg, err)
+				return writeClassifiedJSONError(formatter, cfg, err, cmd.Name())
 			}
 			return err
 		}
@@ -169,7 +169,7 @@ func runUninstallCmd(cmd *cobra.Command, args []string) error {
 			}
 			if err := removeSCDependency(dep); err != nil {
 				if cfg.JSON {
-					return writeClassifiedJSONError(formatter, cfg, err)
+					return writeClassifiedJSONError(formatter, cfg, err, cmd.Name())
 				}
 				return err
 			}

@@ -19,7 +19,7 @@ const (
 type Error struct {
 	Code            ErrorCode      `json:"code"`
 	Message         string         `json:"message"`
-	Retryable       bool           `json:"retryable,omitempty"`
+	Retryable       bool           `json:"retryable"`
 	Details         map[string]any `json:"details,omitempty"`
 	SuggestedAction string         `json:"suggested_action,omitempty"`
 }
@@ -96,9 +96,13 @@ type InstallPackageRef struct {
 }
 
 type InstallScopeFailure struct {
-	Package string `json:"package"`
-	Scope   string `json:"scope"`
-	Error   string `json:"error"`
+	Package         string         `json:"package"`
+	Scope           string         `json:"scope"`
+	Code            ErrorCode      `json:"code,omitempty"`
+	Error           string         `json:"error"`
+	Retryable       bool           `json:"retryable"`
+	Details         map[string]any `json:"details,omitempty"`
+	SuggestedAction string         `json:"suggested_action,omitempty"`
 }
 
 type InstallScope string

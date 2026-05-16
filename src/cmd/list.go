@@ -44,7 +44,7 @@ func runListCmd(cmd *cobra.Command, _ []string) error {
 		})
 		if err != nil {
 			if cfg.JSON {
-				return writeClassifiedJSONError(formatter, cfg, err)
+				return writeClassifiedJSONError(formatter, cfg, err, "list_packages")
 			}
 			return err
 		}

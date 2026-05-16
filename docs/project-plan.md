@@ -1835,6 +1835,32 @@ platforms with predictable config behavior.
 - Repository-owned verification exists for installer behavior on supported
   platforms
 
+### Sprint 4.6: Error Contract Completeness
+
+**Goal:** Close the remaining gap between the documented Phase 4 machine
+contract and runtime aggregate-install/backend error metadata.
+
+**Deliverables:**
+- Contract coverage for aggregate install failures with typed per-scope sub-errors
+- Runtime error metadata coverage for retryability, suggested action, cause code,
+  and operation fields
+- Phase documentation aligned with the implemented Phase 4 error surface
+
+**Key Requirements:**
+- Aggregate install failures preserve the most specific typed code instead of
+  collapsing to `internal_error`
+- Recoverable backend failures expose machine-readable retryability and recovery
+  guidance
+- CLI documentation stays synchronized with the shipped JSON error schema
+
+**Acceptance Criteria:**
+- All-scopes-failed and partial multi-scope install failures preserve typed
+  per-scope codes in `failures[]`
+- Backend failure envelopes include `retryable`, `suggested_action`,
+  `details.cause_code`, and `details.operation`
+- Contract and command tests cover both pre-install lookup failures and
+  scope-loop install failures
+
 ---
 
 ## Phase 5: Release Pipeline
@@ -1865,7 +1891,7 @@ platforms with predictable config behavior.
 | 1. Foundation | 1.1–1.5 | Scaffold + CI pipeline, Dolt client, integrity, log-debug agent, gap closure |
 | 2. Admin | 2.1–2.4 | Import, export, verify, publish |
 | 3. End-User | 3.1–3.9 | List, install, validate, upgrade, HTTP client, SHA catalog, scan, import collision, scope/yolo/severity |
-| 4. AI Surface | 4.1–4.5 | JSON contract, backend parity, readback, sc:plugin, installer |
+| 4. AI Surface | 4.1–4.6 | JSON contract, backend parity, readback, sc:plugin, installer, error contract completeness |
 | 5. Release | 5.1 | GoReleaser release pipeline |
 
 ---
