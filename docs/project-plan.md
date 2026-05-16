@@ -1989,20 +1989,30 @@ Detailed sprint plan: [4.10 Operations Layer Workflow Extraction](./phase-4/4.10
 
 ### Sprint 5.1: Release Pipeline
 
-**Goal:** Tag-triggered GoReleaser publish.
+**Goal:** Ship an MVP release pipeline with an explicit archive matrix,
+pre-tag GoReleaser validation, documented Homebrew publication prerequisites,
+and an accurate statement of what is and is not part of the MVP release
+surface.
+
+Detailed sprint plan: [5.1 Release Pipeline](./phase-5/5.1-release-pipeline.md)
 
 **Deliverables:**
-- `.github/workflows/release.yml` — tag-triggered release
-- GoReleaser configuration for cross-platform builds
-- Homebrew tap update (`randlee/homebrew-tap`)
-- Checksums and release notes
+- Tag-triggered publish workflow and PR/push GoReleaser validation workflow
+- GoReleaser configuration with an explicit primary/secondary archive matrix
+- Homebrew publication prerequisite and failure-policy documentation
+- Accurate release-surface documentation for Homebrew, release archives, and
+  deferred Winget publication
 
 **Acceptance Criteria:**
-- Tag push `v*` triggers release
-- Binaries for linux/darwin (amd64, arm64), windows (amd64)
-- Homebrew formula updated automatically
-- SHA256 checksums published
-- Release notes generated from commits
+- `docs/phase-5/5.1-release-pipeline.md` exists and defines the full Sprint 5.1
+  implementation plan
+- PR/push validation runs `goreleaser check` before tags are cut
+- The release matrix is explicit: primary `darwin/arm64`, `windows/amd64`,
+  `linux/amd64`; secondary `darwin/amd64`, `windows/arm64`, `linux/arm64`
+- Homebrew publication prerequisites and non-blocking failure behavior are
+  documented
+- Winget publication is explicitly deferred pending publisher registration
+  (gh issue `#54`)
 
 ---
 
@@ -2054,5 +2064,6 @@ later planning so verification remains part of the product story:
 | 2026-02-22 | Move CI pipeline from Phase 5 into Sprint 1.1; Phase 5 now release-only |
 | 2026-02-22 | Add template variable validation to Sprints 2.1 (validator + warning), 2.4 (blocking gate), 3.2 (post-install scan) |
 | 2026-04-08 | Align plan with `requirements.md` and `architecture.md`, including explicit branch resolution and AI JSON access |
+| 2026-05-16 | Expand Phase 5 planning with explicit release matrix, pre-tag validation, Homebrew prerequisite/failure policy, and Winget deferral |
 | 2026-04-08 | Add Sprint 1.5 for Phase 1 gap closure and strengthen verification/test expectations across later phases |
 | 2026-04-08 | Add MVP release gate and future validation considerations (test harness, evals, validation evidence) |

@@ -49,8 +49,9 @@
 
 **Layer 1 — `sc` Go CLI:** The compiled binary. Binds command input/output to
 shared package-management workflows, typed JSON DTOs, Dolt client adapters,
-and file/state services. Distributed via GoReleaser (Homebrew, winget,
-`go install`).
+and file/state services. Distributed via GoReleaser release archives,
+Homebrew, and `go install`. Winget publication is deferred pending publisher
+registration (gh issue `#54`).
 
 **Layer 2 — `sc:plugin` skill:** A Claude Code skill that wraps the `sc` CLI.
 Allows Claude to manage packages conversationally ("install the delay
@@ -983,7 +984,7 @@ Following `claude-history` patterns:
 - **CGO_ENABLED=0** (static binaries)
 - **Ldflags:** version, commit, date injection
 - **Homebrew:** `randlee/homebrew-tap` → `Formula/sc.rb`
-- **Winget:** `randlee.sc`
+- **Winget:** deferred pending publisher registration (gh issue `#54`)
 - **Checksums:** SHA256
 
 ### CI Workflows
@@ -998,7 +999,14 @@ Following `claude-history` patterns:
 - Full test suite
 - GoReleaser build + publish
 - Homebrew tap update
-- Winget manifest update
+- GitHub release archives, checksums, and generated notes
+
+**release-validate.yml** (PR/push):
+- `goreleaser check`
+- Non-publishing validation of the release configuration before tags are cut
+
+Winget publication is intentionally out of MVP release scope until publisher
+registration is complete (tracked in gh issue `#54`).
 
 ---
 
