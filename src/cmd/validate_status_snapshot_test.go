@@ -16,6 +16,7 @@ func TestValidateCommandJSONAllFileStates(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
 	restoreDir := chdirForTest(t, root)
 	defer restoreDir()
@@ -55,8 +56,8 @@ func TestValidateCommandJSONAllFileStates(t *testing.T) {
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{"validate", "team-lead", "--json"})
 
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("Execute() error = %v", err)
+	if err := cmd.Execute(); err == nil || err.Error() != "validation failed" {
+		t.Fatalf("Execute() error = %v, want validation failed", err)
 	}
 
 	var resp validateResponse
@@ -69,9 +70,14 @@ func TestValidateCommandJSONAllFileStates(t *testing.T) {
 	if len(resp.Packages) != 1 {
 		t.Fatalf("expected 1 package, got %+v", resp)
 	}
+	if resp.Packages[0].AggregateStatus != "error" {
+		t.Fatalf("aggregate_status = %q, want error", resp.Packages[0].AggregateStatus)
+	}
 	got := map[string]string{}
+	severity := map[string]ValidationSeverity{}
 	for _, file := range resp.Packages[0].Files {
 		got[file.Path] = file.Status
+		severity[file.Path] = file.Severity
 	}
 	for path, want := range map[string]string{
 		"good.txt":       "OK",
@@ -84,12 +90,158 @@ func TestValidateCommandJSONAllFileStates(t *testing.T) {
 			t.Fatalf("status[%s] = %q, want %q (all=%+v)", path, got[path], want, got)
 		}
 	}
+	if severity["good.txt"] != ValidationSeverityInfo || severity["modified.txt"] != ValidationSeverityWarn || severity["missing.txt"] != ValidationSeverityError {
+		t.Fatalf("unexpected severities: %+v", severity)
+	}
+}
+
+func TestValidationSeverityMappings(t *testing.T) {
+	for status, want := range map[string]ValidationSeverity{
+		"OK":                              ValidationSeverityInfo,
+		"MODIFIED":                        ValidationSeverityWarn,
+		"EXTRA":                           ValidationSeverityInfo,
+		"MISSING":                         ValidationSeverityError,
+		"UNREADABLE":                      ValidationSeverityError,
+		"SHA_MISMATCH":                    ValidationSeverityError,
+		"DEPENDENCY_MISSING":              ValidationSeverityCritical,
+		"DEPENDENCY_VERSION_INCOMPATIBLE": ValidationSeverityError,
+		"HOOK_NOT_REGISTERED":             ValidationSeverityWarn,
+		"TEMPLATE_INVALID":                ValidationSeverityWarn,
+		"AGGREGATE_MISMATCH":              ValidationSeverityError,
+	} {
+		if got := severityForValidationStatus(status); got != want {
+			t.Fatalf("severityForValidationStatus(%q) = %q, want %q", status, got, want)
+		}
+	}
+}
+
+func TestValidateEmitsDependencyHookAndTemplateItems(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
+	restoreDir := chdirForTest(t, root)
+	defer restoreDir()
+
+	installRoot := filepath.Join(root, ".claude", "skills", "team-lead")
+	hookContent := "#!/bin/sh\n"
+	writeCmdFile(t, filepath.Join(installRoot, "hooks", "pre.sh"), hookContent)
+	lock := installer.ManifestLock{Installs: []installer.InstallRecord{{
+		InstallID:        "pkg_team-lead_project",
+		Package:          "team-lead",
+		Version:          "1.0.0",
+		Branch:           "main",
+		InstallScope:     "project",
+		InstallRoot:      installRoot,
+		InstallSite:      root,
+		TemplateRendered: true,
+		Files:            map[string]string{"hooks/pre.sh": integrity.ComputeContentSHA256([]byte(hookContent))},
+		Requirements: installer.RequirementSnapshot{
+			Tools:        []string{"gh>=2"},
+			CLIInstalled: []string{"atm"},
+		},
+		TemplateValidation: installer.TemplateValidationRecord{
+			TemplateFiles: []string{"SKILL.md.j2"},
+			Unresolved:    []string{"SKILL.md: contains unresolved template markers"},
+		},
+	}}}
+	if err := installer.SaveManifestLock(root, lock); err != nil {
+		t.Fatalf("SaveManifestLock() error = %v", err)
+	}
+
+	cmd := NewRootCmd("test", "abc", "2025-01-01")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"validate", "team-lead", "--json"})
+	if err := cmd.Execute(); err == nil || err.Error() != "validation failed" {
+		t.Fatalf("Execute() error = %v, want validation failed", err)
+	}
+
+	var resp validateResponse
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
+	}
+	statuses := map[string]int{}
+	for _, item := range resp.Packages[0].Files {
+		statuses[item.Status]++
+	}
+	for _, want := range []string{"DEPENDENCY_MISSING", "HOOK_NOT_REGISTERED", "TEMPLATE_INVALID"} {
+		if statuses[want] == 0 {
+			t.Fatalf("expected validation status %s, got %+v", want, resp.Packages[0].Files)
+		}
+	}
+}
+
+func TestValidateScopeBothMixedPassFailReturnsExitOneWithResults(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
+	restoreDir := chdirForTest(t, root)
+	defer restoreDir()
+
+	localRoot := filepath.Join(root, ".claude", "skills", "team-lead")
+	globalRoot := filepath.Join(home, ".claude", "skills", "team-lead")
+	writeCmdFile(t, filepath.Join(localRoot, "SKILL.md"), "local")
+	writeCmdFile(t, filepath.Join(globalRoot, "SKILL.md"), "changed")
+	if err := installer.SaveManifestLock(root, installer.ManifestLock{Installs: []installer.InstallRecord{{
+		InstallID:    "pkg_team-lead_project",
+		Package:      "team-lead",
+		Version:      "1.0.0",
+		Branch:       "main",
+		InstallScope: "project",
+		InstallRoot:  localRoot,
+		InstallSite:  root,
+		Files:        map[string]string{"SKILL.md": integrity.ComputeContentSHA256([]byte("local"))},
+	}}}); err != nil {
+		t.Fatalf("SaveManifestLock(local) error = %v", err)
+	}
+	if err := installer.SaveManifestLock(home, installer.ManifestLock{Installs: []installer.InstallRecord{{
+		InstallID:    "pkg_team-lead_global",
+		Package:      "team-lead",
+		Version:      "1.0.0",
+		Branch:       "main",
+		InstallScope: "global",
+		InstallRoot:  globalRoot,
+		InstallSite:  home,
+		Files:        map[string]string{"SKILL.md": integrity.ComputeContentSHA256([]byte("global"))},
+	}}}); err != nil {
+		t.Fatalf("SaveManifestLock(global) error = %v", err)
+	}
+
+	cmd := NewRootCmd("test", "abc", "2025-01-01")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"validate", "--all", "--scope", "both", "--json"})
+	if err := cmd.Execute(); err == nil || err.Error() != "validation failed" {
+		t.Fatalf("Execute() error = %v, want validation failed", err)
+	}
+
+	var resp validateResponse
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
+	}
+	if resp.Pass || len(resp.Packages) != 2 {
+		t.Fatalf("expected mixed validation failure with 2 packages, got %+v", resp)
+	}
+	passByScope := map[string]bool{}
+	for _, pkg := range resp.Packages {
+		passByScope[pkg.Scope] = pkg.Pass
+	}
+	if !passByScope["project"] || passByScope["global"] {
+		t.Fatalf("expected project pass and global fail, got %+v", passByScope)
+	}
 }
 
 func TestStatusCommandJSONMergedScopes(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	t.Setenv("USERPROFILE", home)
 	resolvedHome, err := os.UserHomeDir()
 	if err != nil {
@@ -172,6 +324,7 @@ func TestSnapshotCommandModifiedOnly(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
 	restoreDir := chdirForTest(t, root)
 	defer restoreDir()
@@ -240,6 +393,7 @@ func TestSnapshotCommandFull(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
+	t.Setenv("USERPROFILE", home)
 	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
 	restoreDir := chdirForTest(t, root)
 	defer restoreDir()
@@ -303,6 +457,7 @@ func TestValidateCommandAllFlag(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	t.Setenv("USERPROFILE", home)
 	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
 	restoreDir := chdirForTest(t, root)

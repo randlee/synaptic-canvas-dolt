@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/dolt"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
 )
@@ -146,9 +147,7 @@ func TestInfoCommandNotFoundJSON(t *testing.T) {
 	restore := installReadClientTestHooks(dolt.NewMockClient())
 	defer restore()
 
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
+	requireJSONCmdError(t, cmd.Execute())
 
 	var resp jsonErrorEnvelope
 	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
@@ -188,9 +187,7 @@ func TestListCommandErrorJSON(t *testing.T) {
 	restore := installReadClientTestHooks(mock)
 	defer restore()
 
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
+	requireJSONCmdError(t, cmd.Execute())
 
 	var resp jsonErrorEnvelope
 	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
@@ -203,13 +200,10 @@ func TestListCommandErrorJSON(t *testing.T) {
 
 func installReadClientTestHooks(mock *dolt.MockClient) func() {
 	prevOpener := readClientOpener
-	prevDetect := detectReadDoltDir
-	readClientOpener = func(_ string, _ string) (readClient, error) {
+	readClientOpener = func(_ *config.Config) (readClient, error) {
 		return mock, nil
 	}
-	detectReadDoltDir = func(string) (string, error) { return "", nil }
 	return func() {
 		readClientOpener = prevOpener
-		detectReadDoltDir = prevDetect
 	}
 }

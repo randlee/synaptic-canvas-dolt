@@ -84,7 +84,7 @@ Recommended fix:
   - default command scope when run in a repo
   - default command scope when run outside a repo
   - how users target global vs project installs when both exist
-- Add explicit flags if needed, for example `--global` / `--project`, to `status`, `validate`, `upgrade`, and `uninstall`.
+- Add one explicit scope enum flag to `status`, `validate`, `upgrade`, and `uninstall`.
 
 ### 3. Sprint 3.3 acceptance is missing `UNREADABLE`, aggregate result shape, and mixed-scope status behavior
 

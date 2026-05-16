@@ -28,11 +28,13 @@ type statusScopeState struct {
 
 // NewStatusCmd creates the sc status command.
 func NewStatusCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show tracked install status",
 		RunE:  runStatusCmd,
 	}
+	cmd.Flags().String("scope", "both", "status scope: project, global, or both")
+	return cmd
 }
 
 func runStatusCmd(cmd *cobra.Command, _ []string) error {
@@ -43,6 +45,16 @@ func runStatusCmd(cmd *cobra.Command, _ []string) error {
 	formatter := output.NewFormatter(cfg.JSON, cfg.Quiet)
 	formatter.Writer = cmd.OutOrStdout()
 	formatter.ErrW = cmd.ErrOrStderr()
+	scope, err := cmd.Flags().GetString("scope")
+	if err != nil {
+		return fmt.Errorf("reading --scope: %w", err)
+	}
+	if err := validateScope(scope); err != nil {
+		if cfg.JSON {
+			return writeJSONError(formatter, "invalid_args", err.Error())
+		}
+		return err
+	}
 
 	repoRoot, err := currentRepoRoot()
 	if err != nil {
@@ -58,11 +70,12 @@ func runStatusCmd(cmd *cobra.Command, _ []string) error {
 		}
 		return err
 	}
+	installs = filterInstallsByScope(installs, scope)
 
 	grouped := map[string]*statusPackageRow{}
 	order := []string{}
 	for _, install := range installs {
-		summary, err := validateTrackedInstall(install.Record)
+		summary, err := validateTrackedInstall(cmd.Context(), install.Record)
 		if err != nil {
 			if cfg.JSON {
 				return writeJSONError(formatter, "query_failed", err.Error())

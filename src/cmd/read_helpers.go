@@ -1,92 +1,76 @@
 package cmd
 
 import (
-	"context"
-	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
+	"time"
 
 	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/dolt"
-	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
 	"github.com/spf13/cobra"
 )
 
-type readClient interface {
-	ListPackages(context.Context, dolt.ListOptions) ([]models.Package, error)
-	GetPackageDetail(context.Context, string) (*models.Package, error)
-	GetPackage(context.Context, string) (*models.Package, error)
-	GetPackageFiles(context.Context, string) ([]models.PackageFile, error)
-	GetPackageDeps(context.Context, string) ([]models.PackageDep, error)
-	GetPackageHooks(context.Context, string) ([]models.PackageHook, error)
-	GetPackageQuestions(context.Context, string) ([]models.PackageQuestion, error)
-	ResolveVariant(context.Context, string, string) (string, error)
-	Close() error
-}
+type readClient = dolt.Client
 
 var readClientOpener = openReadClient
-var detectReadDoltDir = detectReadDoltDirImpl
 
-func openReadClient(doltDir string, branch string) (readClient, error) {
-	if doltDir != "" {
-		return dolt.NewCLIReader(doltDir, branch), nil
+func openReadClient(cfg *config.Config) (readClient, error) {
+	clientType := cfg.Get(config.KeyDoltClient, "http")
+	switch clientType {
+	case "http":
+		database := cfg.Get(config.KeyDoltDatabase, "")
+		if database == "" {
+			return nil, fmt.Errorf("dolt.database is not configured; run: sc config set dolt.database <owner/database>")
+		}
+		return dolt.NewHTTPClient(dolt.HTTPConfig{
+			Host:     cfg.Get(config.KeyDoltHost, "www.dolthub.com"),
+			Database: database,
+			Branch:   cfg.EffectiveBranch(),
+			Token:    cfg.Get(config.KeyDoltToken, ""),
+			Timeout:  time.Duration(cfg.GetInt(config.KeyDoltTimeout, 30)) * time.Second,
+		}), nil
+	case "sql":
+		dsn := cfg.Get(config.KeyDoltDSN, "")
+		if dsn == "" {
+			return nil, fmt.Errorf("dolt.dsn is not configured; run: sc config set dolt.dsn <dsn>")
+		}
+		sqlCfg, err := dolt.ParseDSN(dsn)
+		if err != nil {
+			return nil, err
+		}
+		return dolt.OpenForBranch(sqlCfg, cfg.EffectiveBranch())
+	case "cli":
+		doltDir := config.ExpandPath(cfg.Get(config.KeyDoltDir, ""))
+		if doltDir == "" {
+			return nil, fmt.Errorf("dolt.dir is not configured; run: sc config set dolt.dir <path>")
+		}
+		return dolt.NewCLIReader(doltDir, cfg.EffectiveBranch()), nil
+	default:
+		return nil, fmt.Errorf("unsupported dolt.client %q", clientType)
 	}
-	cfg := dolt.DefaultConfig()
-	return dolt.OpenForBranch(cfg, branch)
 }
 
-func loadConfigAndReadDoltDir(cmd *cobra.Command) (*config.Config, string, error) {
+func loadConfig(cmd *cobra.Command) (*config.Config, error) {
 	cfg, err := config.NewConfigFromFlags(cmd)
 	if err != nil {
-		return nil, "", fmt.Errorf("reading config flags: %w", err)
+		return nil, fmt.Errorf("reading config flags: %w", err)
 	}
-	doltDir, err := detectReadDoltDir(cfg.DoltDirExpanded())
-	if err != nil {
-		return nil, "", err
+	if err := cfg.LoadFileConfig(); err != nil {
+		return nil, err
 	}
-	return cfg, doltDir, nil
+	return cfg, nil
 }
 
 func withReadClient(cmd *cobra.Command, fn func(*config.Config, readClient) error) error {
-	cfg, doltDir, err := loadConfigAndReadDoltDir(cmd)
+	cfg, err := loadConfig(cmd)
 	if err != nil {
 		return err
 	}
 
-	client, err := readClientOpener(doltDir, cfg.EffectiveBranch())
+	client, err := readClientOpener(cfg)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = client.Close() }()
 
 	return fn(cfg, client)
-}
-
-func detectReadDoltDirImpl(configured string) (string, error) {
-	if configured != "" {
-		if _, err := os.Stat(filepath.Join(configured, ".dolt")); err != nil {
-			return "", fmt.Errorf("invalid --dolt-dir %q: %w", configured, err)
-		}
-		return configured, nil
-	}
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", fmt.Errorf("getting current directory: %w", err)
-	}
-
-	dir := cwd
-	for {
-		if _, err := os.Stat(filepath.Join(dir, ".dolt")); err == nil {
-			return dir, nil
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		dir = parent
-	}
-
-	return "", errors.New("could not auto-detect Dolt database directory; pass --dolt-dir")
 }

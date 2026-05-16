@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	toml "github.com/pelletier/go-toml/v2"
+	"github.com/randlee/synaptic-canvas-dolt/internal/atomicfile"
 )
 
 const (
@@ -16,13 +18,17 @@ const (
 	HooksRegistry    = ".synaptic/hooks/registry.toml"
 )
 
+var stateFileMutexes sync.Map // map[string]*sync.Mutex, keyed by canonical lock path.
+
 // ManifestLock is the normative install tracking file.
 type ManifestLock struct {
 	Version  int             `toml:"version"`
 	Installs []InstallRecord `toml:"installs"`
 }
 
-// InstallRecord captures one tracked install.
+// InstallRecord captures one tracked install. TrackingOrigin values are
+// "local-install" for installs performed by sc and "scan-reconciled" for
+// records recovered from on-disk artifacts by sc scan.
 type InstallRecord struct {
 	InstallID          string                   `toml:"install_id"`
 	Package            string                   `toml:"package"`
@@ -56,6 +62,11 @@ type RequirementSnapshot struct {
 	CLIProvenance map[string]string `toml:"cli_provenance"`
 }
 
+// IsInstalledBySC reports whether Synaptic installed an external CLI dependency.
+func (r RequirementSnapshot) IsInstalledBySC(depName string) bool {
+	return r.CLIProvenance[depName] == "installed-by-synaptic"
+}
+
 type TemplateValidationRecord struct {
 	ValidatedAt       string   `toml:"validated_at"`
 	TemplateFiles     []string `toml:"template_files"`
@@ -72,6 +83,7 @@ type HookEntry struct {
 	Event    string `toml:"event"`
 	Matcher  string `toml:"matcher"`
 	Skill    string `toml:"skill"`
+	Scope    string `toml:"scope,omitempty"`
 	Script   string `toml:"script"`
 	Priority int    `toml:"priority"`
 	Blocking bool   `toml:"blocking"`
@@ -79,6 +91,16 @@ type HookEntry struct {
 
 // LoadManifestLock reads manifest.lock or returns an empty lock if it does not exist.
 func LoadManifestLock(root string) (ManifestLock, error) {
+	var lock ManifestLock
+	err := withStateFileLock(manifestLockFile(root), func() error {
+		var err error
+		lock, err = loadManifestLockNoLock(root)
+		return err
+	})
+	return lock, err
+}
+
+func loadManifestLockNoLock(root string) (ManifestLock, error) {
 	path := filepath.Join(root, ManifestLockPath)
 	data, err := os.ReadFile(path) //nolint:gosec // path is confined to Synaptic-managed state under the chosen root.
 	if errors.Is(err, os.ErrNotExist) {
@@ -94,14 +116,38 @@ func LoadManifestLock(root string) (ManifestLock, error) {
 	if lock.Version == 0 {
 		lock.Version = 1
 	}
+	for i := range lock.Installs {
+		if lock.Installs[i].TrackingOrigin == "" {
+			lock.Installs[i].TrackingOrigin = "local-install"
+		}
+	}
 	return lock, nil
 }
 
 // SaveManifestLock writes manifest.lock atomically.
 func SaveManifestLock(root string, lock ManifestLock) error {
-	path := filepath.Join(root, ManifestLockPath)
+	return withStateFileLock(manifestLockFile(root), func() error {
+		return saveManifestLockNoLock(root, lock)
+	})
+}
+
+func saveManifestLockNoLock(root string, lock ManifestLock) error {
 	lock.Version = 1
-	return writeTOMLAtomic(path, lock)
+	return atomicfile.WriteTOML(filepath.Join(root, ManifestLockPath), lock, 0o750)
+}
+
+// WithManifestLock holds the manifest advisory lock for a full load-modify-save cycle.
+func WithManifestLock(root string, mutate func(*ManifestLock) error) error {
+	return withStateFileLock(manifestLockFile(root), func() error {
+		lock, err := loadManifestLockNoLock(root)
+		if err != nil {
+			return err
+		}
+		if err := mutate(&lock); err != nil {
+			return err
+		}
+		return saveManifestLockNoLock(root, lock)
+	})
 }
 
 // UpsertInstall replaces an install record with the same install id or appends it.
@@ -128,6 +174,16 @@ func (m *ManifestLock) RemoveInstall(installID string) bool {
 
 // LoadHookRegistry loads the project hook registry or returns an empty registry.
 func LoadHookRegistry(root string) (HookRegistry, error) {
+	var registry HookRegistry
+	err := withStateFileLock(hookRegistryLockFile(root), func() error {
+		var err error
+		registry, err = loadHookRegistryNoLock(root)
+		return err
+	})
+	return registry, err
+}
+
+func loadHookRegistryNoLock(root string) (HookRegistry, error) {
 	path := filepath.Join(root, HooksRegistry)
 	data, err := os.ReadFile(path) //nolint:gosec // path is confined to Synaptic-managed state under the chosen root.
 	if errors.Is(err, os.ErrNotExist) {
@@ -145,44 +201,137 @@ func LoadHookRegistry(root string) (HookRegistry, error) {
 
 // SaveHookRegistry writes registry.toml atomically.
 func SaveHookRegistry(root string, registry HookRegistry) error {
-	return writeTOMLAtomic(filepath.Join(root, HooksRegistry), registry)
+	return withStateFileLock(hookRegistryLockFile(root), func() error {
+		return saveHookRegistryNoLock(root, registry)
+	})
+}
+
+func saveHookRegistryNoLock(root string, registry HookRegistry) error {
+	return atomicfile.WriteTOML(filepath.Join(root, HooksRegistry), registry, 0o750)
+}
+
+// WithHookRegistry holds the hook registry advisory lock for a full mutation.
+func WithHookRegistry(root string, mutate func(*HookRegistry) error) error {
+	return withStateFileLock(hookRegistryLockFile(root), func() error {
+		registry, err := loadHookRegistryNoLock(root)
+		if err != nil {
+			return err
+		}
+		if err := mutate(&registry); err != nil {
+			return err
+		}
+		return saveHookRegistryNoLock(root, registry)
+	})
+}
+
+// UpsertPackageHooks replaces this package/scope's hook entries while preserving all others.
+func (r *HookRegistry) UpsertPackageHooks(packageID, scope string, hooks []HookEntry) {
+	filtered := r.Hooks[:0]
+	for _, hook := range r.Hooks {
+		if hookEntryOwnedBy(hook, packageID, scope) {
+			continue
+		}
+		filtered = append(filtered, hook)
+	}
+	r.Hooks = filtered
+	for _, hook := range hooks {
+		hook.Skill = packageID
+		hook.Scope = scope
+		r.Hooks = append(r.Hooks, hook)
+	}
+}
+
+// RemovePackageHooks removes hook entries owned by packageID in the requested scope.
+func (r *HookRegistry) RemovePackageHooks(packageID, scope string) int {
+	filtered := r.Hooks[:0]
+	removed := 0
+	for _, hook := range r.Hooks {
+		if hookEntryOwnedBy(hook, packageID, scope) {
+			removed++
+			continue
+		}
+		filtered = append(filtered, hook)
+	}
+	r.Hooks = filtered
+	return removed
+}
+
+func hookEntryOwnedBy(hook HookEntry, packageID, scope string) bool {
+	if hook.Skill != packageID {
+		return false
+	}
+	return hook.Scope == "" || scope == "" || hook.Scope == scope
 }
 
 // SaveRepoProfile writes the repo profile TOML atomically.
 func SaveRepoProfile(root string, profile any) error {
-	return writeTOMLAtomic(filepath.Join(root, RepoProfilePath), profile)
+	return atomicfile.WriteTOML(filepath.Join(root, RepoProfilePath), profile, 0o750)
 }
 
 // SaveEnv writes env.toml atomically.
 func SaveEnv(root string, env any) error {
-	return writeTOMLAtomic(filepath.Join(root, EnvPath), env)
+	return atomicfile.WriteTOML(filepath.Join(root, EnvPath), env, 0o750)
 }
 
-func writeTOMLAtomic(path string, value any) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-		return fmt.Errorf("creating parent dir: %w", err)
+func manifestLockFile(root string) string {
+	return filepath.Join(root, ManifestLockPath) + ".lock"
+}
+
+func hookRegistryLockFile(root string) string {
+	return filepath.Join(root, HooksRegistry) + ".lock"
+}
+
+func withStateFileLock(lockPath string, fn func() error) (err error) {
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o750); err != nil {
+		return fmt.Errorf("creating lock dir: %w", err)
 	}
-	data, err := toml.Marshal(value)
+	inProcessMu, err := stateFileMutex(lockPath)
 	if err != nil {
-		return fmt.Errorf("encoding toml: %w", err)
+		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
+	inProcessMu.Lock()
+	defer inProcessMu.Unlock()
+
+	file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600) //nolint:gosec // lock path is derived from Synaptic-managed state paths.
 	if err != nil {
-		return fmt.Errorf("creating temp file: %w", err)
+		return fmt.Errorf("opening lock file %s: %w", lockPath, err)
 	}
-	tmpName := tmp.Name()
-	defer func() { _ = os.Remove(tmpName) }()
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("writing temp file: %w", err)
+	locked := false
+	defer func() {
+		var unlockErr error
+		if locked {
+			unlockErr = unlockFile(file)
+		}
+		closeErr := file.Close()
+		err = errors.Join(err, unlockErr, closeErr)
+	}()
+	if err := lockFileExclusive(file); err != nil {
+		return fmt.Errorf("locking %s: %w", lockPath, err)
 	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("closing temp file: %w", err)
+	locked = true
+	return fn()
+}
+
+func stateFileMutex(path string) (*sync.Mutex, error) {
+	key, err := canonicalLockPath(path)
+	if err != nil {
+		return nil, err
 	}
-	cleanTmp := filepath.Clean(tmpName)
-	cleanPath := filepath.Clean(path)
-	if err := os.Rename(cleanTmp, cleanPath); err != nil { //nolint:gosec // both paths are confined to Synaptic-managed state and an installer-created temp file.
-		return fmt.Errorf("atomic replace %s: %w", path, err)
+	mu, _ := stateFileMutexes.LoadOrStore(key, &sync.Mutex{})
+	return mu.(*sync.Mutex), nil
+}
+
+func canonicalLockPath(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolving lock path %s: %w", path, err)
 	}
-	return nil
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		return filepath.Clean(resolved), nil
+	}
+	dir, err := filepath.EvalSymlinks(filepath.Dir(abs))
+	if err != nil {
+		return filepath.Clean(abs), nil
+	}
+	return filepath.Clean(filepath.Join(dir, filepath.Base(abs))), nil
 }

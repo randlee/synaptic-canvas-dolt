@@ -286,7 +286,8 @@ Architecture rules:
   `uninstall` must be able to reason about project-local installs, global
   installs, or both in one invocation
 - scope-aware end-user commands use `--scope` with an enum and default to
-  `both` when omitted; `--global` and `--local` are not accepted aliases
+  `both` when omitted; legacy scope aliases such as `--global` and `--local`
+  are not accepted
 - mutating commands must have audit symmetry: immediate mutation result,
   structured follow-up readback, and retained product-managed state where
   applicable

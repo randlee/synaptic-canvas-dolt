@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/randlee/synaptic-canvas-dolt/pkg/catalog"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
 )
 
@@ -23,6 +24,49 @@ func TestMockClientListPackages(t *testing.T) {
 	}
 	if len(pkgs) != 2 {
 		t.Fatalf("got %d packages, want 2", len(pkgs))
+	}
+}
+
+func TestMockClientGetPackageCatalog(t *testing.T) {
+	t.Parallel()
+
+	m := NewMockClient()
+	m.Catalog = []catalog.CatalogEntry{{PackageID: "pkg", Version: "1.0.0", DocPath: "SKILL.md", SHA256: "abc"}}
+	got, err := m.GetPackageCatalog(context.Background())
+	if err != nil {
+		t.Fatalf("GetPackageCatalog() error = %v", err)
+	}
+	if len(got) != 1 || got[0].DocPath != "SKILL.md" {
+		t.Fatalf("unexpected catalog: %+v", got)
+	}
+	got[0].DocPath = "mutated"
+	got, err = m.GetPackageCatalog(context.Background())
+	if err != nil {
+		t.Fatalf("GetPackageCatalog() error = %v", err)
+	}
+	if got[0].DocPath != "SKILL.md" {
+		t.Fatalf("mock catalog was mutated: %+v", got)
+	}
+}
+
+func TestParseDSN(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := ParseDSN("root:secret@tcp(127.0.0.1:3316)/synaptic_canvas?parseTime=true")
+	if err != nil {
+		t.Fatalf("ParseDSN() error = %v", err)
+	}
+	if cfg.Host != "127.0.0.1" || cfg.Port != 3316 || cfg.User != "root" || cfg.Password != "secret" || cfg.Database != "synaptic_canvas" {
+		t.Fatalf("unexpected config: %+v", cfg)
+	}
+}
+
+func TestParseDSNInvalidAddress(t *testing.T) {
+	t.Parallel()
+
+	_, err := ParseDSN("root@unix(/tmp/mysql.sock)/synaptic_canvas")
+	if err == nil || !strings.Contains(err.Error(), "parsing dolt DSN address") {
+		t.Fatalf("error = %v, want address parse failure", err)
 	}
 }
 
@@ -113,6 +157,29 @@ func TestMockClientGetPackageFilesError(t *testing.T) {
 	_, err := m.GetPackageFiles(ctx, "pkg-1")
 	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestMockClientGetPackageFileSHAs(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	m := NewMockClient()
+	m.AddPackage(NewTestPackage("pkg-1", "alpha", "1.0.0", nil))
+	m.AddFiles("pkg-1", []models.PackageFile{
+		{PackageID: "pkg-1", DestPath: "agent.md", SHA256: "abc123"},
+		{PackageID: "pkg-1", DestPath: "other.md", SHA256: "def456"},
+	})
+
+	rows, err := m.GetPackageFileSHAs(ctx, "pkg-1", "agent.md")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(rows))
+	}
+	if rows[0].Version != "1.0.0" || rows[0].DocPath != "agent.md" || rows[0].SHA256 != "abc123" {
+		t.Fatalf("unexpected row: %+v", rows[0])
 	}
 }
 

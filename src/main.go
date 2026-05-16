@@ -17,6 +17,9 @@ var (
 
 func main() {
 	if err := cmd.Execute(version, commit, date); err != nil {
+		if cmd.IsJSONCmdError(err) {
+			os.Exit(cmd.JSONErrorExitCode(err))
+		}
 		os.Exit(1)
 	}
 }

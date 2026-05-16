@@ -184,7 +184,8 @@ The CLI is expected to be used by both humans and AI wrappers.
   request payload shall imply JSON output for that invocation.
 - CLI-010 Commands that can target project-local state, machine-global state, or
   both shall use `--scope <project|global|both>`. Omitted `--scope` means
-  `both`. `--global` and `--local` shall not be accepted CLI flags.
+  `both`. Legacy scope aliases such as `--global` and `--local` shall not be
+  accepted CLI flags.
 - CLI-010a Commands that produce a single-target export artifact rather than a
   natural multi-target action may reject omitted `--scope` with a typed
   `ambiguous_target` error when the same package exists in multiple install
