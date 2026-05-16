@@ -225,6 +225,9 @@ sc admin diff <package> --branch1 <b1> --branch2 <b2>
                       Dolt read-client override. Selects DoltHub HTTP API,
                       MySQL-compatible SQL transport, or local `dolt sql`
                       subprocess mode.
+--dolt-client <http|sql|cli>
+                      Deprecated hidden alias for `--client`, retained for
+                      backward compatibility.
 --dolt-dir <path>     Path to Dolt database directory for `cli` mode or
                       compatibility inference (default: auto-detect when
                       `--client=cli`)
@@ -609,25 +612,14 @@ Mutating commands use atomic per-scope tracking updates. When a command fails
 after side effects begin, JSON errors must expose rollback facts rather than
 leaving callers to infer state from logs.
 
-Representative error details:
+Representative uninstall file-removal failure:
 
 ```json
 {
   "ok": false,
   "error": {
-    "code": "internal_error",
-    "message": "install failed for all selected scopes",
-    "details": {
-      "rollback": {
-        "attempted": true,
-        "restored_tracking_state": true,
-        "removed_staged_files": true,
-        "restored_runtime_files": false,
-        "manual_recovery": [
-          "/repo/.claude/skills/team-lead/hooks/pre-commit.sh"
-        ]
-      }
-    }
+    "code": "conflict",
+    "message": "conflict removing tracked files: SKILL.md; manifest record preserved"
   }
 }
 ```

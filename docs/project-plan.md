@@ -1919,7 +1919,7 @@ Detailed sprint plan: [4.8 Installer Hardening And Doc Gaps](./phase-4/4.8-insta
   not leave partial managed trees behind
 - Installer tests cover managed copy failure paths on both supported script
   implementations
-- Phase 4 documentation matches the implemented four-level client-selection
+- Phase 4 documentation matches the implemented five-level client-selection
   precedence and installer behavior
 
 ---

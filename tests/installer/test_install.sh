@@ -13,16 +13,28 @@ mkdir -p "$HOME_DIR" "$BIN_DIR" "$TMP_ROOT/go-cache" "$TMP_ROOT/go-mod-cache"
 export HOME="$HOME_DIR"
 export USERPROFILE="$HOME_DIR"
 export SC_INSTALL_BIN_DIR="$BIN_DIR"
-export PATH="$BIN_DIR:$PATH"
+export SHELL="/bin/zsh"
 export GOCACHE="$TMP_ROOT/go-cache"
 export GOMODCACHE="$TMP_ROOT/go-mod-cache"
 export GOFLAGS="-modcacherw"
 
-bash "$REPO_ROOT/scripts/install.sh"
+SUBSHELL_SC_PATH="$(
+  HOME="$HOME_DIR" \
+  USERPROFILE="$HOME_DIR" \
+  SHELL="/bin/zsh" \
+  SC_INSTALL_BIN_DIR="$BIN_DIR" \
+  GOCACHE="$TMP_ROOT/go-cache" \
+  GOMODCACHE="$TMP_ROOT/go-mod-cache" \
+  GOFLAGS="-modcacherw" \
+  SC_INSTALL_REPO_ROOT="$REPO_ROOT" \
+  bash -lc '. "'"$REPO_ROOT"'/scripts/install.sh" >/dev/null; command -v sc'
+)"
 
 [[ -x "$BIN_DIR/sc" ]] || { echo "missing installed sc binary" >&2; exit 1; }
 [[ -f "$HOME_DIR/.claude/skills/sc-plugin/SKILL.md" ]] || { echo "missing installed skill" >&2; exit 1; }
 [[ -f "$HOME_DIR/.sc/config.toml" ]] || { echo "missing config.toml" >&2; exit 1; }
+[[ "$SUBSHELL_SC_PATH" == "$BIN_DIR/sc" ]] || { echo "sc not on PATH after sourced install: $SUBSHELL_SC_PATH" >&2; exit 1; }
+grep -Fqx "export PATH=\"$BIN_DIR:\$PATH\"" "$HOME_DIR/.zshrc" || { echo "missing PATH export in rc file" >&2; exit 1; }
 
 VERSION_OUTPUT="$("$BIN_DIR/sc" --version)"
 [[ "$VERSION_OUTPUT" == *"sc version "* ]] || { echo "unexpected version output: $VERSION_OUTPUT" >&2; exit 1; }

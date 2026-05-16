@@ -23,10 +23,10 @@ function Get-TreeSnapshot {
 }
 
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("sc-installer-test-" + [System.Guid]::NewGuid().ToString("N"))
 $homeDir = Join-Path $tempRoot "home"
 $binDir = Join-Path $tempRoot "bin"
+$originalUserPath = [Environment]::GetEnvironmentVariable("PATH", [EnvironmentVariableTarget]::User)
 
 New-Item -ItemType Directory -Force -Path $homeDir, $binDir | Out-Null
 
@@ -34,7 +34,6 @@ try {
     $env:HOME = $homeDir
     $env:USERPROFILE = $homeDir
     $env:SC_INSTALL_BIN_DIR = $binDir
-    $env:PATH = $binDir + [System.IO.Path]::PathSeparator + $env:PATH
     $env:GOCACHE = Join-Path $tempRoot "go-cache"
     $env:GOMODCACHE = Join-Path $tempRoot "go-mod-cache"
     $env:GOFLAGS = "-modcacherw"
@@ -48,6 +47,11 @@ try {
     Assert-True (Test-Path -LiteralPath $binaryPath) "missing installed sc.exe"
     Assert-True (Test-Path -LiteralPath $skillPath) "missing installed skill"
     Assert-True (Test-Path -LiteralPath $configPath) "missing config.toml"
+    Assert-True (($env:PATH -split [System.IO.Path]::PathSeparator) -contains $binDir) "missing installed bin dir in process PATH"
+    if ($IsWindows) {
+        $userPath = [Environment]::GetEnvironmentVariable("PATH", [EnvironmentVariableTarget]::User)
+        Assert-True (($userPath -split [System.IO.Path]::PathSeparator) -contains $binDir) "missing installed bin dir in user PATH"
+    }
 
     $versionOutput = & $binaryPath --version
     Assert-True ($versionOutput -match "sc version ") "unexpected version output: $versionOutput"
@@ -99,6 +103,7 @@ try {
         Assert-True ($afterFailure[$key] -eq $beforeFailure[$key]) "skill file changed after failure: $key"
     }
 } finally {
+    [Environment]::SetEnvironmentVariable("PATH", $originalUserPath, [EnvironmentVariableTarget]::User)
     if (Test-Path -LiteralPath $tempRoot) {
         try {
             Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction Stop
