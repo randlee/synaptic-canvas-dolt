@@ -8,6 +8,8 @@ builds:
     binary: sc
     env:
       - CGO_ENABLED=0
+    tags:
+      - production
     goos:
       - linux
       - darwin
