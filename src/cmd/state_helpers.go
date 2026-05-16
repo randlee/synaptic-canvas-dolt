@@ -27,13 +27,28 @@ type trackedInstall struct {
 
 type validatedInstall = api.ValidatedInstall
 type ValidationSeverity = api.ValidationSeverity
-type validatedFile = api.ValidationItem
+type ValidationKind = api.ValidationKind
+type ValidationState = api.ValidationState
+type validatedItem = api.ValidationItem
 
 const (
 	ValidationSeverityInfo     ValidationSeverity = api.ValidationSeverityInfo
 	ValidationSeverityWarn     ValidationSeverity = api.ValidationSeverityWarn
 	ValidationSeverityError    ValidationSeverity = api.ValidationSeverityError
 	ValidationSeverityCritical ValidationSeverity = api.ValidationSeverityCritical
+
+	ValidationKindFile       ValidationKind = api.ValidationKindFile
+	ValidationKindDependency ValidationKind = api.ValidationKindDependency
+	ValidationKindHook       ValidationKind = api.ValidationKindHook
+	ValidationKindTemplate   ValidationKind = api.ValidationKindTemplate
+	ValidationKindAggregate  ValidationKind = api.ValidationKindAggregate
+	ValidationKindContext    ValidationKind = api.ValidationKindContext
+
+	ValidationStateOK         ValidationState = api.ValidationStateOK
+	ValidationStateModified   ValidationState = api.ValidationStateModified
+	ValidationStateMissing    ValidationState = api.ValidationStateMissing
+	ValidationStateUnreadable ValidationState = api.ValidationStateUnreadable
+	ValidationStateExtra      ValidationState = api.ValidationStateExtra
 )
 
 var snapshotNow = func() time.Time { return time.Now().UTC() }
@@ -125,13 +140,15 @@ func validateTrackedInstall(ctx context.Context, record installer.InstallRecord)
 		Scope:             record.InstallScope,
 		InstallRoot:       record.InstallRoot,
 		InstallSite:       record.InstallSite,
-		Files:             make([]validatedFile, 0, len(results)),
+		TrackingOrigin:    record.TrackingOrigin,
+		Items:             make([]validatedItem, 0, len(results)+8),
 		AggregateExpected: integrity.ComputeAggregateSHA256(expected),
 		Warnings:          warnings,
 		Pass:              true,
 		Status:            "PASS",
 		AggregateStatus:   string(ValidationSeverityInfo),
 	}
+	summary.DependencySummary = dependencySummary(record)
 
 	expectedSet := make(map[string]struct{}, len(expected))
 	for _, hash := range expected {
@@ -140,20 +157,17 @@ func validateTrackedInstall(ctx context.Context, record installer.InstallRecord)
 	actual := make([]integrity.FileHash, 0, len(expected))
 	canAggregate := true
 	for _, result := range results {
-		item := validatedFile{
+		item := validatedItem{
+			Kind:     ValidationKindFile,
 			Path:     result.Path,
-			Status:   result.Status.String(),
-			Severity: severityForValidationStatus(result.Status.String()),
+			State:    validationStateForIntegrityStatus(result.Status),
+			Severity: severityForValidationState(validationStateForIntegrityStatus(result.Status)),
 		}
 		if result.Err != nil {
-			item.Error = result.Err.Error()
+			item.Message = result.Err.Error()
+			item.Code = "file_unreadable"
 		}
-		summary.Files = append(summary.Files, item)
-		summary.AggregateStatus = higherSeverity(summary.AggregateStatus, string(item.Severity))
-		if result.Status != integrity.StatusOK {
-			summary.Pass = false
-			summary.Status = "FAIL"
-		}
+		appendValidationItem(&summary, item)
 		if _, tracked := expectedSet[result.Path]; tracked {
 			sha, err := integrity.ComputeFileSHA256(filepath.Join(record.InstallRoot, filepath.FromSlash(result.Path)))
 			if err != nil {
@@ -174,13 +188,16 @@ func validateTrackedInstall(ctx context.Context, record installer.InstallRecord)
 		summary.Pass = false
 		summary.Status = "FAIL"
 		if summary.AggregateActual != "" {
-			item := validatedFile{
-				Path:     "(aggregate)",
-				Status:   "AGGREGATE_MISMATCH",
+			item := validatedItem{
+				Kind:     ValidationKindAggregate,
+				State:    ValidationStateModified,
 				Severity: ValidationSeverityError,
+				Code:     "aggregate_mismatch",
+				Expected: summary.AggregateExpected,
+				Actual:   summary.AggregateActual,
+				Message:  "aggregate SHA256 does not match tracked package state",
 			}
-			summary.Files = append(summary.Files, item)
-			summary.AggregateStatus = higherSeverity(summary.AggregateStatus, string(item.Severity))
+			appendValidationItem(&summary, item)
 		}
 	}
 
@@ -188,18 +205,33 @@ func validateTrackedInstall(ctx context.Context, record installer.InstallRecord)
 	return summary, nil
 }
 
-func severityForValidationStatus(status string) ValidationSeverity {
+func validationStateForIntegrityStatus(status integrity.VerifyStatus) ValidationState {
 	switch status {
-	case "OK", "":
+	case integrity.StatusOK:
+		return ValidationStateOK
+	case integrity.StatusModified:
+		return ValidationStateModified
+	case integrity.StatusMissing:
+		return ValidationStateMissing
+	case integrity.StatusUnreadable:
+		return ValidationStateUnreadable
+	case integrity.StatusExtra:
+		return ValidationStateExtra
+	default:
+		return ValidationStateUnreadable
+	}
+}
+
+func severityForValidationState(state ValidationState) ValidationSeverity {
+	switch state {
+	case ValidationStateOK, "":
 		return ValidationSeverityInfo
-	case "MODIFIED", "HOOK_NOT_REGISTERED", "TEMPLATE_INVALID":
+	case ValidationStateModified:
 		return ValidationSeverityWarn
-	case "EXTRA":
+	case ValidationStateExtra:
 		return ValidationSeverityInfo
-	case "MISSING", "UNREADABLE", "SHA_MISMATCH", "DEPENDENCY_VERSION_INCOMPATIBLE", "AGGREGATE_MISMATCH":
+	case ValidationStateMissing, ValidationStateUnreadable:
 		return ValidationSeverityError
-	case "DEPENDENCY_MISSING":
-		return ValidationSeverityCritical
 	default:
 		return ValidationSeverityError
 	}
@@ -230,13 +262,78 @@ func severityRank(severity string) int {
 	}
 }
 
+func incrementModificationSummary(summary *api.ModificationSummary, state ValidationState) {
+	switch state {
+	case ValidationStateOK:
+		summary.OK++
+	case ValidationStateModified:
+		summary.Modified++
+	case ValidationStateMissing:
+		summary.Missing++
+	case ValidationStateUnreadable:
+		summary.Unreadable++
+	case ValidationStateExtra:
+		summary.Extra++
+	}
+}
+
+func dependencySummary(record installer.InstallRecord) api.DependencySummary {
+	items := make([]api.DependencyReadback, 0, len(record.Requirements.Tools)+len(record.Requirements.CLIInstalled))
+	verifiedCount := 0
+	missingCount := 0
+	for _, tool := range record.Requirements.Tools {
+		if tool == "" {
+			continue
+		}
+		provenance := strings.TrimSpace(record.Requirements.ToolsVerified[tool])
+		verified := provenance != ""
+		if verified {
+			verifiedCount++
+		} else {
+			missingCount++
+		}
+		items = append(items, api.DependencyReadback{
+			Name:           tool,
+			DependencyType: "tool",
+			Verified:       verified,
+			Provenance:     provenance,
+		})
+	}
+	for _, dep := range record.Requirements.CLIInstalled {
+		if dep == "" {
+			continue
+		}
+		provenance := strings.TrimSpace(record.Requirements.CLIProvenance[dep])
+		verified := provenance != ""
+		if verified {
+			verifiedCount++
+		} else {
+			missingCount++
+		}
+		items = append(items, api.DependencyReadback{
+			Name:           dep,
+			DependencyType: "cli",
+			Verified:       verified,
+			Provenance:     provenance,
+			InstalledBySC:  record.Requirements.IsInstalledBySC(dep),
+		})
+	}
+	return api.DependencySummary{
+		Tracked:  len(items),
+		Verified: verifiedCount,
+		Missing:  missingCount,
+		Items:    items,
+	}
+}
+
 func appendStateValidationItems(ctx context.Context, record installer.InstallRecord, summary *validatedInstall) {
 	if err := ctx.Err(); err != nil {
-		appendValidationItem(summary, validatedFile{
-			Path:     "(context)",
-			Status:   "UNREADABLE",
+		appendValidationItem(summary, validatedItem{
+			Kind:     ValidationKindContext,
+			State:    ValidationStateUnreadable,
 			Severity: ValidationSeverityError,
-			Error:    err.Error(),
+			Code:     "context_unreadable",
+			Message:  err.Error(),
 		})
 		return
 	}
@@ -254,11 +351,14 @@ func appendDependencyValidationItems(record installer.InstallRecord, summary *va
 		if verified != nil && strings.TrimSpace(verified[tool]) != "" {
 			continue
 		}
-		appendValidationItem(summary, validatedFile{
-			Path:     "dependency:" + tool,
-			Status:   "DEPENDENCY_MISSING",
-			Severity: ValidationSeverityCritical,
-			Error:    "dependency is not verified in install record",
+		appendValidationItem(summary, validatedItem{
+			Kind:           ValidationKindDependency,
+			State:          ValidationStateMissing,
+			Severity:       ValidationSeverityCritical,
+			Code:           "dependency_verification_missing",
+			Message:        "dependency is not verified in install record",
+			Dependency:     tool,
+			DependencyType: "tool",
 		})
 	}
 	provenance := record.Requirements.CLIProvenance
@@ -269,11 +369,14 @@ func appendDependencyValidationItems(record installer.InstallRecord, summary *va
 		if provenance != nil && strings.TrimSpace(provenance[dep]) != "" {
 			continue
 		}
-		appendValidationItem(summary, validatedFile{
-			Path:     "dependency:" + dep,
-			Status:   "DEPENDENCY_MISSING",
-			Severity: ValidationSeverityCritical,
-			Error:    "installed dependency provenance is missing",
+		appendValidationItem(summary, validatedItem{
+			Kind:           ValidationKindDependency,
+			State:          ValidationStateMissing,
+			Severity:       ValidationSeverityCritical,
+			Code:           "dependency_provenance_missing",
+			Message:        "installed dependency provenance is missing",
+			Dependency:     dep,
+			DependencyType: "cli",
 		})
 	}
 }
@@ -283,35 +386,59 @@ func appendHookValidationItems(record installer.InstallRecord, summary *validate
 	if len(expectedScripts) == 0 {
 		return
 	}
+	summary.HookSummary.Tracked = len(expectedScripts)
 	stateRoot, err := stateRootForScope(record.InstallSite, record.InstallScope)
 	if err != nil {
-		appendValidationItem(summary, validatedFile{
-			Path:     "hooks:registry",
-			Status:   "HOOK_NOT_REGISTERED",
+		appendValidationItem(summary, validatedItem{
+			Kind:     ValidationKindHook,
+			State:    ValidationStateUnreadable,
 			Severity: ValidationSeverityWarn,
-			Error:    err.Error(),
+			Code:     "hook_registry_unreadable",
+			Message:  err.Error(),
+			Target:   "registry",
 		})
 		return
 	}
 	registry, err := installer.LoadHookRegistry(stateRoot)
 	if err != nil {
-		appendValidationItem(summary, validatedFile{
-			Path:     "hooks:registry",
-			Status:   "HOOK_NOT_REGISTERED",
+		appendValidationItem(summary, validatedItem{
+			Kind:     ValidationKindHook,
+			State:    ValidationStateUnreadable,
 			Severity: ValidationSeverityWarn,
-			Error:    err.Error(),
+			Code:     "hook_registry_unreadable",
+			Message:  err.Error(),
+			Target:   "registry",
 		})
 		return
 	}
 	for _, script := range expectedScripts {
-		if hasRegisteredHook(registry, record, script) {
+		if hook, ok := registeredHook(registry, record, script); ok {
+			summary.HookSummary.Registered++
+			summary.HookSummary.Hooks = append(summary.HookSummary.Hooks, api.HookValidationState{
+				Event:      hook.Event,
+				Matcher:    hook.Matcher,
+				Script:     script,
+				Scope:      hook.Scope,
+				Priority:   hook.Priority,
+				Blocking:   hook.Blocking,
+				Registered: true,
+			})
 			continue
 		}
-		appendValidationItem(summary, validatedFile{
-			Path:     "hook:" + script,
-			Status:   "HOOK_NOT_REGISTERED",
-			Severity: ValidationSeverityWarn,
-			Error:    "tracked hook script is not registered",
+		summary.HookSummary.Missing++
+		summary.HookSummary.Hooks = append(summary.HookSummary.Hooks, api.HookValidationState{
+			Script:     script,
+			Scope:      record.InstallScope,
+			Registered: false,
+		})
+		appendValidationItem(summary, validatedItem{
+			Kind:       ValidationKindHook,
+			State:      ValidationStateMissing,
+			Severity:   ValidationSeverityWarn,
+			Code:       "hook_not_registered",
+			Message:    "tracked hook script is not registered",
+			HookScript: script,
+			Scope:      record.InstallScope,
 		})
 	}
 }
@@ -319,34 +446,41 @@ func appendHookValidationItems(record installer.InstallRecord, summary *validate
 func appendTemplateValidationItems(record installer.InstallRecord, summary *validatedInstall) {
 	if len(record.TemplateValidation.Unresolved) == 0 {
 		if record.TemplateRendered && len(record.TemplateValidation.TemplateFiles) == 0 {
-			appendValidationItem(summary, validatedFile{
-				Path:     "template:" + record.Package,
-				Status:   "TEMPLATE_INVALID",
+			appendValidationItem(summary, validatedItem{
+				Kind:     ValidationKindTemplate,
+				State:    ValidationStateModified,
 				Severity: ValidationSeverityWarn,
-				Error:    "template render was tracked without template file metadata",
+				Code:     "template_metadata_missing",
+				Message:  "template render was tracked without template file metadata",
+				Target:   record.Package,
 			})
 		}
 		return
 	}
-	path := "template:" + record.Package
+	path := record.Package
 	if len(record.TemplateValidation.TemplateFiles) > 0 {
-		path = "template:" + filepath.ToSlash(record.TemplateValidation.TemplateFiles[0])
+		path = filepath.ToSlash(record.TemplateValidation.TemplateFiles[0])
 	}
 	for _, unresolved := range record.TemplateValidation.Unresolved {
-		appendValidationItem(summary, validatedFile{
-			Path:     path,
-			Status:   "TEMPLATE_INVALID",
+		appendValidationItem(summary, validatedItem{
+			Kind:     ValidationKindTemplate,
+			State:    ValidationStateModified,
 			Severity: ValidationSeverityWarn,
-			Error:    unresolved,
+			Code:     "template_invalid",
+			Message:  unresolved,
+			Path:     path,
 		})
 	}
 }
 
-func appendValidationItem(summary *validatedInstall, item validatedFile) {
+func appendValidationItem(summary *validatedInstall, item validatedItem) {
 	if item.Severity == "" {
-		item.Severity = severityForValidationStatus(item.Status)
+		item.Severity = severityForValidationState(item.State)
 	}
-	summary.Files = append(summary.Files, item)
+	summary.Items = append(summary.Items, item)
+	if item.Kind == ValidationKindFile {
+		incrementModificationSummary(&summary.ModificationSummary, item.State)
+	}
 	summary.AggregateStatus = higherSeverity(summary.AggregateStatus, string(item.Severity))
 	if item.Severity == ValidationSeverityError || item.Severity == ValidationSeverityCritical {
 		summary.Pass = false
@@ -377,7 +511,7 @@ func isHookScriptPath(path string) bool {
 	return strings.HasPrefix(filepath.Base(slashPath), "hook-") || strings.Contains(filepath.Base(slashPath), ".hook.")
 }
 
-func hasRegisteredHook(registry installer.HookRegistry, record installer.InstallRecord, script string) bool {
+func registeredHook(registry installer.HookRegistry, record installer.InstallRecord, script string) (installer.HookEntry, bool) {
 	absScript := filepath.ToSlash(filepath.Join(record.InstallRoot, filepath.FromSlash(script)))
 	for _, hook := range registry.Hooks {
 		if hook.Skill != record.Package {
@@ -388,10 +522,10 @@ func hasRegisteredHook(registry installer.HookRegistry, record installer.Install
 		}
 		hookScript := filepath.ToSlash(hook.Script)
 		if hookScript == absScript || hookScript == script || strings.HasSuffix(hookScript, "/"+script) {
-			return true
+			return hook, true
 		}
 	}
-	return false
+	return installer.HookEntry{}, false
 }
 
 func resolveExpectedHashes(ctx context.Context, record installer.InstallRecord) ([]integrity.FileHash, []string, error) {

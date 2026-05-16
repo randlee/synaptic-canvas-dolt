@@ -12,7 +12,7 @@ import (
 	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
 )
 
-func TestListCommandJSON(t *testing.T) {
+func TestJSONListCommand(t *testing.T) {
 	mock := dolt.NewMockClient()
 	desc := "Team lead workflow"
 	sha := "abc123"
@@ -79,7 +79,7 @@ func TestListCommandTable(t *testing.T) {
 	}
 }
 
-func TestInfoCommandJSON(t *testing.T) {
+func TestJSONInfoCommand(t *testing.T) {
 	mock := dolt.NewMockClient()
 	desc := "Team lead workflow"
 	sha := "abc123"
@@ -137,7 +137,7 @@ func TestInfoCommandNotFound(t *testing.T) {
 	}
 }
 
-func TestInfoCommandNotFoundJSON(t *testing.T) {
+func TestJSONInfoCommandNotFound(t *testing.T) {
 	cmd := NewRootCmd("test", "abc", "2025-01-01")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
@@ -174,7 +174,7 @@ func TestListCommandPropagatesClientError(t *testing.T) {
 	}
 }
 
-func TestListCommandErrorJSON(t *testing.T) {
+func TestJSONListCommandError(t *testing.T) {
 	mock := dolt.NewMockClient()
 	mock.ListErr = errors.New("boom")
 

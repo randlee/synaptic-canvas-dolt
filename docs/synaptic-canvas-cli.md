@@ -250,19 +250,6 @@ Client selection rules:
 4. compatibility inference such as `--dolt-dir` implying `cli`
 5. documented default
 
-`--dolt-dir` is both a path input and a compatibility selector. If no client
-is selected by flag, environment, or file config, an explicit `--dolt-dir`
-implies `cli`. If `--dolt-dir` is supplied while the effective client is
-`http` or `sql`, the CLI fails with `invalid_args` rather than silently
-switching transports.
-
-When the effective client is `cli`, Dolt clone root resolution is:
-
-1. explicit `--dolt-dir`
-2. `SC_DOLT_DIR`
-3. `dolt.dir` from config
-4. upward auto-detection of a local `.dolt/` directory from the current working directory
-
 The public JSON contract must remain the same across `http`, `sql`, and `cli`
 client modes. Backend-specific differences belong in structured metadata or
 error details, not in top-level schema drift.
@@ -271,10 +258,6 @@ Write-path admin commands are different: MVP admin mutations may use `sql` or
 `cli` only. If an admin mutation command resolves to `http`, the CLI returns a
 typed `unsupported_backend` error and does not attempt a silent transport
 switch.
-
-`--client` is the primary public flag. A hidden legacy alias `--dolt-client`
-may remain temporarily for compatibility, but new automation should use
-`--client`.
 
 ---
 
@@ -418,16 +401,88 @@ inventing a command-specific top-level code.
     {
       "package": "team-lead",
       "global": {
+        "scope": "global",
         "branch": "main",
         "version": "1.4.0",
+        "install_site": "/Users/randlee",
         "install_root": "/Users/randlee/.claude/skills/team-lead",
-        "validation": "PASS"
+        "validation": "PASS",
+        "aggregate_status": "info",
+        "dependency_summary": {
+          "tracked": 2,
+          "verified": 2,
+          "missing": 0,
+          "items": [
+            {
+              "name": "gh>=2",
+              "dependency_type": "tool",
+              "verified": true,
+              "provenance": "verified-at-install"
+            }
+          ]
+        },
+        "hook_summary": {
+          "tracked": 1,
+          "registered": 1,
+          "missing": 0,
+          "hooks": [
+            {
+              "hook_event": "PreToolUse",
+              "hook_matcher": "git commit",
+              "hook_script": "hooks/pre-commit.sh",
+              "scope": "global",
+              "registered": true
+            }
+          ]
+        },
+        "modification_summary": {
+          "ok": 4,
+          "modified": 0,
+          "missing": 0,
+          "unreadable": 0,
+          "extra": 0
+        }
       },
       "local": {
+        "scope": "project",
         "branch": "main",
         "version": "1.3.0",
         "install_root": "/repo/.claude/skills/team-lead",
-        "validation": "FAIL"
+        "install_site": "/repo",
+        "validation": "FAIL",
+        "aggregate_status": "error",
+        "modification_summary": {
+          "ok": 3,
+          "modified": 1,
+          "missing": 0,
+          "unreadable": 0,
+          "extra": 1
+        },
+        "modifications": [
+          {
+            "kind": "file",
+            "severity": "warn",
+            "state": "modified",
+            "path": "SKILL.md"
+          },
+          {
+            "kind": "file",
+            "severity": "info",
+            "state": "extra",
+            "path": "NOTES.md"
+          }
+        ],
+        "issues": [
+          {
+            "kind": "hook",
+            "severity": "warn",
+            "state": "missing",
+            "code": "hook_not_registered",
+            "hook_script": "hooks/pre-commit.sh",
+            "scope": "project",
+            "message": "tracked hook script is not registered"
+          }
+        ]
       }
     }
   ]
@@ -448,21 +503,78 @@ inventing a command-specific top-level code.
       "scope": "project",
       "install_root": "/repo/.claude/skills/team-lead",
       "install_site": "/repo",
+      "tracking_origin": "local-install",
       "aggregate_expected": "abc123",
       "aggregate_actual": "def456",
       "aggregate_pass": false,
       "aggregate_status": "error",
+      "dependency_summary": {
+        "tracked": 2,
+        "verified": 2,
+        "missing": 0
+      },
+      "hook_summary": {
+        "tracked": 1,
+        "registered": 0,
+        "missing": 1
+      },
+      "modification_summary": {
+        "ok": 2,
+        "modified": 1,
+        "missing": 0,
+        "unreadable": 0,
+        "extra": 0
+      },
       "status": "FAIL",
       "warnings": [],
       "items": [
         {
+          "kind": "file",
+          "state": "modified",
           "path": "SKILL.md",
-          "status": "MODIFIED",
           "severity": "warn"
+        },
+        {
+          "kind": "hook",
+          "state": "missing",
+          "code": "hook_not_registered",
+          "hook_script": "hooks/pre-commit.sh",
+          "scope": "project",
+          "message": "tracked hook script is not registered",
+          "severity": "warn"
+        },
+        {
+          "kind": "aggregate",
+          "state": "modified",
+          "code": "aggregate_mismatch",
+          "expected": "abc123",
+          "actual": "def456",
+          "message": "aggregate SHA256 does not match tracked package state",
+          "severity": "error"
         }
       ]
     }
   ]
+}
+```
+
+`items` is a flat, typed validation list. File items use the fixed
+file-state vocabulary only: `ok`, `modified`, `missing`, `unreadable`, and
+`extra`. Higher-level problems carry a `kind`, severity, optional `code`, and
+target-identification fields such as `dependency`, `hook_event`, or
+`hook_script`.
+
+Representative dependency item:
+
+```json
+{
+  "kind": "dependency",
+  "state": "missing",
+  "code": "dependency_provenance_missing",
+  "dependency": "atm",
+  "dependency_type": "cli",
+  "severity": "critical",
+  "message": "installed dependency provenance is missing"
 }
 ```
 
@@ -505,6 +617,142 @@ depend on it.
 Other end-user commands such as `snapshot`, `scan`, `catalog update`,
 `config get`, and `config set` follow the same top-level `ok` convention and
 emit command-specific typed payloads from `src/pkg/api/`.
+
+### `sc uninstall --json`
+
+```json
+{
+  "ok": true,
+  "removed": {
+    "package": "team-lead",
+    "scope": "project",
+    "removed_files": [
+      "/repo/.claude/skills/team-lead/SKILL.md"
+    ],
+    "removed_dependencies": [
+      "gh"
+    ],
+    "hooks_removed": 1
+  },
+  "removed_all": [
+    {
+      "package": "team-lead",
+      "scope": "project",
+      "removed_files": [
+        "/repo/.claude/skills/team-lead/SKILL.md"
+      ],
+      "removed_dependencies": [
+        "gh"
+      ],
+      "hooks_removed": 1
+    }
+  ]
+}
+```
+
+### `sc scan --json`
+
+Successful scan:
+
+```json
+{
+  "ok": true,
+  "branch": "main",
+  "mutated": false,
+  "accepted": 0,
+  "upgraded": 0,
+  "candidates": [
+    {
+      "package": "team-lead",
+      "version": "1.3.0",
+      "branch": "main",
+      "scope": "project",
+      "install_root": "/repo/.claude/skills/team-lead",
+      "install_site": "/repo",
+      "tracking_origin": "scan-reconciled",
+      "needs_upgrade": false,
+      "files": [
+        {
+          "path": "/repo/.claude/skills/team-lead/SKILL.md",
+          "doc_path": "SKILL.md",
+          "sha256": "abc123"
+        }
+      ]
+    }
+  ],
+  "warnings": []
+}
+```
+
+Missing-catalog failure:
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "validation_failed",
+    "message": "catalog not found for branch main; run: sc catalog update",
+    "details": {
+      "required_action": "sc catalog update"
+    }
+  }
+}
+```
+
+### `sc catalog update --json`
+
+```json
+{
+  "ok": true,
+  "branch": "beta",
+  "entries": 42,
+  "path": "~/.synaptic/catalog-beta.toml",
+  "paths": [
+    "/repo/.synaptic/catalog-beta.toml",
+    "~/.synaptic/catalog-beta.toml"
+  ]
+}
+```
+
+### `sc config get --json`
+
+```json
+{
+  "ok": true,
+  "key": "dolt.database",
+  "value": "randlee/synaptic-canvas"
+}
+```
+
+### `sc config set --json`
+
+```json
+{
+  "ok": true,
+  "key": "dolt.database",
+  "path": "/Users/example/.sc/config.toml"
+}
+```
+
+### `sc snapshot --json`
+
+```json
+{
+  "ok": true,
+  "package": "team-lead",
+  "version": "1.3.0",
+  "branch": "main",
+  "scope": "project",
+  "install_root": "/repo/.claude/skills/team-lead",
+  "install_site": "/repo",
+  "output_dir": "/Users/example/.synaptic/mod-snapshots/team-lead/main/repo/20260425T120000Z",
+  "metadata_path": "/Users/example/.synaptic/mod-snapshots/team-lead/main/repo/20260425T120000Z/snapshot.toml",
+  "files": [
+    "SKILL.md",
+    "README.md"
+  ]
+}
+```
 ---
 
 ## Integrity Model
@@ -820,3 +1068,5 @@ ALTER TABLE packages ADD COLUMN signed_by VARCHAR(256) AFTER signature;
 |------|--------|
 | 2026-02-22 | Initial design document |
 | 2026-02-22 | Add template variable validation to admin publish (blocking gate) and import (warning) |
+| 2026-05-15 | Sprint 4.1 hardening: shared JSON contract, typed error coverage, warning formatter, and command JSON shape examples |
+| 2026-05-15 | Sprint 4.3 readback/audit symmetry: richer status and validate JSON, typed validation items, snapshot metadata path, and scan recovery contract |

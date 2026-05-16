@@ -119,7 +119,7 @@ func TestImportCommandPropagatesCommandContext(t *testing.T) {
 	}
 }
 
-func TestWriteImportJSONErrorShape(t *testing.T) {
+func TestJSONWriteImportErrorShape(t *testing.T) {
 	t.Parallel()
 
 	var out bytes.Buffer

@@ -132,6 +132,11 @@ func runScanCmd(cmd *cobra.Command, args []string) error {
 	})
 	if scanErr != nil {
 		if cfg.JSON {
+			if isMissingScanCatalogError(scanErr) {
+				return writeJSONError(formatter, api.ErrorCodeValidationFailed, scanErr.Error(), map[string]any{
+					"required_action": "sc catalog update",
+				})
+			}
 			return writeJSONError(formatter, classifyJSONError(scanErr.Error()), scanErr.Error())
 		}
 		return scanErr
@@ -178,6 +183,13 @@ func runScanCmd(cmd *cobra.Command, args []string) error {
 		})
 	}
 	return formatter.Table([]string{"PACKAGE", "VERSION", "SCOPE", "UPGRADE", "FILES"}, rows)
+}
+
+func isMissingScanCatalogError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "catalog not found for branch")
 }
 
 type scanResult struct {

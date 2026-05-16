@@ -123,7 +123,7 @@ func runValidateCmd(cmd *cobra.Command, args []string) error {
 			summary.Package,
 			summary.Scope,
 			summary.Status,
-			fmt.Sprintf("%d", visibleValidatedFileCount(summary.Files, cfg.Verbose)),
+			fmt.Sprintf("%d", visibleValidatedFileCount(summary.Items, cfg.Verbose)),
 			summary.AggregateStatus,
 		})
 	}
@@ -135,18 +135,31 @@ func runValidateCmd(cmd *cobra.Command, args []string) error {
 		for _, warning := range summary.Warnings {
 			writeWarning(formatter, warning)
 		}
-		fileRows := make([][]string, 0, len(summary.Files))
-		for _, file := range summary.Files {
-			if !cfg.Verbose && file.Severity == ValidationSeverityInfo {
+		fileRows := make([][]string, 0, len(summary.Items))
+		for _, item := range summary.Items {
+			if !cfg.Verbose && item.Severity == ValidationSeverityInfo {
 				continue
 			}
-			status := file.Status
-			if file.Error != "" {
-				status += ": " + file.Error
+			status := string(item.State)
+			if item.Code != "" {
+				status += " (" + item.Code + ")"
 			}
-			fileRows = append(fileRows, []string{file.Path, status, string(file.Severity)})
+			if item.Message != "" {
+				status += ": " + item.Message
+			}
+			target := item.Path
+			if target == "" {
+				target = item.Target
+			}
+			if target == "" {
+				target = item.Dependency
+			}
+			if target == "" {
+				target = item.HookScript
+			}
+			fileRows = append(fileRows, []string{target, string(item.Kind), status, string(item.Severity)})
 		}
-		if err := formatter.Table([]string{"FILE", "STATUS", "SEVERITY"}, fileRows); err != nil {
+		if err := formatter.Table([]string{"TARGET", "KIND", "STATE", "SEVERITY"}, fileRows); err != nil {
 			return err
 		}
 	}
@@ -156,13 +169,13 @@ func runValidateCmd(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func visibleValidatedFileCount(files []validatedFile, verbose bool) int {
+func visibleValidatedFileCount(items []validatedItem, verbose bool) int {
 	if verbose {
-		return len(files)
+		return len(items)
 	}
 	count := 0
-	for _, file := range files {
-		if file.Severity != ValidationSeverityInfo {
+	for _, item := range items {
+		if item.Severity != ValidationSeverityInfo {
 			count++
 		}
 	}

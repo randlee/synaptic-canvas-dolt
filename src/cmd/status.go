@@ -6,6 +6,7 @@ import (
 	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/api"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/operations"
 	"github.com/spf13/cobra"
 )
 
@@ -76,10 +77,19 @@ func runStatusCmd(cmd *cobra.Command, _ []string) error {
 			order = append(order, install.Record.Package)
 		}
 		state := &statusScopeState{
-			Version:     install.Record.Version,
-			Branch:      install.Record.Branch,
-			Validation:  summary.Status,
-			InstallRoot: install.Record.InstallRoot,
+			Scope:               install.Record.InstallScope,
+			Version:             install.Record.Version,
+			Branch:              install.Record.Branch,
+			Validation:          summary.Status,
+			AggregateStatus:     summary.AggregateStatus,
+			InstallRoot:         install.Record.InstallRoot,
+			InstallSite:         install.Record.InstallSite,
+			TrackingOrigin:      summary.TrackingOrigin,
+			DependencySummary:   summary.DependencySummary,
+			HookSummary:         summary.HookSummary,
+			ModificationSummary: summary.ModificationSummary,
+			Modifications:       operations.Modifications(summary.Items),
+			Issues:              operations.Issues(summary.Items),
 		}
 		if install.Record.InstallScope == "global" {
 			row.Global = state
