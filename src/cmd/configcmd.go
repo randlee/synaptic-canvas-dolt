@@ -73,7 +73,7 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 	path, err := config.SetFileValue(key, value)
 	if err != nil {
 		if cfg.JSON {
-			return writeClassifiedJSONError(formatter, cfg, err)
+			return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 		}
 		return err
 	}

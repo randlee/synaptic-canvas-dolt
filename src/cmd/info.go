@@ -78,7 +78,7 @@ func runInfoCmd(cmd *cobra.Command, args []string) error {
 				Version:         pkg.Version,
 				Description:     pkg.Description,
 				Variant:         pkg.AgentVariant,
-				InstallScope:    pkg.InstallScope,
+				InstallScope:    apiInstallScope(pkg.InstallScope),
 				SHA256:          pkg.SHA256,
 				FileCount:       pkg.FileCount,
 				DependencyCount: pkg.DepCount,
@@ -90,7 +90,7 @@ func runInfoCmd(cmd *cobra.Command, args []string) error {
 		for _, dep := range deps {
 			resp.Package.Dependencies = append(resp.Package.Dependencies, dependencyShape{
 				Name: dep.DepName,
-				Type: dep.DepType,
+				Type: apiDependencyType(dep.DepType),
 				Spec: dep.DepSpec,
 			})
 		}

@@ -64,7 +64,7 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 		pkg, err := client.GetPackage(cmd.Context(), packageID)
 		if err != nil {
 			if cfg.JSON {
-				return writeClassifiedJSONError(formatter, cfg, err)
+				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 			}
 			return err
 		}
@@ -85,28 +85,28 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 		files, err := client.GetPackageFiles(cmd.Context(), packageID)
 		if err != nil {
 			if cfg.JSON {
-				return writeClassifiedJSONError(formatter, cfg, err)
+				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 			}
 			return err
 		}
 		deps, err := client.GetPackageDeps(cmd.Context(), packageID)
 		if err != nil {
 			if cfg.JSON {
-				return writeClassifiedJSONError(formatter, cfg, err)
+				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 			}
 			return err
 		}
 		hooks, err := client.GetPackageHooks(cmd.Context(), packageID)
 		if err != nil {
 			if cfg.JSON {
-				return writeClassifiedJSONError(formatter, cfg, err)
+				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 			}
 			return err
 		}
 		questions, err := client.GetPackageQuestions(cmd.Context(), packageID)
 		if err != nil {
 			if cfg.JSON {
-				return writeClassifiedJSONError(formatter, cfg, err)
+				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 			}
 			return err
 		}
@@ -167,7 +167,7 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 					break
 				}
 				if cfg.JSON {
-					return writeClassifiedJSONError(formatter, cfg, err)
+					return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 				}
 				return err
 			}
@@ -183,8 +183,8 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 						Plan:       dryRun,
 						Scope:      scope,
 						Partial:    partial,
-						Installs:   summaries,
-						RolledBack: rolledBack,
+						Installs:   apiInstallSummaries(summaries),
+						RolledBack: apiInstallSummaries(rolledBack),
 						Failures:   failures,
 					}); err != nil {
 						return err
@@ -221,11 +221,11 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 					FilesWritten:               summary.FilesWritten,
 					Dependencies:               summary.Dependencies,
 					DependencyWarnings:         summary.DependencyWarnings,
-					HooksRegistered:            summary.HooksRegistered,
+					HooksRegistered:            apiInstallHookEntries(summary.HooksRegistered),
 					TemplateValidationWarnings: summary.TemplateValidationWarnings,
 					Warnings:                   allWarnings,
-					Files:                      summary.Files,
-					Answers:                    summary.Answers,
+					Files:                      apiInstallPlannedFiles(summary.Files),
+					Answers:                    apiInstallAnswers(summary.Answers),
 				})
 			}
 			var errorValue *api.Error
@@ -238,8 +238,8 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 				Plan:       dryRun,
 				Scope:      scope,
 				Partial:    partial,
-				Installs:   summaries,
-				RolledBack: rolledBack,
+				Installs:   apiInstallSummaries(summaries),
+				RolledBack: apiInstallSummaries(rolledBack),
 				Failures:   failures,
 				Warnings:   allWarnings,
 			}); err != nil {
@@ -266,10 +266,10 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		for _, warning := range allWarnings {
-			writeWarning(formatter, warning)
+			formatter.Warn(warning)
 		}
 		for _, failure := range failures {
-			writeWarning(formatter, fmt.Sprintf("%s [%s] failed: %s", failure.Package, failure.Scope, failure.Error))
+			formatter.Warn(fmt.Sprintf("%s [%s] failed: %s", failure.Package, failure.Scope, failure.Error))
 		}
 		for _, summary := range summaries {
 			for _, warning := range summary.DependencyWarnings {

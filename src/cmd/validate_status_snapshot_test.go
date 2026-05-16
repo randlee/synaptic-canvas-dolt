@@ -12,11 +12,10 @@ import (
 	"github.com/randlee/synaptic-canvas-dolt/pkg/integrity"
 )
 
-func TestValidateCommandJSONAllFileStates(t *testing.T) {
+func TestJSONValidateAllFileStates(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
+	setTestHome(t, home)
 	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
 	restoreDir := chdirForTest(t, root)
 	defer restoreDir()
@@ -237,12 +236,10 @@ func TestValidateScopeBothMixedPassFailReturnsExitOneWithResults(t *testing.T) {
 	}
 }
 
-func TestStatusCommandJSONMergedScopes(t *testing.T) {
+func TestJSONStatusMergedScopes(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
-	t.Setenv("USERPROFILE", home)
+	setTestHome(t, home)
 	resolvedHome, err := os.UserHomeDir()
 	if err != nil {
 		t.Fatalf("UserHomeDir() error = %v", err)
@@ -320,7 +317,7 @@ func TestStatusCommandJSONMergedScopes(t *testing.T) {
 	}
 }
 
-func TestSnapshotCommandModifiedOnly(t *testing.T) {
+func TestJSONSnapshotModifiedOnly(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -388,7 +385,7 @@ func TestSnapshotCommandModifiedOnly(t *testing.T) {
 	}
 }
 
-func TestSnapshotCommandFull(t *testing.T) {
+func TestJSONSnapshotFull(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)

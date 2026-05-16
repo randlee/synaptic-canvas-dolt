@@ -250,19 +250,6 @@ Client selection rules:
 4. compatibility inference such as `--dolt-dir` implying `cli`
 5. documented default
 
-`--dolt-dir` is both a path input and a compatibility selector. If no client
-is selected by flag, environment, or file config, an explicit `--dolt-dir`
-implies `cli`. If `--dolt-dir` is supplied while the effective client is
-`http` or `sql`, the CLI fails with `invalid_args` rather than silently
-switching transports.
-
-When the effective client is `cli`, Dolt clone root resolution is:
-
-1. explicit `--dolt-dir`
-2. `SC_DOLT_DIR`
-3. `dolt.dir` from config
-4. upward auto-detection of a local `.dolt/` directory from the current working directory
-
 The public JSON contract must remain the same across `http`, `sql`, and `cli`
 client modes. Backend-specific differences belong in structured metadata or
 error details, not in top-level schema drift.
@@ -271,10 +258,6 @@ Write-path admin commands are different: MVP admin mutations may use `sql` or
 `cli` only. If an admin mutation command resolves to `http`, the CLI returns a
 typed `unsupported_backend` error and does not attempt a silent transport
 switch.
-
-`--client` is the primary public flag. A hidden legacy alias `--dolt-client`
-may remain temporarily for compatibility, but new automation should use
-`--client`.
 
 ---
 
@@ -505,6 +488,120 @@ depend on it.
 Other end-user commands such as `snapshot`, `scan`, `catalog update`,
 `config get`, and `config set` follow the same top-level `ok` convention and
 emit command-specific typed payloads from `src/pkg/api/`.
+
+### `sc uninstall --json`
+
+```json
+{
+  "ok": true,
+  "removed": {
+    "package": "team-lead",
+    "scope": "project",
+    "removed_files": [
+      "/repo/.claude/skills/team-lead/SKILL.md"
+    ],
+    "removed_dependencies": [
+      "gh"
+    ],
+    "hooks_removed": 1
+  },
+  "removed_all": [
+    {
+      "package": "team-lead",
+      "scope": "project",
+      "removed_files": [
+        "/repo/.claude/skills/team-lead/SKILL.md"
+      ],
+      "removed_dependencies": [
+        "gh"
+      ],
+      "hooks_removed": 1
+    }
+  ]
+}
+```
+
+### `sc scan --json`
+
+```json
+{
+  "ok": true,
+  "branch": "main",
+  "mutated": false,
+  "accepted": 0,
+  "upgraded": 0,
+  "candidates": [
+    {
+      "package": "team-lead",
+      "version": "1.3.0",
+      "branch": "main",
+      "scope": "project",
+      "install_root": "/repo/.claude/skills/team-lead",
+      "install_site": "/repo",
+      "tracking_origin": "scan-reconciled",
+      "needs_upgrade": false,
+      "files": [
+        {
+          "path": "/repo/.claude/skills/team-lead/SKILL.md",
+          "doc_path": "SKILL.md",
+          "sha256": "abc123"
+        }
+      ]
+    }
+  ],
+  "warnings": []
+}
+```
+
+### `sc catalog update --json`
+
+```json
+{
+  "ok": true,
+  "branch": "beta",
+  "entries": 42,
+  "path": "~/.synaptic/catalog-beta.toml",
+  "paths": [
+    "/repo/.synaptic/catalog-beta.toml",
+    "~/.synaptic/catalog-beta.toml"
+  ]
+}
+```
+
+### `sc config get --json`
+
+```json
+{
+  "ok": true,
+  "key": "dolt.database",
+  "value": "randlee/synaptic-canvas"
+}
+```
+
+### `sc config set --json`
+
+```json
+{
+  "ok": true,
+  "key": "dolt.database",
+  "path": "/Users/example/.sc/config.toml"
+}
+```
+
+### `sc snapshot --json`
+
+```json
+{
+  "ok": true,
+  "package": "team-lead",
+  "scope": "project",
+  "output_dir": "/Users/example/.synaptic/mod-snapshots/team-lead/main/repo/20260425T120000Z",
+  "files": [
+    "SKILL.md",
+    "README.md"
+  ]
+}
+```
 ---
 
 ## Integrity Model
@@ -820,3 +917,4 @@ ALTER TABLE packages ADD COLUMN signed_by VARCHAR(256) AFTER signature;
 |------|--------|
 | 2026-02-22 | Initial design document |
 | 2026-02-22 | Add template variable validation to admin publish (blocking gate) and import (warning) |
+| 2026-05-15 | Sprint 4.1 hardening: shared JSON contract, typed error coverage, warning formatter, and command JSON shape examples |

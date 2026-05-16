@@ -36,7 +36,7 @@ func runInitCmd(cmd *cobra.Command, _ []string) error {
 		formatter.Writer = cmd.OutOrStdout()
 		formatter.ErrW = cmd.ErrOrStderr()
 		if cfg.JSON {
-			return writeClassifiedJSONError(formatter, cfg, err)
+			return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 		}
 		return fmt.Errorf("getting current directory: %w", err)
 	}
@@ -46,7 +46,7 @@ func runInitCmd(cmd *cobra.Command, _ []string) error {
 	formatter.ErrW = cmd.ErrOrStderr()
 	if err != nil {
 		if cfg.JSON {
-			return writeClassifiedJSONError(formatter, cfg, err)
+			return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 		}
 		return err
 	}

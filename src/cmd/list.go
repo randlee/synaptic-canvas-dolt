@@ -66,7 +66,7 @@ func runListCmd(cmd *cobra.Command, _ []string) error {
 				Description:     pkg.Description,
 				Tags:            pkg.TagsList(),
 				Variant:         pkg.AgentVariant,
-				InstallScope:    pkg.InstallScope,
+				InstallScope:    apiInstallScope(pkg.InstallScope),
 				FileCount:       pkg.FileCount,
 				DependencyCount: pkg.DepCount,
 				SHA256:          pkg.SHA256,

@@ -65,14 +65,14 @@ func runValidateCmd(cmd *cobra.Command, args []string) error {
 	repoRoot, err := currentRepoRoot()
 	if err != nil {
 		if cfg.JSON {
-			return writeClassifiedJSONError(formatter, cfg, err)
+			return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 		}
 		return err
 	}
 	installs, err := loadTrackedInstalls(repoRoot)
 	if err != nil {
 		if cfg.JSON {
-			return writeClassifiedJSONError(formatter, cfg, err)
+			return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 		}
 		return err
 	}
@@ -93,7 +93,7 @@ func runValidateCmd(cmd *cobra.Command, args []string) error {
 		summary, err := validateTrackedInstall(cmd.Context(), install.Record)
 		if err != nil {
 			if cfg.JSON {
-				return writeClassifiedJSONError(formatter, cfg, err)
+				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 			}
 			return err
 		}
@@ -133,7 +133,7 @@ func runValidateCmd(cmd *cobra.Command, args []string) error {
 	for _, summary := range summaries {
 		formatter.Success(fmt.Sprintf("%s [%s]", summary.Package, summary.Scope))
 		for _, warning := range summary.Warnings {
-			writeWarning(formatter, warning)
+			formatter.Warn(warning)
 		}
 		fileRows := make([][]string, 0, len(summary.Files))
 		for _, file := range summary.Files {

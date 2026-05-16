@@ -17,11 +17,10 @@ import (
 	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
 )
 
-func TestCatalogUpdateCommandWritesBothScopes(t *testing.T) {
+func TestJSONCatalogUpdateWritesBothScopes(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
+	setTestHome(t, home)
 	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
 	restoreDir := chdirForTest(t, root)
 	defer restoreDir()
