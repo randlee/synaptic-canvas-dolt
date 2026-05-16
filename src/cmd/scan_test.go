@@ -626,6 +626,19 @@ func TestJSONScanAbsentCatalogError(t *testing.T) {
 	if envelope.Error.Details["required_action"] != "sc catalog update" {
 		t.Fatalf("expected recovery action in JSON details, got %+v", envelope)
 	}
+	gotPath, _ := envelope.Error.Details["catalog_path"].(string)
+	wantPath := filepath.Join(root, ".synaptic", "catalog-main.toml")
+	normalizePath := func(path string) string {
+		if runtime.GOOS == "darwin" {
+			return strings.TrimPrefix(path, "/private")
+		}
+		return path
+	}
+	gotResolved := normalizePath(gotPath)
+	wantResolved := normalizePath(wantPath)
+	if gotResolved != wantResolved {
+		t.Fatalf("catalog_path = %v (%v), want %v (%v)", gotPath, gotResolved, wantPath, wantResolved)
+	}
 }
 
 func TestScanActionFlagsAreMutuallyExclusive(t *testing.T) {

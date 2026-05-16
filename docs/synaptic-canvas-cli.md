@@ -473,14 +473,15 @@ inventing a command-specific top-level code.
           }
         ],
         "issues": [
-          {
-            "kind": "hook",
-            "severity": "warn",
-            "state": "missing",
-            "code": "hook_not_registered",
-            "hook_script": "hooks/pre-commit.sh",
-            "scope": "project",
-            "message": "tracked hook script is not registered"
+        {
+          "kind": "hook",
+          "severity": "warn",
+          "state": "missing",
+          "code": "hook_not_registered",
+          "hook_event": "PreToolUse",
+          "hook_script": "hooks/pre-commit.sh",
+          "scope": "project",
+          "message": "tracked hook script is not registered"
           }
         ]
       }
@@ -538,6 +539,7 @@ inventing a command-specific top-level code.
           "kind": "hook",
           "state": "missing",
           "code": "hook_not_registered",
+          "hook_event": "PreToolUse",
           "hook_script": "hooks/pre-commit.sh",
           "scope": "project",
           "message": "tracked hook script is not registered",
@@ -691,9 +693,10 @@ Missing-catalog failure:
   "ok": false,
   "error": {
     "code": "validation_failed",
-    "message": "catalog not found for branch main; run: sc catalog update",
+    "message": "catalog not found for branch main at /repo/.synaptic/catalog-main.toml; run: sc catalog update",
     "details": {
-      "required_action": "sc catalog update"
+      "required_action": "sc catalog update",
+      "catalog_path": "/repo/.synaptic/catalog-main.toml"
     }
   }
 }
@@ -994,11 +997,17 @@ A Claude Code skill installed globally by the `sc` installer. Replaces the curre
 **Commands mapped to CLI:**
 ```
 "list packages"        → sc list --json
+"show team-lead"       → sc info team-lead --json
 "install <pkg>"        → sc install <pkg> --json
+"install <pkg> from <branch> globally"
+                       → sc install <pkg> --branch <branch> --scope global --json
 "upgrade <pkg>"        → sc upgrade <pkg> --json
+"upgrade <pkg> to <version> on <branch> in this repo"
+                       → sc upgrade <pkg> --branch <branch> --version <version> --scope project --json
 "uninstall <pkg>"      → sc uninstall <pkg> --json
 "validate <pkg>"       → sc validate <pkg> --json
 "show status"          → sc status --json
+"snapshot <pkg>"       → sc snapshot <pkg> --json
 ```
 
 The skill parses `--json` output from the CLI and presents it conversationally.
@@ -1006,6 +1015,10 @@ The skill itself is a thin markdown file with tool definitions — all package
 logic lives in the `sc` binary. ATM message polling, autonomous task loops, and
 repository orchestration remain out of scope for this skill and belong to
 higher-level orchestration layers.
+
+The authoritative in-repo skill package lives under
+`.claude/skills/sc-plugin/`. Its `examples/` directory is the manual-QA
+fixture set for utterance-to-command mapping and expected structured outcomes.
 
 ### Admin Skill (separate, opt-in)
 

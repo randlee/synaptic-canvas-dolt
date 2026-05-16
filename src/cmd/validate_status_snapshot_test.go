@@ -131,6 +131,15 @@ func TestValidateEmitsDependencyHookAndTemplateItems(t *testing.T) {
 		InstallSite:      root,
 		TemplateRendered: true,
 		Files:            map[string]string{"hooks/pre.sh": integrity.ComputeContentSHA256([]byte(hookContent))},
+		Hooks: []installer.HookEntry{{
+			Event:    "PreToolUse",
+			Matcher:  "git commit",
+			Skill:    "team-lead",
+			Scope:    "project",
+			Script:   "hooks/pre.sh",
+			Priority: 5,
+			Blocking: true,
+		}},
 		Requirements: installer.RequirementSnapshot{
 			Tools:        []string{"gh>=2"},
 			CLIInstalled: []string{"atm"},
@@ -165,6 +174,20 @@ func TestValidateEmitsDependencyHookAndTemplateItems(t *testing.T) {
 		if statuses[want] == 0 {
 			t.Fatalf("expected validation status %s, got %+v", want, resp.Packages[0].Items)
 		}
+	}
+	for _, item := range resp.Packages[0].Items {
+		if item.Code != "hook_not_registered" {
+			continue
+		}
+		if item.HookEvent != "PreToolUse" || item.HookMatcher != "git commit" || item.HookScript != "hooks/pre.sh" {
+			t.Fatalf("unexpected hook validation item: %+v", item)
+		}
+	}
+	if len(resp.Packages[0].HookSummary.Hooks) != 1 {
+		t.Fatalf("expected one hook summary entry, got %+v", resp.Packages[0].HookSummary)
+	}
+	if hook := resp.Packages[0].HookSummary.Hooks[0]; hook.Event != "PreToolUse" || hook.Matcher != "git commit" || hook.Script != "hooks/pre.sh" || hook.Registered {
+		t.Fatalf("unexpected hook summary entry: %+v", hook)
 	}
 }
 

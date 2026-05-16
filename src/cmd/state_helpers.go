@@ -382,11 +382,11 @@ func appendDependencyValidationItems(record installer.InstallRecord, summary *va
 }
 
 func appendHookValidationItems(record installer.InstallRecord, summary *validatedInstall) {
-	expectedScripts := expectedHookScripts(record)
-	if len(expectedScripts) == 0 {
+	expectedHooks := expectedHooks(record)
+	if len(expectedHooks) == 0 {
 		return
 	}
-	summary.HookSummary.Tracked = len(expectedScripts)
+	summary.HookSummary.Tracked = len(expectedHooks)
 	stateRoot, err := stateRootForScope(record.InstallSite, record.InstallScope)
 	if err != nil {
 		appendValidationItem(summary, validatedItem{
@@ -411,7 +411,8 @@ func appendHookValidationItems(record installer.InstallRecord, summary *validate
 		})
 		return
 	}
-	for _, script := range expectedScripts {
+	for _, expected := range expectedHooks {
+		script := filepath.ToSlash(expected.Script)
 		if hook, ok := registeredHook(registry, record, script); ok {
 			summary.HookSummary.Registered++
 			summary.HookSummary.Hooks = append(summary.HookSummary.Hooks, api.HookValidationState{
@@ -427,18 +428,24 @@ func appendHookValidationItems(record installer.InstallRecord, summary *validate
 		}
 		summary.HookSummary.Missing++
 		summary.HookSummary.Hooks = append(summary.HookSummary.Hooks, api.HookValidationState{
+			Event:      expected.Event,
+			Matcher:    expected.Matcher,
 			Script:     script,
-			Scope:      record.InstallScope,
+			Scope:      expectedHookScope(record, expected),
+			Priority:   expected.Priority,
+			Blocking:   expected.Blocking,
 			Registered: false,
 		})
 		appendValidationItem(summary, validatedItem{
-			Kind:       ValidationKindHook,
-			State:      ValidationStateMissing,
-			Severity:   ValidationSeverityWarn,
-			Code:       "hook_not_registered",
-			Message:    "tracked hook script is not registered",
-			HookScript: script,
-			Scope:      record.InstallScope,
+			Kind:        ValidationKindHook,
+			State:       ValidationStateMissing,
+			Severity:    ValidationSeverityWarn,
+			Code:        "hook_not_registered",
+			Message:     "tracked hook script is not registered",
+			HookEvent:   expected.Event,
+			HookMatcher: expected.Matcher,
+			HookScript:  script,
+			Scope:       expectedHookScope(record, expected),
 		})
 	}
 }
@@ -488,16 +495,39 @@ func appendValidationItem(summary *validatedInstall, item validatedItem) {
 	}
 }
 
-func expectedHookScripts(record installer.InstallRecord) []string {
-	scripts := []string{}
+func expectedHooks(record installer.InstallRecord) []installer.HookEntry {
+	if len(record.Hooks) > 0 {
+		hooks := make([]installer.HookEntry, len(record.Hooks))
+		copy(hooks, record.Hooks)
+		sort.Slice(hooks, func(i, j int) bool {
+			left := filepath.ToSlash(hooks[i].Script) + "\x00" + hooks[i].Event + "\x00" + hooks[i].Matcher
+			right := filepath.ToSlash(hooks[j].Script) + "\x00" + hooks[j].Event + "\x00" + hooks[j].Matcher
+			return left < right
+		})
+		return hooks
+	}
+	hooks := make([]installer.HookEntry, 0, len(record.Files))
 	for path := range record.Files {
 		rel := normalizeRecordPath(record, path)
 		if isHookScriptPath(rel) {
-			scripts = append(scripts, filepath.ToSlash(rel))
+			hooks = append(hooks, installer.HookEntry{
+				Skill:  record.Package,
+				Scope:  record.InstallScope,
+				Script: filepath.ToSlash(rel),
+			})
 		}
 	}
-	sort.Strings(scripts)
-	return scripts
+	sort.Slice(hooks, func(i, j int) bool {
+		return filepath.ToSlash(hooks[i].Script) < filepath.ToSlash(hooks[j].Script)
+	})
+	return hooks
+}
+
+func expectedHookScope(record installer.InstallRecord, hook installer.HookEntry) string {
+	if strings.TrimSpace(hook.Scope) != "" {
+		return hook.Scope
+	}
+	return record.InstallScope
 }
 
 func isHookScriptPath(path string) bool {
