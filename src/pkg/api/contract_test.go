@@ -110,3 +110,185 @@ func TestErrorCodeConstantsStable(t *testing.T) {
 		}
 	}
 }
+
+func TestContractInstallResponseAllScopesFailedTypedSuberrors(t *testing.T) {
+	t.Parallel()
+
+	input := InstallResponse{
+		OK:      false,
+		Plan:    false,
+		Scope:   "both",
+		Partial: false,
+		Error: &Error{
+			Code:            ErrorCodeBlocked,
+			Message:         "install failed for all selected scopes",
+			Retryable:       false,
+			Details:         map[string]any{"operation": "install_scope"},
+			SuggestedAction: "install required dependencies before retrying",
+		},
+		Failures: []InstallScopeFailure{
+			{
+				Package:         "team-lead",
+				Scope:           "project",
+				Code:            ErrorCodeBlocked,
+				Error:           "dependency verification failed",
+				Retryable:       false,
+				Details:         map[string]any{"operation": "install_scope", "cause_code": "dependency_blocked"},
+				SuggestedAction: "install required dependencies before retrying",
+			},
+			{
+				Package:         "team-lead",
+				Scope:           "global",
+				Code:            ErrorCodeConfirmationNeeded,
+				Error:           "interactive confirmation required; use --yolo to proceed non-interactively",
+				Retryable:       false,
+				Details:         map[string]any{"operation": "install_scope", "cause_code": "confirmation_required"},
+				SuggestedAction: "rerun with --yolo to proceed non-interactively",
+			},
+		},
+	}
+
+	data, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	var output InstallResponse
+	if err := json.Unmarshal(data, &output); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	if !reflect.DeepEqual(output, input) {
+		t.Fatalf("roundtrip mismatch:\ninput=%+v\noutput=%+v", input, output)
+	}
+	if len(output.Failures) != 2 {
+		t.Fatalf("len(output.Failures) = %d, want 2", len(output.Failures))
+	}
+	if output.Failures[0].Code != ErrorCodeBlocked || output.Failures[1].Code != ErrorCodeConfirmationNeeded {
+		t.Fatalf("typed per-scope codes were not preserved: %+v", output.Failures)
+	}
+}
+
+func TestContractInstallResponsePartialFailureMixedTypedSuberrors(t *testing.T) {
+	t.Parallel()
+
+	input := InstallResponse{
+		OK:      false,
+		Plan:    false,
+		Scope:   "both",
+		Partial: true,
+		Error: &Error{
+			Code:            ErrorCodeBackendUnavailable,
+			Message:         "install failed for one or more scopes",
+			Retryable:       true,
+			Details:         map[string]any{"operation": "install_scope", "cause_code": "rate_limited"},
+			SuggestedAction: "retry or switch to a reachable backend",
+		},
+		Installs: []InstallSummary{{
+			PackageID:    "team-lead",
+			Version:      "1.2.0",
+			Branch:       "main",
+			Scope:        "project",
+			InstallRoot:  "/repo/.claude/skills/team-lead",
+			FilesWritten: 3,
+		}},
+		Failures: []InstallScopeFailure{
+			{
+				Package:         "team-lead",
+				Scope:           "project",
+				Code:            ErrorCodeBackendUnavailable,
+				Error:           "rate limited by backend",
+				Retryable:       true,
+				Details:         map[string]any{"operation": "install_scope", "cause_code": "rate_limited"},
+				SuggestedAction: "retry or switch to a reachable backend",
+			},
+			{
+				Package:         "team-lead",
+				Scope:           "global",
+				Code:            ErrorCodeBlocked,
+				Error:           "local modifications block overwrite",
+				Retryable:       false,
+				Details:         map[string]any{"operation": "install_scope", "cause_code": "modified_files"},
+				SuggestedAction: "resolve local modifications or uninstall before retrying",
+			},
+		},
+	}
+
+	data, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	var output InstallResponse
+	if err := json.Unmarshal(data, &output); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	if !reflect.DeepEqual(output, input) {
+		t.Fatalf("roundtrip mismatch:\ninput=%+v\noutput=%+v", input, output)
+	}
+	if output.Failures[0].Code != ErrorCodeBackendUnavailable || output.Failures[1].Code != ErrorCodeBlocked {
+		t.Fatalf("mixed typed sub-errors were not preserved: %+v", output.Failures)
+	}
+	if len(output.Installs) != 1 || output.Installs[0].Scope != "project" {
+		t.Fatalf("partial success installs were not preserved: %+v", output.Installs)
+	}
+}
+
+func TestContractBackendFailureRetryableMetadata(t *testing.T) {
+	t.Parallel()
+
+	input := ErrorEnvelope{
+		OK: false,
+		Error: Error{
+			Code:            ErrorCodeBackendUnavailable,
+			Message:         "failed to query package catalog",
+			Retryable:       true,
+			Details:         map[string]any{"cause_code": "rate_limited", "operation": "install_scope"},
+			SuggestedAction: "retry or switch to a reachable backend",
+		},
+	}
+
+	data, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	var output ErrorEnvelope
+	if err := json.Unmarshal(data, &output); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	if !reflect.DeepEqual(output, input) {
+		t.Fatalf("roundtrip mismatch:\ninput=%+v\noutput=%+v", input, output)
+	}
+}
+
+func TestContractConfirmationRequiredSuggestedAction(t *testing.T) {
+	t.Parallel()
+
+	input := ErrorEnvelope{
+		OK: false,
+		Error: Error{
+			Code:            ErrorCodeConfirmationNeeded,
+			Message:         "interactive confirmation required; use --yolo to proceed non-interactively",
+			Retryable:       false,
+			Details:         map[string]any{"cause_code": "confirmation_required", "operation": "install_scope"},
+			SuggestedAction: "rerun with --yolo to proceed non-interactively",
+		},
+	}
+
+	data, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	var output ErrorEnvelope
+	if err := json.Unmarshal(data, &output); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	if !reflect.DeepEqual(output, input) {
+		t.Fatalf("roundtrip mismatch:\ninput=%+v\noutput=%+v", input, output)
+	}
+}

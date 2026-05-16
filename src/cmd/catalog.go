@@ -52,14 +52,14 @@ func runCatalogUpdateCmd(cmd *cobra.Command, _ []string) error {
 	repoRoot, err := currentRepoRoot()
 	if err != nil {
 		if cfg.JSON {
-			return writeClassifiedJSONError(formatter, cfg, err)
+			return writeClassifiedJSONError(formatter, cfg, err, cmd.Name())
 		}
 		return err
 	}
 	client, err := readClientOpener(cfg)
 	if err != nil {
 		if cfg.JSON {
-			return writeClassifiedJSONError(formatter, cfg, err)
+			return writeClassifiedJSONError(formatter, cfg, err, cmd.Name())
 		}
 		return err
 	}
@@ -68,7 +68,7 @@ func runCatalogUpdateCmd(cmd *cobra.Command, _ []string) error {
 	paths, entries, err := updateCatalogCaches(cmd.Context(), repoRoot, cfg.EffectiveBranch(), scope, client)
 	if err != nil {
 		if cfg.JSON {
-			return writeClassifiedJSONError(formatter, cfg, err)
+			return writeClassifiedJSONError(formatter, cfg, err, cmd.Name())
 		}
 		return err
 	}

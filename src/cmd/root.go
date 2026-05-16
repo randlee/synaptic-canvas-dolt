@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/randlee/synaptic-canvas-dolt/cmd/admin"
+	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/internal/logging"
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/api"
@@ -114,11 +115,17 @@ func renderRootJSONError(cmd *cobra.Command, code api.ErrorCode, err error) erro
 	formatter := output.NewFormatter(true, quietRequested(cmd))
 	formatter.Writer = cmd.OutOrStdout()
 	formatter.ErrW = cmd.ErrOrStderr()
-	var details map[string]any
-	if cfg, cfgErr := loadConfig(cmd); cfgErr == nil {
-		details = jsonErrorDetails(cfg, code)
+	var cfg *config.Config
+	if loadedCfg, cfgErr := loadConfig(cmd); cfgErr == nil {
+		cfg = loadedCfg
 	}
-	if writeErr := writeJSONError(formatter, code, err.Error(), details); writeErr != nil {
+	metadata := jsonErrorMetadata(cfg, code, err, cmd.Name())
+	payload := api.NewError(code, err.Error(), api.ErrorOptions{
+		Retryable:       metadata.Retryable,
+		Details:         metadata.Details,
+		SuggestedAction: metadata.SuggestedAction,
+	})
+	if writeErr := writeStructuredJSONError(formatter, payload); writeErr != nil {
 		return writeErr
 	}
 	return jsonCmdError{cause: err}
