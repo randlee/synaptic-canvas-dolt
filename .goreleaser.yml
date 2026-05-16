@@ -51,8 +51,14 @@ winget:
     repository:
       owner: randlee
       name: winget-pkgs
-      branch: main
+      branch: "update-{{.Version}}"
       token: "{{ .Env.WINGET_GITHUB_TOKEN }}"
+      pull_request:
+        enabled: true
+        base:
+          owner: microsoft
+          name: winget-pkgs
+          branch: master
 
 changelog:
   sort: asc
