@@ -2018,6 +2018,48 @@ Detailed sprint plan: [5.1 Release Pipeline](./phase-5/5.1-release-pipeline.md)
 
 ---
 
+## Phase 6: Post-MVP Product Surface
+
+### Sprint 6.1: sc dolt Pass-Through Commands
+
+**Goal:** Add a thin `sc dolt` wrapper over the local `dolt` CLI so users can
+discover clone/pull/push/status-style database workflows through the Synaptic
+Canvas entry point without learning a second command location first.
+
+Detailed sprint plan: [6.1 sc dolt Pass-Through Commands](./phase-6/6.1-sc-dolt-pass-through-commands.md)
+
+**Deliverables:**
+- `sc dolt <args...>` pass-through command family
+- Missing-CLI guidance for `dolt`
+- Docs for common clone/pull/push/status workflows through `sc dolt`
+
+**Acceptance Criteria:**
+- `sc dolt` forwards directly to the installed `dolt` CLI
+- Missing `dolt` is surfaced clearly with install guidance
+- Docs describe the feature as a thin convenience wrapper, not a second
+  database-management model
+
+### Sprint 6.2: Web UI For Synaptic Canvas Catalog
+
+**Goal:** Plan and implement a web UI that reads Synaptic Canvas catalog data
+from DoltHub and presents packages and skills in a browsable site.
+
+Detailed sprint plan: [6.2 Web UI For Synaptic Canvas Catalog](./phase-6/6.2-web-ui-for-synaptic-canvas-catalog.md)
+
+**Deliverables:**
+- Frontend stack decision and architecture
+- DoltHub catalog read strategy
+- Initial package/skill browsing UX
+- Deployment and cache/update plan
+
+**Acceptance Criteria:**
+- The plan defines the frontend stack, DoltHub read path, initial UX scope,
+  and deployment model
+- The first UI milestone stays focused on catalog browsing rather than full
+  browser-side package management
+
+---
+
 ## Phase Summary
 
 | Phase | Sprints | Focus |
@@ -2027,6 +2069,7 @@ Detailed sprint plan: [5.1 Release Pipeline](./phase-5/5.1-release-pipeline.md)
 | 3. End-User | 3.1–3.9 | List, install, validate, upgrade, HTTP client, SHA catalog, scan, import collision, scope/yolo/severity |
 | 4. AI Surface | 4.1–4.10 | JSON contract, backend parity, readback, sc:plugin, installer, error/fixture hardening |
 | 5. Release | 5.1 | GoReleaser release pipeline |
+| 6. Post-MVP | 6.1–6.2 | Dolt UX forwarding and catalog web UI |
 
 ---
 
@@ -2067,5 +2110,6 @@ later planning so verification remains part of the product story:
 | 2026-02-22 | Add template variable validation to Sprints 2.1 (validator + warning), 2.4 (blocking gate), 3.2 (post-install scan) |
 | 2026-04-08 | Align plan with `requirements.md` and `architecture.md`, including explicit branch resolution and AI JSON access |
 | 2026-05-16 | Expand Phase 5 planning with explicit release matrix, pre-tag validation, Homebrew prerequisite/failure policy, and Winget deferral |
+| 2026-05-16 | Add initial Phase 6 post-MVP planning for `sc dolt` pass-through commands and a DoltHub-backed catalog web UI |
 | 2026-04-08 | Add Sprint 1.5 for Phase 1 gap closure and strengthen verification/test expectations across later phases |
 | 2026-04-08 | Add MVP release gate and future validation considerations (test harness, evals, validation evidence) |
