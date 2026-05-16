@@ -1840,6 +1840,8 @@ platforms with predictable config behavior.
 **Goal:** Close the remaining gap between the documented Phase 4 machine
 contract and runtime aggregate-install/backend error metadata.
 
+Detailed sprint plan: [4.6 Error Contract Completeness](./phase-4/4.6-error-contract-completeness.md)
+
 **Deliverables:**
 - Contract coverage for aggregate install failures with typed per-scope sub-errors
 - Runtime error metadata coverage for retryability, suggested action, cause code,
@@ -1860,6 +1862,35 @@ contract and runtime aggregate-install/backend error metadata.
   `details.cause_code`, and `details.operation`
 - Contract and command tests cover both pre-install lookup failures and
   scope-loop install failures
+
+### Sprint 4.7: sc:plugin Fixture Verification And Arch Cleanup
+
+**Goal:** Add repository-owned fixture verification for the `sc:plugin`
+wrapper and complete the Phase 4 architectural cleanup around shared warnings,
+install-ID constants, and test-only harness boundaries.
+
+Detailed sprint plan: [4.7 sc:plugin Fixture Verification And Arch Cleanup](./phase-4/4.7-fixture-verification-and-arch-cleanup.md)
+
+**Deliverables:**
+- Automated fixture verification for representative `sc:plugin` wrapper flows
+- Shared warning/output cleanup in command handlers
+- Shared install-ID format constant across command mutation helpers
+- Test-only build boundary for Dolt harness helpers
+
+**Key Requirements:**
+- Wrapper verification must be repository-owned and runnable without manual QA
+- The command layer must reuse shared output helpers rather than duplicating
+  warning emitters
+- Test harness code must stay out of production binaries
+
+**Acceptance Criteria:**
+- `.claude/skills/sc-plugin/tests/` exercises install success, install with
+  explicit global scope, snapshot ambiguity, backend failure, and `--json`
+  command generation
+- `catalog.go` uses the shared formatter warning path rather than a local
+  helper
+- Install-ID generation is driven by one named shared constant
+- `src/pkg/dolttest/harness.go` is excluded from production builds by build tag
 
 ---
 
@@ -1891,7 +1922,7 @@ contract and runtime aggregate-install/backend error metadata.
 | 1. Foundation | 1.1–1.5 | Scaffold + CI pipeline, Dolt client, integrity, log-debug agent, gap closure |
 | 2. Admin | 2.1–2.4 | Import, export, verify, publish |
 | 3. End-User | 3.1–3.9 | List, install, validate, upgrade, HTTP client, SHA catalog, scan, import collision, scope/yolo/severity |
-| 4. AI Surface | 4.1–4.6 | JSON contract, backend parity, readback, sc:plugin, installer, error contract completeness |
+| 4. AI Surface | 4.1–4.7 | JSON contract, backend parity, readback, sc:plugin, installer, error/fixture hardening |
 | 5. Release | 5.1 | GoReleaser release pipeline |
 
 ---

@@ -29,8 +29,10 @@ Translate the user request into the narrowest matching `sc --json` command.
 - "install team-lead from beta globally" -> `sc install team-lead --branch beta --scope global --json`
 - "upgrade team-lead in this repo" -> `sc upgrade team-lead --scope project --json`
 - "upgrade team-lead to 1.2.0 on beta locally" -> `sc upgrade team-lead --branch beta --version 1.2.0 --scope project --json`
+- "upgrade team-lead to 1.3.0 on beta in this repo" -> `sc upgrade team-lead --branch beta --version 1.3.0 --scope project --json`
 - "uninstall team-lead globally" -> `sc uninstall team-lead --scope global --json`
 - "validate team-lead here" -> `sc validate team-lead --scope project --json`
+- "validate team-lead in this repo" -> `sc validate team-lead --scope project --json`
 - "show package status" -> `sc status --json`
 - "snapshot team-lead" -> `sc snapshot team-lead --json`
 - "snapshot team-lead globally" -> `sc snapshot team-lead --scope global --json`

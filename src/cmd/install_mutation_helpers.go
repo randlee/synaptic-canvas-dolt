@@ -167,7 +167,7 @@ func rollbackInstallSummary(repoRoot string, summary installer.Summary) error {
 	}
 	pruneEmptyParents(filepath.FromSlash(summary.InstallRoot), stateRoot)
 	if err := installer.WithManifestLock(stateRoot, func(lock *installer.ManifestLock) error {
-		lock.RemoveInstall(fmt.Sprintf("pkg_%s_%s", summary.PackageID, summary.Scope))
+		lock.RemoveInstall(fmt.Sprintf(installer.InstallIDFormat, summary.PackageID, summary.Scope))
 		return nil
 	}); err != nil {
 		errs = append(errs, err)
