@@ -35,7 +35,7 @@ func runInfoCmd(cmd *cobra.Command, args []string) error {
 		pkg, err := client.GetPackageDetail(cmd.Context(), packageID)
 		if err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, classifyJSONErr(err), err.Error())
+				return writeClassifiedJSONError(formatter, cfg, err)
 			}
 			return err
 		}
@@ -50,21 +50,21 @@ func runInfoCmd(cmd *cobra.Command, args []string) error {
 		deps, err := client.GetPackageDeps(cmd.Context(), packageID)
 		if err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, classifyJSONErr(err), err.Error())
+				return writeClassifiedJSONError(formatter, cfg, err)
 			}
 			return err
 		}
 		hooks, err := client.GetPackageHooks(cmd.Context(), packageID)
 		if err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, classifyJSONErr(err), err.Error())
+				return writeClassifiedJSONError(formatter, cfg, err)
 			}
 			return err
 		}
 		questions, err := client.GetPackageQuestions(cmd.Context(), packageID)
 		if err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, classifyJSONErr(err), err.Error())
+				return writeClassifiedJSONError(formatter, cfg, err)
 			}
 			return err
 		}

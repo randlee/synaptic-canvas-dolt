@@ -118,7 +118,7 @@ func runScanCmd(cmd *cobra.Command, args []string) error {
 	repoRoot, err := currentRepoRoot()
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, classifyJSONErr(err), err.Error())
+			return writeClassifiedJSONError(formatter, cfg, err)
 		}
 		return err
 	}
@@ -142,7 +142,7 @@ func runScanCmd(cmd *cobra.Command, args []string) error {
 		accepted, upgraded, err = applyScanMutations(cmd.Context(), result.Candidates, acceptAll, upgradeAll)
 		if err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, classifyJSONErr(err), err.Error())
+				return writeClassifiedJSONError(formatter, cfg, err)
 			}
 			return err
 		}

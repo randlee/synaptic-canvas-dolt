@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/api"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/dolt"
@@ -46,12 +47,17 @@ func JSONErrorExitCode(error) int {
 	return 1
 }
 
-func writeJSONError(formatter *output.Formatter, code api.ErrorCode, message string) error {
+func writeJSONError(formatter *output.Formatter, code api.ErrorCode, message string, details ...map[string]any) error {
+	var detailMap map[string]any
+	if len(details) > 0 {
+		detailMap = details[0]
+	}
 	if err := formatter.WriteJSON(jsonErrorEnvelope{
 		OK: false,
 		Error: jsonErrorPayload{
 			Code:    code,
 			Message: message,
+			Details: detailMap,
 		},
 	}); err != nil {
 		return err
@@ -59,11 +65,18 @@ func writeJSONError(formatter *output.Formatter, code api.ErrorCode, message str
 	return jsonCmdError{cause: errors.New(message)}
 }
 
+func writeClassifiedJSONError(formatter *output.Formatter, cfg *config.Config, err error) error {
+	code := classifyJSONErr(err)
+	return writeJSONError(formatter, code, err.Error(), jsonErrorDetails(cfg, code))
+}
+
 func classifyJSONError(message string) api.ErrorCode {
 	lower := strings.ToLower(message)
 	switch {
 	case strings.Contains(lower, "not found"):
 		return api.ErrorCodeNotFound
+	case strings.Contains(lower, "--dolt-dir may only be used with client=cli"):
+		return api.ErrorCodeInvalidArgs
 	case strings.Contains(lower, "unsupported dolt.client"), strings.Contains(lower, "unsupported backend"):
 		return api.ErrorCodeUnsupportedBackend
 	case strings.Contains(lower, "unauthorized"), strings.Contains(lower, "forbidden"), strings.Contains(lower, "access denied"), strings.Contains(lower, "authentication"):
@@ -91,9 +104,26 @@ func classifyJSONErr(err error) api.ErrorCode {
 		return api.ErrorCodeBackendUnavailable
 	case errors.Is(err, dolt.ErrBadQuery):
 		return api.ErrorCodeBackendUnavailable
+	case errors.Is(err, dolt.ErrUnsupportedBackend):
+		return api.ErrorCodeUnsupportedBackend
 	case errors.Is(err, dolt.ErrNotFound):
 		return api.ErrorCodeNotFound
 	default:
 		return classifyJSONError(err.Error())
 	}
+}
+
+func jsonErrorDetails(cfg *config.Config, code api.ErrorCode) map[string]any {
+	switch code {
+	case api.ErrorCodeUnsupportedBackend, api.ErrorCodeBackendUnavailable, api.ErrorCodeBackendAuthFailed:
+	default:
+		return nil
+	}
+	client := "http"
+	if cfg != nil {
+		if selection, err := cfg.ResolveDoltClient(); err == nil && selection.Client != "" {
+			client = selection.Client
+		}
+	}
+	return map[string]any{"client": client}
 }

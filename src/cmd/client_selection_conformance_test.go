@@ -3,7 +3,6 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +17,8 @@ func TestClientSelectionPrecedenceMatrix(t *testing.T) {
 		name       string
 		args       []string
 		useFlagDir bool
+		fileDir    bool
+		envDir     string
 		envClient  string
 		fileClient string
 		wantClient string
@@ -56,6 +57,18 @@ func TestClientSelectionPrecedenceMatrix(t *testing.T) {
 			envClient:  "http",
 			wantErr:    "--dolt-dir may only be used with client=cli",
 		},
+		{
+			name:      "dolt dir conflicts when both come from environment",
+			envDir:    "env-repo",
+			envClient: "http",
+			wantErr:   "--dolt-dir may only be used with client=cli",
+		},
+		{
+			name:       "file dir implies cli when no explicit client",
+			fileDir:    true,
+			wantClient: "cli",
+			wantSource: config.ValueSourceCompatibility,
+		},
 	}
 
 	for _, tt := range tests {
@@ -73,8 +86,13 @@ func TestClientSelectionPrecedenceMatrix(t *testing.T) {
 					t.Fatalf("SetFileValue(client) error = %v", err)
 				}
 			}
-			if _, err := config.SetFileValue(config.KeyDoltDir, repoDir); err != nil {
-				t.Fatalf("SetFileValue(dir) error = %v", err)
+			if tt.envDir != "" {
+				t.Setenv("SC_DOLT_DIR", filepath.Join(home, tt.envDir))
+			}
+			if tt.fileDir {
+				if _, err := config.SetFileValue(config.KeyDoltDir, repoDir); err != nil {
+					t.Fatalf("SetFileValue(dir) error = %v", err)
+				}
 			}
 
 			root := NewRootCmd("test", "abc", "2025-01-01")
@@ -116,26 +134,14 @@ func TestClientSelectionPrecedenceMatrix(t *testing.T) {
 }
 
 func TestConformanceJSONErrorCodesAcrossBackends(t *testing.T) {
-	tests := []struct {
-		name string
-		err  error
-		want string
-	}{
-		{name: "http unavailable", err: fmt.Errorf("http failure: %w", dolt.ErrServerError), want: "backend_unavailable"},
-		{name: "sql unavailable", err: fmt.Errorf("sql failure: %w", dolt.ErrServerError), want: "backend_unavailable"},
-		{name: "cli unavailable", err: fmt.Errorf("cli failure: %w", dolt.ErrServerError), want: "backend_unavailable"},
-		{name: "http auth", err: fmt.Errorf("http failure: %w", dolt.ErrUnauthorized), want: "backend_auth_failed"},
-		{name: "sql auth", err: fmt.Errorf("sql failure: %w", dolt.ErrUnauthorized), want: "backend_auth_failed"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for _, harness := range dolt.FailingHarnesses() {
+		t.Run(harness.Name, func(t *testing.T) {
 			prev := readClientOpener
-			readClientOpener = func(*config.Config) (readClient, error) { return nil, tt.err }
+			readClientOpener = func(*config.Config) (readClient, error) { return harness.Open(t), nil }
 			defer func() { readClientOpener = prev }()
 
 			root := NewRootCmd("test", "abc", "2025-01-01")
-			root.SetArgs([]string{"list", "--json"})
+			root.SetArgs([]string{"--client", harness.Name, "list", "--json"})
 			var out bytes.Buffer
 			root.SetOut(&out)
 			root.SetErr(&out)
@@ -146,8 +152,44 @@ func TestConformanceJSONErrorCodesAcrossBackends(t *testing.T) {
 			if err := json.Unmarshal(out.Bytes(), &envelope); err != nil {
 				t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
 			}
-			if envelope.OK || envelope.Error.Code != tt.want {
+			if envelope.OK || envelope.Error.Code != "backend_unavailable" {
 				t.Fatalf("unexpected envelope: %+v", envelope)
+			}
+			if got := envelope.Error.Details["client"]; got != harness.Name {
+				t.Fatalf("details.client = %v, want %s", got, harness.Name)
+			}
+		})
+	}
+}
+
+func TestJSONVER011ListShapeAcrossBackends(t *testing.T) {
+	for _, harness := range dolt.ConformanceHarnesses() {
+		t.Run(harness.Name, func(t *testing.T) {
+			prev := readClientOpener
+			readClientOpener = func(*config.Config) (readClient, error) { return harness.Open(t), nil }
+			defer func() { readClientOpener = prev }()
+
+			root := NewRootCmd("test", "abc", "2025-01-01")
+			root.SetArgs([]string{"--client", harness.Name, "list", "--json"})
+			var out bytes.Buffer
+			root.SetOut(&out)
+			root.SetErr(&out)
+
+			if err := root.Execute(); err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+
+			var envelope struct {
+				OK       bool              `json:"ok"`
+				Branch   string            `json:"branch"`
+				Filters  map[string]any    `json:"filters"`
+				Packages []json.RawMessage `json:"packages"`
+			}
+			if err := json.Unmarshal(out.Bytes(), &envelope); err != nil {
+				t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
+			}
+			if !envelope.OK || envelope.Branch != "main" || len(envelope.Packages) != 1 {
+				t.Fatalf("unexpected envelope for %s: %+v", harness.Name, envelope)
 			}
 		})
 	}
@@ -178,6 +220,9 @@ func TestWritePathBackendRejectsHTTPJSON(t *testing.T) {
 			}
 			if envelope.OK || envelope.Error.Code != "unsupported_backend" {
 				t.Fatalf("unexpected envelope: %+v", envelope)
+			}
+			if got := envelope.Error.Details["client"]; got != "http" {
+				t.Fatalf("details.client = %v, want http", got)
 			}
 		})
 	}

@@ -72,14 +72,14 @@ func runSnapshotCmd(cmd *cobra.Command, args []string) error {
 	repoRoot, err := currentRepoRoot()
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, classifyJSONErr(err), err.Error())
+			return writeClassifiedJSONError(formatter, cfg, err)
 		}
 		return err
 	}
 	installs, err := loadTrackedInstalls(repoRoot)
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, classifyJSONErr(err), err.Error())
+			return writeClassifiedJSONError(formatter, cfg, err)
 		}
 		return err
 	}
@@ -103,7 +103,7 @@ func runSnapshotCmd(cmd *cobra.Command, args []string) error {
 	files, err := snapshotFiles(cmd.Context(), record, full)
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, classifyJSONErr(err), err.Error())
+			return writeClassifiedJSONError(formatter, cfg, err)
 		}
 		return err
 	}
@@ -111,7 +111,7 @@ func runSnapshotCmd(cmd *cobra.Command, args []string) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, classifyJSONErr(err), err.Error())
+			return writeClassifiedJSONError(formatter, cfg, err)
 		}
 		return err
 	}

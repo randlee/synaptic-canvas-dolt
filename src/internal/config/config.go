@@ -201,7 +201,7 @@ func (c *Config) ResolveDoltClient() (DoltClientSelection, error) {
 		client = "http"
 		clientSource = ValueSourceDefault
 	}
-	if c.FlagChanged("dolt-dir") && client != "cli" {
+	if doltDir != "" && client != "cli" {
 		return DoltClientSelection{}, fmt.Errorf("--dolt-dir may only be used with client=cli; effective client is %s", client)
 	}
 	switch client {

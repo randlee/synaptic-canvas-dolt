@@ -44,7 +44,7 @@ func NewImportCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			readClient, err := openImportReadClient(cfg, doltDir, branch)
+			readClient, err := openImportReadClient(cfg, branch)
 			if err != nil {
 				return err
 			}
@@ -134,14 +134,7 @@ func writeImportJSONError(formatter *output.Formatter, err error) (bool, error) 
 	return true, err
 }
 
-func openImportReadClient(cfg *config.Config, doltDir, branch string) (dolt.Client, error) {
-	selection, err := cfg.ResolveDoltClient()
-	if err != nil {
-		return nil, err
-	}
-	if selection.Client == "cli" && doltDir != "" {
-		return dolt.NewCLIReader(doltDir, branch), nil
-	}
+func openImportReadClient(cfg *config.Config, branch string) (dolt.Client, error) {
 	return dolt.OpenConfiguredReadClient(cfg, branch)
 }
 

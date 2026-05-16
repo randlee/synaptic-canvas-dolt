@@ -77,14 +77,14 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 	repoRoot, err := currentRepoRoot()
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, classifyJSONErr(err), err.Error())
+			return writeClassifiedJSONError(formatter, cfg, err)
 		}
 		return err
 	}
 	installs, err := loadTrackedInstalls(repoRoot)
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, classifyJSONErr(err), err.Error())
+			return writeClassifiedJSONError(formatter, cfg, err)
 		}
 		return err
 	}
@@ -104,7 +104,7 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 		if len(targets) == 0 {
 			err := fmt.Errorf("package %q is not installed", packageID)
 			if cfg.JSON {
-				return writeJSONError(formatter, classifyJSONErr(err), err.Error())
+				return writeClassifiedJSONError(formatter, cfg, err)
 			}
 			return err
 		}
@@ -137,7 +137,7 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 		validation, err := validateTrackedInstall(cmd.Context(), target.Record)
 		if err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, classifyJSONErr(err), err.Error())
+				return writeClassifiedJSONError(formatter, cfg, err)
 			}
 			return err
 		}
@@ -145,14 +145,14 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 		client, err := clientForBranch(targetBranch)
 		if err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, classifyJSONErr(err), err.Error())
+				return writeClassifiedJSONError(formatter, cfg, err)
 			}
 			return err
 		}
 		pkg, files, deps, hooks, questions, err := fetchUpgradePackage(cmd.Context(), client, targetBranch, target.Record)
 		if err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, classifyJSONErr(err), err.Error())
+				return writeClassifiedJSONError(formatter, cfg, err)
 			}
 			return err
 		}
@@ -220,7 +220,7 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 		})
 		if err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, classifyJSONErr(err), err.Error())
+				return writeClassifiedJSONError(formatter, cfg, err)
 			}
 			return err
 		}

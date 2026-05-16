@@ -46,14 +46,14 @@ func runStatusCmd(cmd *cobra.Command, _ []string) error {
 	repoRoot, err := currentRepoRoot()
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, classifyJSONErr(err), err.Error())
+			return writeClassifiedJSONError(formatter, cfg, err)
 		}
 		return err
 	}
 	installs, err := loadTrackedInstalls(repoRoot)
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, classifyJSONErr(err), err.Error())
+			return writeClassifiedJSONError(formatter, cfg, err)
 		}
 		return err
 	}
@@ -65,7 +65,7 @@ func runStatusCmd(cmd *cobra.Command, _ []string) error {
 		summary, err := validateTrackedInstall(cmd.Context(), install.Record)
 		if err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, classifyJSONErr(err), err.Error())
+				return writeClassifiedJSONError(formatter, cfg, err)
 			}
 			return err
 		}

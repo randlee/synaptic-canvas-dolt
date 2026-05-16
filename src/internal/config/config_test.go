@@ -299,3 +299,26 @@ func TestSetFileValueWritesConfig(t *testing.T) {
 		t.Fatalf("config file missing database value:\n%s", string(data))
 	}
 }
+
+func TestResolveDoltClientRejectsEnvDirWithHTTPClient(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("SC_DOLT_DIR", filepath.Join(home, "repo"))
+	t.Setenv("SC_DOLT_CLIENT", "http")
+
+	cmd := newTestCmd()
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("command execution failed: %v", err)
+	}
+	cfg, err := NewConfigFromFlags(cmd)
+	if err != nil {
+		t.Fatalf("NewConfigFromFlags() error = %v", err)
+	}
+	if err := cfg.LoadFileConfig(); err != nil {
+		t.Fatalf("LoadFileConfig() error = %v", err)
+	}
+	if _, err := cfg.ResolveDoltClient(); err == nil || !strings.Contains(err.Error(), "--dolt-dir may only be used with client=cli") {
+		t.Fatalf("ResolveDoltClient() error = %v, want dolt-dir conflict", err)
+	}
+}

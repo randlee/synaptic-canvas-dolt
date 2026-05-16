@@ -75,7 +75,7 @@ func OpenConfiguredReadClient(cfg *config.Config, branch string) (Client, error)
 		}
 		return NewCLIReader(doltDir, branch), nil
 	default:
-		return nil, fmt.Errorf("unsupported dolt.client %q", selection.Client)
+		return nil, fmt.Errorf("%w: unsupported dolt.client %q", ErrUnsupportedBackend, selection.Client)
 	}
 }
 
@@ -85,7 +85,7 @@ func ValidateWriteClient(cfg *config.Config) error {
 		return err
 	}
 	if selection.Client == "http" {
-		return fmt.Errorf("unsupported backend: admin write commands require client sql or cli; effective client is http")
+		return fmt.Errorf("%w: admin write commands require client sql or cli; effective client is http", ErrUnsupportedBackend)
 	}
 	return nil
 }

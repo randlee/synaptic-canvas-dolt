@@ -114,7 +114,11 @@ func renderRootJSONError(cmd *cobra.Command, code api.ErrorCode, err error) erro
 	formatter := output.NewFormatter(true, quietRequested(cmd))
 	formatter.Writer = cmd.OutOrStdout()
 	formatter.ErrW = cmd.ErrOrStderr()
-	if writeErr := writeJSONError(formatter, code, err.Error()); writeErr != nil {
+	var details map[string]any
+	if cfg, cfgErr := loadConfig(cmd); cfgErr == nil {
+		details = jsonErrorDetails(cfg, code)
+	}
+	if writeErr := writeJSONError(formatter, code, err.Error(), details); writeErr != nil {
 		return writeErr
 	}
 	return jsonCmdError{cause: err}
