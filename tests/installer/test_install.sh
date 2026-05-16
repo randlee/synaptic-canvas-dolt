@@ -32,6 +32,8 @@ cat > "$HOME_DIR/.sc/config.toml" <<'EOF'
 branch = "beta"
 EOF
 printf 'user note\n' > "$HOME_DIR/.claude/skills/sc-plugin/USER-NOTES.md"
+mkdir -p "$HOME_DIR/.claude/agents"
+printf 'assistant instructions\n' > "$HOME_DIR/.claude/agents/my-agent.md"
 printf 'locally edited\n' > "$HOME_DIR/.claude/skills/sc-plugin/SKILL.md"
 printf '#!/usr/bin/env bash\necho stale\n' > "$BIN_DIR/sc"
 chmod +x "$BIN_DIR/sc"
@@ -41,5 +43,6 @@ bash "$REPO_ROOT/scripts/install.sh"
 grep -Fq 'branch = "beta"' "$HOME_DIR/.sc/config.toml" || { echo "config was not preserved" >&2; exit 1; }
 grep -Fq 'Thin Claude skill wrapper' "$HOME_DIR/.claude/skills/sc-plugin/SKILL.md" || { echo "managed skill file was not refreshed" >&2; exit 1; }
 grep -Fq 'user note' "$HOME_DIR/.claude/skills/sc-plugin/USER-NOTES.md" || { echo "unmanaged file was removed" >&2; exit 1; }
+grep -Fq 'assistant instructions' "$HOME_DIR/.claude/agents/my-agent.md" || { echo "unrelated file outside managed skill tree was modified" >&2; exit 1; }
 VERSION_OUTPUT="$("$BIN_DIR/sc" --version)"
 [[ "$VERSION_OUTPUT" == *"sc version "* ]] || { echo "unexpected version output after rerun: $VERSION_OUTPUT" >&2; exit 1; }

@@ -46,6 +46,9 @@ try {
     ) | Set-Content -LiteralPath $configPath
     Set-Content -LiteralPath $skillPath -Value "locally edited"
     Set-Content -LiteralPath (Join-Path $homeDir ".claude/skills/sc-plugin/USER-NOTES.md") -Value "user note"
+    $agentDir = Join-Path $homeDir ".claude/agents"
+    New-Item -ItemType Directory -Force -Path $agentDir | Out-Null
+    Set-Content -LiteralPath (Join-Path $agentDir "my-agent.md") -Value "assistant instructions"
     Set-Content -LiteralPath $binaryPath -Value "stale"
 
     & (Join-Path $repoRoot "scripts/install.ps1")
@@ -56,6 +59,8 @@ try {
     Assert-True ($skillContents -match "Thin Claude skill wrapper") "managed skill file was not refreshed"
     $notesContents = Get-Content -LiteralPath (Join-Path $homeDir ".claude/skills/sc-plugin/USER-NOTES.md") -Raw
     Assert-True ($notesContents -match "user note") "unmanaged file was removed"
+    $agentContents = Get-Content -LiteralPath (Join-Path $agentDir "my-agent.md") -Raw
+    Assert-True ($agentContents -match "assistant instructions") "unrelated file outside managed skill tree was modified"
     $versionOutput = & $binaryPath --version
     Assert-True ($versionOutput -match "sc version ") "unexpected version output after rerun: $versionOutput"
 } finally {
