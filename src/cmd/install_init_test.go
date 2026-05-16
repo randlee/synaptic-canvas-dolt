@@ -659,6 +659,9 @@ func TestJSONInstallBackendFailureIncludesRetryableMetadata(t *testing.T) {
 		if !resp.Error.Retryable {
 			t.Fatalf("expected aggregate backend failure to be retryable: %+v", resp.Error)
 		}
+		if resp.Error.Details["cause_code"] != "rate_limited" || resp.Error.Details["operation"] != "install_scope" {
+			t.Fatalf("unexpected aggregate backend details: %+v", resp.Error.Details)
+		}
 		if len(resp.Failures) != 1 {
 			t.Fatalf("len(resp.Failures) = %d, want 1 (%+v)", len(resp.Failures), resp.Failures)
 		}

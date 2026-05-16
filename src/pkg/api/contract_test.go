@@ -184,6 +184,14 @@ func TestContractInstallResponsePartialFailureMixedTypedSuberrors(t *testing.T) 
 			Details:         map[string]any{"operation": "install_scope", "cause_code": "rate_limited"},
 			SuggestedAction: "retry or switch to a reachable backend",
 		},
+		Installs: []InstallSummary{{
+			PackageID:    "team-lead",
+			Version:      "1.2.0",
+			Branch:       "main",
+			Scope:        "project",
+			InstallRoot:  "/repo/.claude/skills/team-lead",
+			FilesWritten: 3,
+		}},
 		Failures: []InstallScopeFailure{
 			{
 				Package:         "team-lead",
@@ -221,5 +229,66 @@ func TestContractInstallResponsePartialFailureMixedTypedSuberrors(t *testing.T) 
 	}
 	if output.Failures[0].Code != ErrorCodeBackendUnavailable || output.Failures[1].Code != ErrorCodeBlocked {
 		t.Fatalf("mixed typed sub-errors were not preserved: %+v", output.Failures)
+	}
+	if len(output.Installs) != 1 || output.Installs[0].Scope != "project" {
+		t.Fatalf("partial success installs were not preserved: %+v", output.Installs)
+	}
+}
+
+func TestContractBackendFailureRetryableMetadata(t *testing.T) {
+	t.Parallel()
+
+	input := ErrorEnvelope{
+		OK: false,
+		Error: Error{
+			Code:            ErrorCodeBackendUnavailable,
+			Message:         "failed to query package catalog",
+			Retryable:       true,
+			Details:         map[string]any{"cause_code": "rate_limited", "operation": "install_scope"},
+			SuggestedAction: "retry or switch to a reachable backend",
+		},
+	}
+
+	data, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	var output ErrorEnvelope
+	if err := json.Unmarshal(data, &output); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	if !reflect.DeepEqual(output, input) {
+		t.Fatalf("roundtrip mismatch:\ninput=%+v\noutput=%+v", input, output)
+	}
+}
+
+func TestContractConfirmationRequiredSuggestedAction(t *testing.T) {
+	t.Parallel()
+
+	input := ErrorEnvelope{
+		OK: false,
+		Error: Error{
+			Code:            ErrorCodeConfirmationNeeded,
+			Message:         "interactive confirmation required; use --yolo to proceed non-interactively",
+			Retryable:       false,
+			Details:         map[string]any{"cause_code": "confirmation_required", "operation": "install_scope"},
+			SuggestedAction: "rerun with --yolo to proceed non-interactively",
+		},
+	}
+
+	data, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	var output ErrorEnvelope
+	if err := json.Unmarshal(data, &output); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	if !reflect.DeepEqual(output, input) {
+		t.Fatalf("roundtrip mismatch:\ninput=%+v\noutput=%+v", input, output)
 	}
 }
