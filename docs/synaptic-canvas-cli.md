@@ -609,8 +609,9 @@ Representative dependency item:
 ### Mutation Outcome And Rollback Reporting
 
 Mutating commands use atomic per-scope tracking updates. When a command fails
-after side effects begin, JSON errors must expose rollback facts rather than
-leaving callers to infer state from logs.
+after side effects begin, JSON errors must still match the standard error
+envelope. The emitted message must report the relevant recovery facts directly
+rather than relying on extra rollback-only fields or external logs.
 
 Representative uninstall file-removal failure:
 
