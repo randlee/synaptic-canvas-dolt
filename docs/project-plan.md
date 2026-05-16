@@ -1793,6 +1793,8 @@ through read commands rather than direct filesystem inspection alone.
 - Explicit natural-language to `sc --json` command mapping
 - Fixture-backed wrapper verification for representative success and error cases
 - Documentation clarifying that orchestration behavior stays outside the skill
+- Example set covering install, upgrade, uninstall, status, validate,
+  snapshot ambiguity, and backend failure flows
 
 **Key Requirements:**
 - The skill delegates business logic to the CLI rather than re-implementing it
@@ -1806,6 +1808,8 @@ through read commands rather than direct filesystem inspection alone.
   corrective-error presentation
 - The wrapper does not create a second business-payload schema separate from
   the CLI contract
+- Manual QA can review `.claude/skills/sc-plugin/examples/` and confirm that
+  every example maps to a JSON-only CLI invocation with no human-output parsing
 
 ### Sprint 4.5: Installer And Local Distribution
 
