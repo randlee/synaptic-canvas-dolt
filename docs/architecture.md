@@ -1,7 +1,9 @@
 # Synaptic Canvas Architecture
 
-This document replaces the old architectural decisions log as the top-level
-architecture overview for the repository.
+This document is the top-level architecture overview for the repository.
+Focused, drift-prone decisions are captured separately as ADRs under
+`docs/adr/`; this overview and those ADRs are jointly normative with
+`requirements.md`.
 
 ## 1. System Shape
 
@@ -23,6 +25,29 @@ The system has three main layers:
 
 The CLI executable name is `sc`. `Synaptic Canvas` remains the product name,
 but `synaptic` is not a separate supported command surface.
+
+## 1.1 Normative Set
+
+The normative design set for implementation and quality review is:
+
+- `requirements.md` for cross-cutting product requirements
+- this architecture overview for module boundaries and system shape
+- accepted ADRs under `docs/adr/` for decisions that are narrow enough to
+  decay if left only in broad prose
+
+Sprint plans and QA reviews should cite requirement IDs and ADR IDs directly.
+
+## 1.2 MVP Boundaries
+
+The initial release boundary is intentionally narrow:
+
+- the only supported MVP runtime artifact targets are `.claude/` and
+  `~/.claude/`
+- the canonical machine contract is `sc --json`
+- higher-level ATM polling, sprint loops, team messaging, and git orchestration
+  are not part of the `sc` CLI or `sc:plugin` MVP scope
+- future targets such as `.agents/`, `.codex/`, or alternate machine-contract
+  surfaces are deferred until promoted into the normative set
 
 ## 2. Dolt As The Source Of Truth
 
@@ -47,14 +72,23 @@ requirement traceability.
 | Implementation | Protocol | Target | MVP |
 |----------------|----------|--------|-----|
 | `HTTPClient`   | DoltHub REST API | dolthub.com public/private repos | **Yes** |
-| `SQLClient`    | MySQL wire protocol | Hosted Dolt, local dolt sql-server | Future |
-| `CLIReader`    | subprocess `dolt sql -q` | local dolt clone | Dev/alternative |
+| `SQLClient`    | MySQL wire protocol | Hosted Dolt, local dolt sql-server | **Yes** |
+| `CLIReader`    | subprocess `dolt sql -q` | local dolt clone | **Yes** |
 
 Architecture rules:
 
-- `HTTPClient` is the MVP implementation; all end-user commands use it
-- `SQLClient` and `CLIReader` are retained as documented alternatives; they
-  are not removed
+- all three clients are first-class supported transport modes
+- active client selection is explicit and deterministic, with compatibility
+  inference allowed only when documented and testable
+- the public `sc --json` contract is transport-invariant; backend differences
+  appear in structured metadata or error details rather than top-level schema
+  changes
+- read-path commands may use `HTTPClient`, `SQLClient`, or `CLIReader`, but
+  MVP write-path admin commands are limited to `SQLClient` and `CLIReader`;
+  write commands reject `HTTPClient` explicitly rather than silently switching
+  transports
+- all client implementations must satisfy a shared conformance suite for
+  equivalent operations
 - branch is always passed as a URL path segment in HTTP requests — no session
   state exists between calls (satisfies BR-004, BR-005)
 - for MySQL-protocol implementations, branch is encoded in the qualified table
@@ -83,6 +117,47 @@ Architecture rules:
 
 This keeps CLI behavior deterministic and allows multiple readers to query
 different branches safely in parallel.
+
+## 3.1 Module Boundaries
+
+The MVP architecture keeps boundaries narrow and explicit:
+
+- `src/cmd`
+  CLI binding layer only. Parses args, resolves process-level config, invokes
+  lower-level operations, and renders output. It should not own core package
+  management policy.
+- `src/pkg/api`
+  Shared request/response DTOs and typed error models for the public machine
+  contract. This is the seam reused by CLI handlers and any future wrapper or
+  MCP surface.
+- `src/pkg/operations` or equivalent workflow packages
+  Shared package-management use cases for install, upgrade, uninstall, status,
+  validate, scan, and snapshot. This layer owns workflow policy beneath the
+  command surface.
+- `src/pkg/dolt`
+  Transport boundary for read and write access to Dolt. `HTTPClient`,
+  `SQLClient`, and `CLIReader` hide transport specifics behind shared
+  interfaces and conformance tests.
+- `src/pkg/installer`, `src/pkg/catalog`, `src/pkg/integrity`,
+  `src/pkg/questionnaire`, `src/pkg/repo`, `src/pkg/template`
+  Domain and workflow packages. Own install planning, mutation, validation,
+  catalog, prompting state, repo profiling, and template validation without
+  depending on Cobra or terminal rendering.
+- `src/internal/config`, `src/internal/output`, `src/internal/logging`
+  Infrastructure support packages for config layering, rendering, and logging.
+  They support the CLI but do not own package-management rules.
+- `sc:plugin` and future wrappers
+  Thin callers over the public machine contract. They do not redefine package
+  rules, backend selection rules, or audit semantics.
+
+Boundary rules:
+
+- business rules move downward into packages, not upward into command handlers
+- command handlers call shared operation-layer workflows rather than each
+  owning an independent business-logic path
+- transport-specific behavior stays inside adapters and surfaces through typed
+  results or typed error details
+- wrappers never become the second implementation of the product
 
 ## 4. Promotion And Verification
 
@@ -126,11 +201,17 @@ Architecture guidance:
 - human output may remain concise and readable by default
 - AI callers should invoke the CLI with `--json`
 - `--json` controls output format only and must not change mutation behavior
+- JSON-mode bootstrap failures still use the same typed error family as
+  command-level failures
+- wrappers and future MCP surfaces reuse the same business payloads and error
+  families rather than translating to a second contract
 - a future interactive/session mode launched with `--json` keeps JSON output
   for the whole session, and future JSON request payloads imply JSON output for
   that invocation
 - any future environment-based output default is secondary to explicit
   `--json` invocation
+- the package-management wrapper scope is intentionally narrow; higher-level ATM
+  task polling, sprint loops, and repo orchestration remain separate concerns
 
 This keeps machine access explicit and avoids ambiguity caused by environment
 state while preserving identical command semantics for human and JSON output.
@@ -206,6 +287,9 @@ Architecture rules:
   installs, or both in one invocation
 - scope-aware end-user commands use `--scope` with an enum and default to
   `both` when omitted; `--global` and `--local` are not accepted aliases
+- mutating commands must have audit symmetry: immediate mutation result,
+  structured follow-up readback, and retained product-managed state where
+  applicable
 - validation is broader than file checksum verification; it includes installed
   file presence, aggregate package integrity, dependency presence, dependency
   version compatibility, hook registration state, and template-validation state
@@ -217,8 +301,14 @@ Architecture rules:
   command into product-managed global staging, organized by
   package/branch/repository, so changes can be compared across installed
   versions and prepared for re-import
+- `sc snapshot <package>` is a single-target export command; if the same
+  package exists in multiple install scopes and `--scope` is omitted, the CLI
+  should fail with an `ambiguous_target` error rather than guessing
 - scan/reconciliation should present discovered installs and the candidate
   actions first, then let the user choose `add all`, `upgrade all`, or `skip`
+- mutating commands update tracked state atomically per targeted install scope;
+  partial failures require explicit rollback reporting rather than silent
+  half-applied state
 - uninstall behavior depends on dependency provenance: dependencies installed by
   Synaptic Canvas may be offered for removal, while dependencies that predated
   the install are left untouched
@@ -230,7 +320,23 @@ Architecture rules:
 - upgrade planning must warn and skip blocked upgrades by default; force
   behavior is an explicit targeted override, not the default batch behavior
 
-## 9. SHA Catalog
+## 9. Testing And Client Conformance
+
+Synaptic Canvas has three supported read transports, but only one public
+machine contract.
+
+Architecture rules:
+
+- simulator-backed or equivalent deterministic adapter tests exist below the
+  CLI layer for `HTTPClient`, `SQLClient`, and `CLIReader`
+- shared conformance tests assert equivalent top-level success and error
+  behavior across all supported client modes
+- live DoltHub, hosted SQL, and local-clone verification remain manual or
+  AI-driven integration checks outside normal CI
+- flaky tests are treated as blocking defects, especially in contract and
+  backend-conformance suites
+
+## 10. SHA Catalog
 
 The SHA catalog is a locally-cached, per-branch set of known immutable Dolt SHA
 references for package artifacts. It enables offline validation, reconciliation
@@ -256,12 +362,12 @@ Architecture rules:
 - when Dolt is unreachable, commands that require the catalog use the cached
   copy and emit a warning; they do not fail unless the cache is absent
 - `sc scan` uses the catalog to identify packages from on-disk SHAs without
-  requiring a Dolt connection
+  requiring or initiating a live Dolt connection
 - `sc admin import` checks before writing; a SHA collision on an existing
   `(package_id, version, doc_path, branch)` is a hard rejection, while a new
   version may reuse the same `doc_path` with a different SHA
 
-## 10. Agent And Script Architecture
+## 11. Agent And Script Architecture
 
 Repository-local agent definitions and helper scripts are part of the product
 surface for Claude-facing workflows.
@@ -274,12 +380,14 @@ Architecture rules:
 - helper scripts must be unit-tested
 - sprint plans must define how agent/script behavior is verified
 
-## 11. Detailed Design Documents
+## 12. Detailed Design Documents
 
 This architecture overview is intentionally high level. The detailed subsystem
 documents remain:
 
 - `requirements.md`
+- `docs/adr/`
+- `dolt-api.md`
 - `synaptic-canvas-cli.md`
 - `synaptic-canvas-schema.md`
 - `synaptic-canvas-export-pipeline.md`

@@ -8,6 +8,9 @@
 
 ### Related Documents
 
+- [Requirements](./requirements.md) — cross-cutting normative requirements
+- [Architecture](./architecture.md) — module boundaries and system shape
+- [ADRs](./adr/) — focused accepted design decisions
 - [Schema Spec](./synaptic-canvas-schema.md) — Dolt table definitions and design rationale
 - [Export Pipeline](./synaptic-canvas-export-pipeline.md) — Dolt → filesystem reconstruction logic
 - [Install System](./synaptic-canvas-install-system.md) — Package installation mechanics
@@ -44,9 +47,16 @@
 └─────────────────────────────────────────────────┘
 ```
 
-**Layer 1 — `sc` Go CLI:** The compiled binary. Handles all Dolt operations, file I/O, SHA computation, and validation. Distributed via GoReleaser (Homebrew, winget, `go install`).
+**Layer 1 — `sc` Go CLI:** The compiled binary. Binds command input/output to
+shared package-management workflows, typed JSON DTOs, Dolt client adapters,
+and file/state services. Distributed via GoReleaser (Homebrew, winget,
+`go install`).
 
-**Layer 2 — `sc:plugin` skill:** A Claude Code skill that wraps the `sc` CLI. Allows Claude to manage packages conversationally ("install the delay package"). Thin wrapper — delegates all logic to the CLI.
+**Layer 2 — `sc:plugin` skill:** A Claude Code skill that wraps the `sc` CLI.
+Allows Claude to manage packages conversationally ("install the delay
+package"). Thin wrapper — delegates all logic to the CLI. It is not the place
+for ATM polling, sprint loops, git orchestration, or other higher-level team
+workflow control.
 
 **Layer 3 — Dolt Database:** Source of truth. Packages, files, dependencies, and metadata stored in relational tables. Branches (`develop`, `beta`, `main`) serve as release channels. Package promotion copies specific package rows between branches via targeted SQL (DELETE + INSERT ... SELECT) followed by a Dolt commit. Whole-branch promotion uses `dolt_merge`.
 
@@ -70,7 +80,7 @@ Available to all users. These commands interact with installed packages and the 
 sc list [--branch <branch>] [--tags <tag,...>]
     List available packages. Defaults to the `main` branch.
 
-sc info <package>
+sc info <package> [--branch <branch>]
     Show package details: version, description, dependencies, file count, SHA.
 
 sc init
@@ -97,8 +107,8 @@ sc uninstall <package> [--scope <project|global|both>] [--yolo] [--force]
 
 sc validate [<package>] [--all] [--scope <project|global|both>]
     Verify installed files, dependency state, and tracked install health.
-    Reports: OK, MODIFIED (local edits), MISSING, UNREADABLE (permission denied or I/O error), EXTRA (untracked files).
-    `EXTRA` is limited to files inside the installed package's managed target
+    Reports: ok, modified (local edits), missing, unreadable (permission denied or I/O error), extra (untracked files).
+    `extra` is limited to files inside the installed package's managed target
     paths that are not tracked by that package manifest.
     Validation results are list-based and each item carries an explicit severity.
 
@@ -140,6 +150,8 @@ sc config set <key> <value>
 sc snapshot <package> [--scope <project|global|both>] [--full]
     Export local modifications for the selected package into global snapshot staging.
     By default exports modified tracked files only; `--full` captures the full installed package state.
+    If the package is installed in more than one scope and --scope is omitted,
+    the command fails with `ambiguous_target` rather than guessing.
 ```
 
 ### Admin Commands (opt-in)
@@ -153,9 +165,9 @@ sc admin import <path> --branch <branch>
     Creates a Dolt commit with package metadata.
     Runs template variable validation on .j2 files (warning, non-blocking).
     Enforces CA-007 before writing: hard-fails if any file's
-    (package_id, dest_path, branch) tuple already exists in the catalog with a
-    different SHA. The error names the colliding file plus existing and incoming
-    SHAs.
+    (package_id, version, doc_path, branch) tuple already exists in the
+    catalog with a different SHA. The error names the colliding file plus
+    existing and incoming SHAs.
 
 sc admin export <package> --output <dir> [--branch <branch>]
     Export a package from Dolt to filesystem.
@@ -191,7 +203,13 @@ sc admin diff <package> --branch1 <b1> --branch2 <b2>
 ### Global Flags / Environment
 
 ```
---dolt-dir <path>     Path to Dolt database directory (default: auto-detect)
+--client <http|sql|cli>
+                      Dolt read-client override. Selects DoltHub HTTP API,
+                      MySQL-compatible SQL transport, or local `dolt sql`
+                      subprocess mode.
+--dolt-dir <path>     Path to Dolt database directory for `cli` mode or
+                      compatibility inference (default: auto-detect when
+                      `--client=cli`)
 --remote <url>        Optional Dolt remote override for commands that connect to a non-default Dolt host
 --branch <branch>     Read/query branch override (default: SC_DOLT_BRANCH or main)
 --json                Output as JSON (for scripting/skill integration)
@@ -224,6 +242,23 @@ names.
 operations may rely on configured defaults; commands that require a non-default
 remote should document that requirement explicitly.
 
+Client selection rules:
+
+1. `--client`, if supplied
+2. environment override, if defined
+3. `dolt.client` from file config
+4. compatibility inference such as `--dolt-dir` implying `cli`
+5. documented default
+
+The public JSON contract must remain the same across `http`, `sql`, and `cli`
+client modes. Backend-specific differences belong in structured metadata or
+error details, not in top-level schema drift.
+
+Write-path admin commands are different: MVP admin mutations may use `sql` or
+`cli` only. If an admin mutation command resolves to `http`, the CLI returns a
+typed `unsupported_backend` error and does not attempt a silent transport
+switch.
+
 ---
 
 ## JSON Contracts
@@ -239,14 +274,17 @@ All commands that support `--json` return errors in this envelope:
 {
   "ok": false,
   "error": {
-    "code": "install_scope_violation",
-    "message": "package team-lead cannot be installed globally",
+    "code": "backend_unavailable",
+    "message": "failed to query package catalog",
     "command": "install",
+    "retryable": true,
     "details": {
-      "package": "team-lead",
-      "requested_scope": "global",
-      "allowed_scope": "local-only"
-    }
+      "client": "http",
+      "operation": "list_packages",
+      "cause_code": "http_timeout",
+      "branch": "main"
+    },
+    "suggested_action": "retry the request or switch to a reachable backend"
   }
 }
 ```
@@ -256,7 +294,26 @@ Rules:
 - success responses set `ok: true` and omit `error`
 - `error.code` is stable for automation
 - `error.message` is human-readable
-- `details` may vary by command but must remain structured JSON
+- `details` may vary by command or backend but must remain structured JSON
+- `retryable` is explicit when retry behavior matters for automation
+- `suggested_action` is included when caller recovery is possible
+- bootstrap failures in `--json` mode use the same error envelope family
+
+Shared top-level `error.code` vocabulary:
+- `invalid_args`
+- `not_found`
+- `ambiguous_target`
+- `unsupported_backend`
+- `backend_unavailable`
+- `backend_auth_failed`
+- `confirmation_required`
+- `blocked`
+- `conflict`
+- `validation_failed`
+- `internal_error`
+
+Backend- or command-specific detail belongs in `error.details.cause_code`,
+never in a new top-level error-code family invented by one command.
 
 ### `sc list --json`
 
@@ -341,6 +398,99 @@ Each result item carries a `warnings` array for per-package upgrade notes
 }
 ```
 
+### `sc status --json`
+
+```json
+{
+  "ok": true,
+  "packages": [
+    {
+      "package": "team-lead",
+      "project": {
+        "installed": true,
+        "branch": "main",
+        "version": "1.3.0",
+        "install_root": "/repo/.claude/skills/team-lead",
+        "validation": "ok"
+      },
+      "global": {
+        "installed": true,
+        "branch": "beta",
+        "version": "1.4.0",
+        "install_root": "/Users/randlee/.claude/skills/team-lead",
+        "validation": "warn"
+      }
+    }
+  ]
+}
+```
+
+### `sc validate --json`
+
+```json
+{
+  "ok": true,
+  "package": "team-lead",
+  "scope": "project",
+  "branch": "main",
+  "version": "1.3.0",
+  "install_root": "/repo/.claude/skills/team-lead",
+  "items": [
+    {
+      "kind": "file",
+      "severity": "warn",
+      "state": "modified",
+      "doc_path": "skills/team-lead/SKILL.md",
+      "install_path": "/repo/.claude/skills/team-lead/SKILL.md",
+      "message": "local file differs from tracked package content"
+    },
+    {
+      "kind": "dependency",
+      "severity": "error",
+      "state": "missing",
+      "dependency": "gh",
+      "message": "required dependency not found on PATH"
+    }
+  ],
+  "summary": {
+    "info": 0,
+    "warn": 1,
+    "error": 1,
+    "critical": 0
+  }
+}
+```
+
+### Mutation Outcome And Rollback Reporting
+
+Mutating commands use atomic per-scope tracking updates. When a command fails
+after side effects begin, JSON errors must expose rollback facts rather than
+leaving callers to infer state from logs.
+
+Representative error details:
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "blocked",
+    "message": "install failed and rollback was only partially successful",
+    "command": "install",
+    "details": {
+      "rollback": {
+        "attempted": true,
+        "restored_tracking_state": true,
+        "removed_staged_files": true,
+        "restored_runtime_files": false,
+        "manual_recovery": [
+          "/repo/.claude/skills/team-lead/hooks/pre-commit.sh"
+        ]
+      }
+    }
+  }
+}
+```
+
 ### File Mode Policy
 
 Script and hook files (`file_type: script` or `hook`) are written with mode
@@ -390,13 +540,16 @@ This is a Merkle-like construction — changing any file changes the package SHA
 ### Validation Scenarios
 
 Per-file validation states:
-- `OK` — file exists and SHA matches
-- `MODIFIED` — file exists but SHA does not match
-- `SHA_MISMATCH` — file exists on disk but SHA does not match the catalog entry;
-  severity = `error`
-- `MISSING` — file does not exist
-- `UNREADABLE` — file exists but cannot be read (permission denied or I/O error); `Err` field contains the underlying cause
-- `EXTRA` — file exists on disk but has no entry in the package
+- `ok` — file exists and SHA matches
+- `modified` — file exists but SHA does not match
+- `missing` — file does not exist
+- `unreadable` — file exists but cannot be read (permission denied or I/O error); `Err` field contains the underlying cause
+- `extra` — file exists on disk but has no entry in the package
+
+These file states are the complete file-level vocabulary. Higher-level problems
+such as aggregate integrity mismatch, dependency incompatibility, hook drift,
+or template drift are separate validation items with explicit severities rather
+than additional file-state names.
 
 **`sc validate <package>`** (end-user):
 ```
@@ -404,11 +557,11 @@ For each installed file:
   local_sha = SHA256(read file from disk)
   expected_sha = read package_files.sha256 from local catalog cache
                  (.synaptic/catalog-{branch}.toml or ~/.synaptic/catalog-{branch}.toml)
-  Compare → OK | MODIFIED | MISSING | UNREADABLE
+  Compare → ok | modified | missing | unreadable
 
 For extra files in the installed package's managed target paths that are not tracked
 by the installed package file inventory:
-  Report → EXTRA (untracked)
+  Report → extra (untracked)
 
 Compute aggregate from local file SHAs:
   Compare against catalog aggregate/package SHA when available → PASS | FAIL
@@ -506,8 +659,12 @@ synaptic-canvas-dolt/
 │   │       ├── verify.go         # sc admin verify
 │   │       └── diff.go           # sc admin diff
 │   ├── pkg/                      # Public packages
+│   │   ├── api/                  # Shared JSON DTOs + typed error models
+│   │   ├── operations/           # Shared end-user workflow/use-case layer
 │   │   ├── dolt/                 # Dolt database client
-│   │   │   ├── http_client.go    # HTTPClient — DoltHub REST API (MVP)
+│   │   │   ├── http_client.go    # HTTPClient — DoltHub REST API
+│   │   │   ├── client.go         # SQLClient + shared client interface
+│   │   │   ├── cli_reader.go     # CLIReader — local dolt clone adapter
 │   │   │   ├── errors.go         # Sentinel errors (ErrNotFound, ErrUnauthorized, etc.)
 │   │   ├── integrity/            # SHA computation and verification
 │   │   ├── manifest/             # manifest.yaml reconstruction
@@ -516,12 +673,14 @@ synaptic-canvas-dolt/
 │   │   ├── installer/            # File installation logic
 │   │   ├── questionnaire/        # Install/upgrade question prompting + answer tracking
 │   │   ├── repo/                 # Repo detection/profile generation and scan helpers
-│   │   └── models/               # Data structures (Package, File, Dep)
+│   │   ├── template/             # Template validation/render helpers
+│   │   └── models/               # Domain data structures when DTO-specific types are not needed
 │   └── internal/                 # Private implementation
 │       ├── config/               # CLI configuration
 │       │   ├── config.go         # Config struct, NewConfigFromFlags, EffectiveBranch
 │       │   ├── fileconfig.go     # Layered file config (~/.sc/config.toml)
 │       │   └── keys.go           # Config key constants (KeyDoltClient, etc.)
+│       ├── logging/              # Structured logger setup
 │       └── output/               # Output formatters (table, JSON)
 ├── sql/                          # DDL scripts
 │   └── 001-create-tables.sql
@@ -589,7 +748,11 @@ A Claude Code skill installed globally by the `sc` installer. Replaces the curre
 "show status"          → sc status --json
 ```
 
-The skill parses `--json` output from the CLI and presents it conversationally. The skill itself is a thin markdown file with tool definitions — all logic lives in the `sc` binary.
+The skill parses `--json` output from the CLI and presents it conversationally.
+The skill itself is a thin markdown file with tool definitions — all package
+logic lives in the `sc` binary. ATM message polling, autonomous task loops, and
+repository orchestration remain out of scope for this skill and belong to
+higher-level orchestration layers.
 
 ### Admin Skill (separate, opt-in)
 
@@ -626,19 +789,23 @@ ALTER TABLE packages ADD COLUMN signed_by VARCHAR(256) AFTER signature;
 
 ---
 
-## Open Questions
+## Resolved MVP Decisions
 
-1. **Remote vs local Dolt:** MVP uses local Dolt database. When does DoltHub remote come into play? Read-only pull for end users? Push for admins?
-
-2. ~~**Channel defaults:**~~ **Resolved.** Read-path commands resolve branches using `--branch`, then `SC_DOLT_BRANCH`, then `main`. The CLI ignores the current Dolt session branch.
-
-3. ~~**Dependency resolution:**~~ **Resolved.** For MVP, `sc install` computes a dependency plan, shows external installs for approval, and may install them when approved or when `--yolo` is used. Dependency provenance is always recorded.
-
-4. **Template expansion:** ~~Resolved.~~ `sc` handles Jinja2 rendering at install time. Templates are validated at three points: dry-run (preview), pre-publish (blocking gate), and post-install (rendered output scan). See [Install System — Template Variable Validation](./synaptic-canvas-install-system.md#template-variable-validation).
-
-5. ~~**Upgrade strategy:**~~ **Resolved.** For MVP, `sc upgrade` warns about local modifications before overwriting them.
-
-6. **Admin authentication:** How does `sc admin import` authenticate to write to Dolt? Local-only for MVP, DoltHub credentials later?
+1. **Read backends:** MVP read-path commands support `http`, `sql`, and `cli`
+   client modes behind one stable `sc --json` contract.
+2. **Write backends:** MVP admin/write-path commands use `sql` or `cli` only.
+   `http` is read-only and rejected for write-path commands with
+   `unsupported_backend`.
+3. **Channel defaults:** Read-path commands resolve branches using `--branch`,
+   then `SC_DOLT_BRANCH`, then `main`. The CLI ignores the current Dolt
+   session branch.
+4. **Dependency resolution:** `sc install` computes a dependency plan, shows
+   external installs for approval, and may install them when approved or when
+   `--yolo` is used. Dependency provenance is always recorded.
+5. **Template expansion:** `sc` handles Jinja2 rendering at install time.
+   Templates are validated at dry-run, pre-publish, and post-install stages.
+6. **Upgrade strategy:** `sc upgrade` warns and skips blocked upgrades by
+   default and only allows force as a targeted override.
 
 ---
 

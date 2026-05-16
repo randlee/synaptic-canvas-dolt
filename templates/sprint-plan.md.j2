@@ -1,0 +1,99 @@
+---
+name: sprint-plan
+version: 1.0.0
+description: Generate a sprint plan document for Synaptic Canvas phases.
+format: markdown
+required_variables:
+  - id
+  - title
+  - branch
+  - target
+optional_variables:
+  - status
+  - worktree
+  - goal
+  - dependencies
+  - exact_targets
+  - required_work
+  - implementation_notes
+  - non_goals
+  - acceptance_criteria
+  - validation
+  - requirement_refs
+  - adr_refs
+defaults:
+  status: planned
+  worktree: ""
+  goal: []
+  dependencies: []
+  exact_targets: []
+  required_work: []
+  implementation_notes: []
+  non_goals: []
+  acceptance_criteria: []
+  requirement_refs: []
+  adr_refs: []
+  validation:
+    - "go test ./..."
+    - "go test ./... -race"
+    - "golangci-lint run ./..."
+    - "git diff --check"
+---
+
+---
+id: {{ id }}
+title: {{ title }}
+status: {{ status }}
+branch: {{ branch }}
+{% if worktree %}worktree: {{ worktree }}
+{% endif %}target: {{ target }}
+---
+
+# Sprint {{ id }} — {{ title }}
+
+## Goal
+
+{% for item in goal %}- {{ item }}
+{% endfor %}
+
+## Hard Dependencies
+
+{% for dep in dependencies %}- {{ dep }}
+{% endfor %}
+
+## Normative References
+
+{% for req in requirement_refs %}- Requirement: `{{ req }}`
+{% endfor %}
+{% for adr in adr_refs %}- ADR: `{{ adr }}`
+{% endfor %}
+
+## Exact Targets
+
+{% for file in exact_targets %}- `{{ file }}`
+{% endfor %}
+
+## Required Work
+
+{% for item in required_work %}- {{ item }}
+{% endfor %}
+
+## Implementation Notes
+
+{% for item in implementation_notes %}- {{ item }}
+{% endfor %}
+
+## Non-Goals
+
+{% for item in non_goals %}- {{ item }}
+{% endfor %}
+
+## Acceptance Criteria
+
+{% for criterion in acceptance_criteria %}- {{ criterion }}
+{% endfor %}
+
+## Required Validation
+
+{% for cmd in validation %}- `{{ cmd }}`
+{% endfor %}
