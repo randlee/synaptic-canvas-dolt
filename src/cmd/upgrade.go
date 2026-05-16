@@ -4,14 +4,12 @@ import (
 	"fmt"
 
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/api"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/installer"
 	"github.com/spf13/cobra"
 )
 
-type upgradeResponse struct {
-	OK       bool            `json:"ok"`
-	Upgrades []upgradeResult `json:"upgrades"`
-}
+type upgradeResponse = api.UpgradeResponse
 
 // NewUpgradeCmd creates the sc upgrade command.
 func NewUpgradeCmd() *cobra.Command {
@@ -79,14 +77,14 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 	repoRoot, err := currentRepoRoot()
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
+			return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 		}
 		return err
 	}
 	installs, err := loadTrackedInstalls(repoRoot)
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
+			return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 		}
 		return err
 	}
@@ -98,7 +96,7 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 		if packageID == "" {
 			err := fmt.Errorf("upgrade requires <package> or --all")
 			if cfg.JSON {
-				return writeJSONError(formatter, "query_failed", err.Error())
+				return writeJSONError(formatter, api.ErrorCodeInvalidArgs, err.Error())
 			}
 			return err
 		}
@@ -139,7 +137,7 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 		validation, err := validateTrackedInstall(cmd.Context(), target.Record)
 		if err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, "query_failed", err.Error())
+				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 			}
 			return err
 		}
@@ -147,7 +145,7 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 		client, err := clientForBranch(targetBranch)
 		if err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, "query_failed", err.Error())
+				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 			}
 			return err
 		}
@@ -191,7 +189,7 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 		}
 		if err := confirmExternalDeps(cmd, formatter, deps, yolo, false); err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, "interactive_confirmation_required", err.Error())
+				return writeJSONError(formatter, api.ErrorCodeConfirmationNeeded, err.Error())
 			}
 			return err
 		}

@@ -6,15 +6,12 @@ import (
 
 	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/api"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/installer"
 	"github.com/spf13/cobra"
 )
 
-type installScopeFailure struct {
-	Package string `json:"package"`
-	Scope   string `json:"scope"`
-	Error   string `json:"error"`
-}
+type installScopeFailure = api.InstallScopeFailure
 
 // NewInstallCmd creates the sc install command.
 func NewInstallCmd() *cobra.Command {
@@ -60,7 +57,7 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 		root, err := os.Getwd()
 		if err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, "query_failed", err.Error())
+				return writeJSONError(formatter, api.ErrorCodeInternal, err.Error())
 			}
 			return fmt.Errorf("getting current directory: %w", err)
 		}
@@ -116,14 +113,14 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 
 		if err := confirmExternalDeps(cmd, formatter, deps, yolo, dryRun); err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, "interactive_confirmation_required", err.Error())
+				return writeJSONError(formatter, api.ErrorCodeConfirmationNeeded, err.Error())
 			}
 			return err
 		}
 		if !dryRun {
 			if _, err := initializeRepoFunc(root); err != nil {
 				if cfg.JSON {
-					return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
+					return writeJSONError(formatter, api.ErrorCodeInternal, err.Error())
 				}
 				return err
 			}
@@ -180,15 +177,15 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 			if len(failures) > 0 {
 				if cfg.JSON {
 					message := "install failed for all selected scopes"
-					if err := formatter.WriteJSON(map[string]any{
-						"ok":          false,
-						"error":       jsonErrorPayload{Code: "install_failed", Message: message},
-						"plan":        dryRun,
-						"scope":       scope,
-						"partial":     partial,
-						"installs":    summaries,
-						"rolled_back": rolledBack,
-						"failures":    failures,
+					if err := formatter.WriteJSON(api.InstallResponse{
+						OK:         false,
+						Error:      &api.Error{Code: api.ErrorCodeInternal, Message: message},
+						Plan:       dryRun,
+						Scope:      scope,
+						Partial:    partial,
+						Installs:   summaries,
+						RolledBack: rolledBack,
+						Failures:   failures,
 					}); err != nil {
 						return err
 					}
@@ -211,40 +208,40 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 		if cfg.JSON {
 			if len(summaries) == 1 && !partialFailed {
 				summary := summaries[0]
-				return formatter.WriteJSON(map[string]any{
-					"ok":    true,
-					"plan":  dryRun,
-					"scope": summary.Scope,
-					"package": map[string]any{
-						"id":      summary.PackageID,
-						"version": summary.Version,
-						"branch":  summary.Branch,
+				return formatter.WriteJSON(api.InstallResponse{
+					OK:    true,
+					Plan:  dryRun,
+					Scope: summary.Scope,
+					Package: &api.InstallPackageRef{
+						ID:      summary.PackageID,
+						Version: summary.Version,
+						Branch:  summary.Branch,
 					},
-					"install_root":                 summary.InstallRoot,
-					"files_written":                summary.FilesWritten,
-					"dependencies":                 summary.Dependencies,
-					"dependency_warnings":          summary.DependencyWarnings,
-					"hooks_registered":             summary.HooksRegistered,
-					"template_validation_warnings": summary.TemplateValidationWarnings,
-					"warnings":                     allWarnings,
-					"files":                        summary.Files,
-					"answers":                      summary.Answers,
+					InstallRoot:                summary.InstallRoot,
+					FilesWritten:               summary.FilesWritten,
+					Dependencies:               summary.Dependencies,
+					DependencyWarnings:         summary.DependencyWarnings,
+					HooksRegistered:            summary.HooksRegistered,
+					TemplateValidationWarnings: summary.TemplateValidationWarnings,
+					Warnings:                   allWarnings,
+					Files:                      summary.Files,
+					Answers:                    summary.Answers,
 				})
 			}
-			errorValue := any(nil)
+			var errorValue *api.Error
 			if partialFailed {
-				errorValue = jsonErrorPayload{Code: "install_failed", Message: "install failed for one or more scopes"}
+				errorValue = &api.Error{Code: api.ErrorCodeInternal, Message: "install failed for one or more scopes"}
 			}
-			if err := formatter.WriteJSON(map[string]any{
-				"ok":          !partialFailed,
-				"error":       errorValue,
-				"plan":        dryRun,
-				"scope":       scope,
-				"partial":     partial,
-				"installs":    summaries,
-				"rolled_back": rolledBack,
-				"failures":    failures,
-				"warnings":    allWarnings,
+			if err := formatter.WriteJSON(api.InstallResponse{
+				OK:         !partialFailed,
+				Error:      errorValue,
+				Plan:       dryRun,
+				Scope:      scope,
+				Partial:    partial,
+				Installs:   summaries,
+				RolledBack: rolledBack,
+				Failures:   failures,
+				Warnings:   allWarnings,
 			}); err != nil {
 				return err
 			}

@@ -193,7 +193,7 @@ func TestListCommandErrorJSON(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
 	}
-	if resp.OK || resp.Error.Code != "query_failed" || resp.Error.Message != "boom" {
+	if resp.OK || resp.Error.Code != "internal_error" || resp.Error.Message != "boom" {
 		t.Fatalf("unexpected response: %+v", resp)
 	}
 }

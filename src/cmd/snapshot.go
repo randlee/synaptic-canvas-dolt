@@ -12,6 +12,7 @@ import (
 	toml "github.com/pelletier/go-toml/v2"
 	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/api"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/installer"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/integrity"
 	"github.com/spf13/cobra"
@@ -28,13 +29,7 @@ type snapshotMetadata struct {
 	SnapshotAt string `toml:"snapshot_at"`
 }
 
-type snapshotResponse struct {
-	OK        bool     `json:"ok"`
-	Package   string   `json:"package"`
-	Scope     string   `json:"scope"`
-	OutputDir string   `json:"output_dir"`
-	Files     []string `json:"files"`
-}
+type snapshotResponse = api.SnapshotResponse
 
 // NewSnapshotCmd creates the sc snapshot command.
 func NewSnapshotCmd() *cobra.Command {
@@ -77,14 +72,14 @@ func runSnapshotCmd(cmd *cobra.Command, args []string) error {
 	repoRoot, err := currentRepoRoot()
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
+			return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 		}
 		return err
 	}
 	installs, err := loadTrackedInstalls(repoRoot)
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
+			return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 		}
 		return err
 	}
@@ -99,7 +94,7 @@ func runSnapshotCmd(cmd *cobra.Command, args []string) error {
 	if len(selected) > 1 && scope == "both" {
 		message := fmt.Sprintf("package %q is installed in multiple scopes; pass --scope", packageID)
 		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", message)
+			return writeJSONError(formatter, api.ErrorCodeAmbiguousTarget, message)
 		}
 		return errors.New(message)
 	}
@@ -108,7 +103,7 @@ func runSnapshotCmd(cmd *cobra.Command, args []string) error {
 	files, err := snapshotFiles(cmd.Context(), record, full)
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
+			return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 		}
 		return err
 	}
@@ -116,7 +111,7 @@ func runSnapshotCmd(cmd *cobra.Command, args []string) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
+			return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 		}
 		return err
 	}

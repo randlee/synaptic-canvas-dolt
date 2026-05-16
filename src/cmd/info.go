@@ -6,36 +6,13 @@ import (
 
 	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
-	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/api"
 	"github.com/spf13/cobra"
 )
 
-type infoResponse struct {
-	OK      bool             `json:"ok"`
-	Branch  string           `json:"branch"`
-	Package infoPackageShape `json:"package"`
-}
-
-type infoPackageShape struct {
-	ID              string              `json:"id"`
-	Name            string              `json:"name"`
-	Version         string              `json:"version"`
-	Description     *string             `json:"description,omitempty"`
-	Variant         string              `json:"variant"`
-	InstallScope    models.InstallScope `json:"install_scope"`
-	SHA256          *string             `json:"sha256,omitempty"`
-	FileCount       int                 `json:"file_count"`
-	DependencyCount int                 `json:"dependency_count"`
-	Dependencies    []dependencyShape   `json:"dependencies"`
-	HookCount       int                 `json:"hook_count"`
-	QuestionCount   int                 `json:"question_count"`
-}
-
-type dependencyShape struct {
-	Name string         `json:"name"`
-	Type models.DepType `json:"type"`
-	Spec string         `json:"spec,omitempty"`
-}
+type infoResponse = api.InfoResponse
+type infoPackageShape = api.InfoPackage
+type dependencyShape = api.Dependency
 
 // NewInfoCmd creates the sc info command.
 func NewInfoCmd() *cobra.Command {

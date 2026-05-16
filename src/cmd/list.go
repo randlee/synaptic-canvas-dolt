@@ -6,35 +6,14 @@ import (
 
 	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/api"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/dolt"
-	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
 	"github.com/spf13/cobra"
 )
 
-type listResponse struct {
-	OK       bool        `json:"ok"`
-	Branch   string      `json:"branch"`
-	Filters  listFilters `json:"filters"`
-	Packages []listItem  `json:"packages"`
-}
-
-type listFilters struct {
-	Tags []string `json:"tags,omitempty"`
-}
-
-type listItem struct {
-	ID              string              `json:"id"`
-	Name            string              `json:"name"`
-	Version         string              `json:"version"`
-	Branch          string              `json:"branch"`
-	Description     *string             `json:"description,omitempty"`
-	Tags            []string            `json:"tags,omitempty"`
-	Variant         string              `json:"variant"`
-	InstallScope    models.InstallScope `json:"install_scope"`
-	FileCount       int                 `json:"file_count"`
-	DependencyCount int                 `json:"dependency_count"`
-	SHA256          *string             `json:"sha256,omitempty"`
-}
+type listResponse = api.ListResponse
+type listFilters = api.ListFilters
+type listItem = api.ListItem
 
 // NewListCmd creates the sc list command.
 func NewListCmd() *cobra.Command {

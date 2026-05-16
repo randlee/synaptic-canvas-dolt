@@ -68,7 +68,7 @@ func TestInitCommandErrorJSON(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
 	}
-	if resp.OK || resp.Error.Code != "query_failed" || resp.Error.Message != "boom" {
+	if resp.OK || resp.Error.Code != "internal_error" || resp.Error.Message != "boom" {
 		t.Fatalf("unexpected response: %+v", resp)
 	}
 }
@@ -401,7 +401,7 @@ func TestInstallScopeBothMixedWriteAndFailureReturnsExitOne(t *testing.T) {
 	if resp.OK || resp.Partial || len(resp.Installs) != 0 || len(resp.RolledBack) != 1 || len(resp.Failures) != 1 {
 		t.Fatalf("expected project rollback after global failure, got %+v", resp)
 	}
-	if resp.Error.Code != "install_failed" || resp.Error.Message != "install failed for all selected scopes" {
+	if resp.Error.Code != "internal_error" || resp.Error.Message != "install failed for all selected scopes" {
 		t.Fatalf("unexpected error envelope: %+v", resp.Error)
 	}
 	if resp.Failures[0].Scope != "global" {
@@ -445,7 +445,7 @@ func TestInstallCommandErrorJSON(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
 	}
-	if resp.OK || resp.Error.Code != "query_failed" || resp.Error.Message != "boom" {
+	if resp.OK || resp.Error.Code != "internal_error" || resp.Error.Message != "boom" {
 		t.Fatalf("unexpected response: %+v", resp)
 	}
 }

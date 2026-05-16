@@ -5,17 +5,11 @@ import (
 	"strings"
 
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/api"
 )
 
-type jsonErrorEnvelope struct {
-	OK    bool             `json:"ok"`
-	Error jsonErrorPayload `json:"error"`
-}
-
-type jsonErrorPayload struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-}
+type jsonErrorEnvelope = api.ErrorEnvelope
+type jsonErrorPayload = api.Error
 
 // jsonCmdError is a sentinel error for JSON-mode failures that have already
 // rendered their standard error envelope and should not be printed again.
@@ -51,7 +45,7 @@ func JSONErrorExitCode(error) int {
 	return 1
 }
 
-func writeJSONError(formatter *output.Formatter, code, message string) error {
+func writeJSONError(formatter *output.Formatter, code api.ErrorCode, message string) error {
 	if err := formatter.WriteJSON(jsonErrorEnvelope{
 		OK: false,
 		Error: jsonErrorPayload{
@@ -64,9 +58,26 @@ func writeJSONError(formatter *output.Formatter, code, message string) error {
 	return jsonCmdError{cause: errors.New(message)}
 }
 
-func classifyJSONError(message string) string {
-	if strings.Contains(strings.ToLower(message), "not found") {
-		return "not_found"
+func classifyJSONError(message string) api.ErrorCode {
+	lower := strings.ToLower(message)
+	switch {
+	case strings.Contains(lower, "not found"):
+		return api.ErrorCodeNotFound
+	case strings.Contains(lower, "unsupported dolt.client"), strings.Contains(lower, "unsupported backend"):
+		return api.ErrorCodeUnsupportedBackend
+	case strings.Contains(lower, "unauthorized"), strings.Contains(lower, "forbidden"), strings.Contains(lower, "access denied"), strings.Contains(lower, "authentication"):
+		return api.ErrorCodeBackendAuthFailed
+	case strings.Contains(lower, "multiple scopes"), strings.Contains(lower, "pass --scope"), strings.Contains(lower, "ambiguous"):
+		return api.ErrorCodeAmbiguousTarget
+	case strings.Contains(lower, "validation failed"):
+		return api.ErrorCodeValidationFailed
+	case strings.Contains(lower, "blocked"), strings.Contains(lower, "cannot be upgraded"), strings.Contains(lower, "incompatible dependency"):
+		return api.ErrorCodeBlocked
+	case strings.Contains(lower, "conflict"):
+		return api.ErrorCodeConflict
+	case strings.Contains(lower, "dolt."), strings.Contains(lower, "dolthub"), strings.Contains(lower, "timeout"), strings.Contains(lower, "connection"), strings.Contains(lower, "dsn"), strings.Contains(lower, "database"):
+		return api.ErrorCodeBackendUnavailable
+	default:
+		return api.ErrorCodeInternal
 	}
-	return "query_failed"
 }

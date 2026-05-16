@@ -5,26 +5,13 @@ import (
 
 	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/api"
 	"github.com/spf13/cobra"
 )
 
-type statusResponse struct {
-	OK       bool               `json:"ok"`
-	Packages []statusPackageRow `json:"packages"`
-}
-
-type statusPackageRow struct {
-	Package string            `json:"package"`
-	Global  *statusScopeState `json:"global,omitempty"`
-	Local   *statusScopeState `json:"local,omitempty"`
-}
-
-type statusScopeState struct {
-	Version     string `json:"version"`
-	Branch      string `json:"branch"`
-	Validation  string `json:"validation"`
-	InstallRoot string `json:"install_root"`
-}
+type statusResponse = api.StatusResponse
+type statusPackageRow = api.StatusPackage
+type statusScopeState = api.StatusScope
 
 // NewStatusCmd creates the sc status command.
 func NewStatusCmd() *cobra.Command {
@@ -59,14 +46,14 @@ func runStatusCmd(cmd *cobra.Command, _ []string) error {
 	repoRoot, err := currentRepoRoot()
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
+			return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 		}
 		return err
 	}
 	installs, err := loadTrackedInstalls(repoRoot)
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
+			return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 		}
 		return err
 	}
@@ -78,7 +65,7 @@ func runStatusCmd(cmd *cobra.Command, _ []string) error {
 		summary, err := validateTrackedInstall(cmd.Context(), install.Record)
 		if err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, "query_failed", err.Error())
+				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 			}
 			return err
 		}
