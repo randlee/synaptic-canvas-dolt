@@ -1835,6 +1835,26 @@ platforms with predictable config behavior.
 - Repository-owned verification exists for installer behavior on supported
   platforms
 
+### Sprint 4.8: Installer Hardening And Doc Gaps
+
+**Goal:** Close the remaining installer safety and Phase 4 documentation gaps
+identified during QA.
+
+**Deliverables:**
+- Atomic installer update flow for managed `sc:plugin` assets on shell and
+  PowerShell installers
+- Failure-injection installer coverage for interrupted managed-asset updates
+- Documentation corrections for transport precedence and installer boundary
+  behavior
+
+**Acceptance Criteria:**
+- Installer updates stage managed assets before swap so interrupted writes do
+  not leave partial managed trees behind
+- Installer tests cover managed copy failure paths on both supported script
+  implementations
+- Phase 4 documentation matches the implemented four-level client-selection
+  precedence and installer behavior
+
 ---
 
 ## Phase 5: Release Pipeline

@@ -140,21 +140,19 @@ treated as an invalid conflicting transport input.
 
 ### 1.5 Client Selection Precedence
 
-Synaptic Canvas resolves the active Dolt client mode using a fixed five-level
+Synaptic Canvas resolves the active Dolt client mode using a fixed four-level
 precedence chain:
 
 1. explicit CLI flag
 2. environment variable
-3. project config
-4. machine config
-5. compiled default
+3. config file
+4. compiled default
 
 For the current CLI, the effective source priority is:
 
 - `--client`
 - `SC_DOLT_CLIENT`
-- project `dolt.client` from repo-local config
-- machine `dolt.client` from `~/.sc/config.toml`
+- `dolt.client` from `~/.sc/config.toml`
 - compiled default client mode
 
 The same pattern applies to related transport selectors such as `--dolt-dir`
