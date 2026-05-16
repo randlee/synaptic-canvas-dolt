@@ -5,26 +5,14 @@ import (
 
 	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/api"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/operations"
 	"github.com/spf13/cobra"
 )
 
-type statusResponse struct {
-	OK       bool               `json:"ok"`
-	Packages []statusPackageRow `json:"packages"`
-}
-
-type statusPackageRow struct {
-	Package string            `json:"package"`
-	Global  *statusScopeState `json:"global,omitempty"`
-	Local   *statusScopeState `json:"local,omitempty"`
-}
-
-type statusScopeState struct {
-	Version     string `json:"version"`
-	Branch      string `json:"branch"`
-	Validation  string `json:"validation"`
-	InstallRoot string `json:"install_root"`
-}
+type statusResponse = api.StatusResponse
+type statusPackageRow = api.StatusPackage
+type statusScopeState = api.StatusScope
 
 // NewStatusCmd creates the sc status command.
 func NewStatusCmd() *cobra.Command {
@@ -59,18 +47,18 @@ func runStatusCmd(cmd *cobra.Command, _ []string) error {
 	repoRoot, err := currentRepoRoot()
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
+			return writeClassifiedJSONError(formatter, cfg, err, cmd.Name())
 		}
 		return err
 	}
-	installs, err := loadTrackedInstalls(repoRoot)
+	installs, err := operations.LoadTrackedInstalls(repoRoot)
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
+			return writeClassifiedJSONError(formatter, cfg, err, cmd.Name())
 		}
 		return err
 	}
-	installs = filterInstallsByScope(installs, scope)
+	installs = operations.FilterInstallsByScope(installs, scope)
 
 	grouped := map[string]*statusPackageRow{}
 	order := []string{}
@@ -78,7 +66,7 @@ func runStatusCmd(cmd *cobra.Command, _ []string) error {
 		summary, err := validateTrackedInstall(cmd.Context(), install.Record)
 		if err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, "query_failed", err.Error())
+				return writeClassifiedJSONError(formatter, cfg, err, cmd.Name())
 			}
 			return err
 		}
@@ -89,10 +77,19 @@ func runStatusCmd(cmd *cobra.Command, _ []string) error {
 			order = append(order, install.Record.Package)
 		}
 		state := &statusScopeState{
-			Version:     install.Record.Version,
-			Branch:      install.Record.Branch,
-			Validation:  summary.Status,
-			InstallRoot: install.Record.InstallRoot,
+			Scope:               install.Record.InstallScope,
+			Version:             install.Record.Version,
+			Branch:              install.Record.Branch,
+			Validation:          summary.Status,
+			AggregateStatus:     summary.AggregateStatus,
+			InstallRoot:         install.Record.InstallRoot,
+			InstallSite:         install.Record.InstallSite,
+			TrackingOrigin:      summary.TrackingOrigin,
+			DependencySummary:   summary.DependencySummary,
+			HookSummary:         summary.HookSummary,
+			ModificationSummary: summary.ModificationSummary,
+			Modifications:       operations.Modifications(summary.Items),
+			Issues:              operations.Issues(summary.Items),
 		}
 		if install.Record.InstallScope == "global" {
 			row.Global = state

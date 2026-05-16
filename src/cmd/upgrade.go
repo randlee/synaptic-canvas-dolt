@@ -1,17 +1,18 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/api"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/installer"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/operations"
 	"github.com/spf13/cobra"
 )
 
-type upgradeResponse struct {
-	OK       bool            `json:"ok"`
-	Upgrades []upgradeResult `json:"upgrades"`
-}
+type upgradeResponse = api.UpgradeResponse
 
 // NewUpgradeCmd creates the sc upgrade command.
 func NewUpgradeCmd() *cobra.Command {
@@ -62,208 +63,67 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 	formatter := output.NewFormatter(cfg.JSON, cfg.Quiet)
 	formatter.Writer = cmd.OutOrStdout()
 	formatter.ErrW = cmd.ErrOrStderr()
-	if err := validateScope(scope); err != nil {
-		if cfg.JSON {
-			return writeJSONError(formatter, "invalid_args", err.Error())
-		}
-		return err
-	}
-	if upgradeAll && force {
-		message := "--force cannot be used with --all; target a specific package"
-		if cfg.JSON {
-			return writeJSONError(formatter, "invalid_args", message)
-		}
-		return fmt.Errorf("%s", message)
-	}
 
-	repoRoot, err := currentRepoRoot()
+	result, err := operations.RunUpgrade(cmd.Context(), operations.UpgradeRequest{
+		PackageID:       packageID,
+		UpgradeAll:      upgradeAll,
+		Scope:           scope,
+		TargetVersion:   targetVersion,
+		Force:           force,
+		Yolo:            yolo,
+		EffectiveBranch: cfg.EffectiveBranch(),
+		BranchExplicit:  branchFlagChanged(cmd),
+	}, operations.UpgradeDependencies{
+		ResolveRepoRoot: currentRepoRoot,
+		ValidateTrackedInstall: func(ctx context.Context, record installer.InstallRecord) (api.ValidatedInstall, error) {
+			return validateTrackedInstall(ctx, record)
+		},
+		OpenClient: func(branch string) (operations.UpgradeClient, error) {
+			branchCfg := *cfg
+			branchCfg.Branch = branch
+			return readClientOpener(&branchCfg)
+		},
+		ConfirmExternalDeps: func(deps []models.PackageDep, yolo bool) error {
+			return confirmExternalDeps(cmd, formatter, deps, yolo, false)
+		},
+		ExecuteInstall: func(ctx context.Context, req installer.Request) (installer.Summary, error) {
+			return executeInstallService(ctx, req)
+		},
+		ProfileSnapshot: currentProfileSnapshot,
+	})
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
+			op := operations.OperationName(err)
+			if op != "" {
+				return writeClassifiedJSONError(formatter, cfg, err, op)
+			}
+			return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 		}
 		return err
-	}
-	installs, err := loadTrackedInstalls(repoRoot)
-	if err != nil {
-		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
-		}
-		return err
-	}
-
-	var targets []trackedInstall
-	if upgradeAll {
-		targets = filterInstallsByScope(installs, scope)
-	} else {
-		if packageID == "" {
-			err := fmt.Errorf("upgrade requires <package> or --all")
-			if cfg.JSON {
-				return writeJSONError(formatter, "query_failed", err.Error())
-			}
-			return err
-		}
-		targets = selectInstalls(installs, packageID, scope)
-		if len(targets) == 0 {
-			err := fmt.Errorf("package %q is not installed", packageID)
-			if cfg.JSON {
-				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
-			}
-			return err
-		}
-	}
-
-	branchExplicit := branchFlagChanged(cmd)
-	clients := map[string]readClient{}
-	defer func() {
-		for _, client := range clients {
-			_ = client.Close()
-		}
-	}()
-	clientForBranch := func(branch string) (readClient, error) {
-		if client := clients[branch]; client != nil {
-			return client, nil
-		}
-		branchCfg := *cfg
-		branchCfg.Branch = branch
-		client, err := readClientOpener(&branchCfg)
-		if err != nil {
-			return nil, err
-		}
-		clients[branch] = client
-		return client, nil
-	}
-
-	results := make([]upgradeResult, 0, len(targets))
-	successes := 0
-	for _, target := range targets {
-		validation, err := validateTrackedInstall(cmd.Context(), target.Record)
-		if err != nil {
-			if cfg.JSON {
-				return writeJSONError(formatter, "query_failed", err.Error())
-			}
-			return err
-		}
-		targetBranch := upgradeBranchForTarget(cfg.EffectiveBranch(), branchExplicit, target.Record)
-		client, err := clientForBranch(targetBranch)
-		if err != nil {
-			if cfg.JSON {
-				return writeJSONError(formatter, "query_failed", err.Error())
-			}
-			return err
-		}
-		pkg, files, deps, hooks, questions, err := fetchUpgradePackage(cmd.Context(), client, targetBranch, target.Record)
-		if err != nil {
-			if cfg.JSON {
-				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
-			}
-			return err
-		}
-		if targetVersion != "" && pkg.Version != targetVersion {
-			warning := fmt.Sprintf("requested version %s not available on branch %s", targetVersion, targetBranch)
-			results = append(results, upgradeResult{
-				Package:     target.Record.Package,
-				Scope:       target.Record.InstallScope,
-				FromVersion: target.Record.Version,
-				ToVersion:   target.Record.Version,
-				FromBranch:  target.Record.Branch,
-				ToBranch:    targetBranch,
-				InstallRoot: target.Record.InstallRoot,
-				Warnings:    []string{warning},
-				Skipped:     true,
-			})
-			continue
-		}
-
-		warnings := buildUpgradeWarnings(target.Record, validation, deps, questions, currentProfileSnapshot(repoRoot))
-		if blockers := dependencyBlockers(deps); len(blockers) > 0 && (upgradeAll || !force) {
-			results = append(results, upgradeResult{
-				Package:     target.Record.Package,
-				Scope:       target.Record.InstallScope,
-				FromVersion: target.Record.Version,
-				ToVersion:   target.Record.Version,
-				FromBranch:  target.Record.Branch,
-				ToBranch:    targetBranch,
-				InstallRoot: target.Record.InstallRoot,
-				Warnings:    append(warnings, append([]string{"skipped upgrade"}, blockers...)...),
-				Skipped:     true,
-			})
-			continue
-		}
-		if err := confirmExternalDeps(cmd, formatter, deps, yolo, false); err != nil {
-			if cfg.JSON {
-				return writeJSONError(formatter, "interactive_confirmation_required", err.Error())
-			}
-			return err
-		}
-		if pkg.Version == target.Record.Version && targetBranch == target.Record.Branch && targetVersion == "" {
-			results = append(results, upgradeResult{
-				Package:     target.Record.Package,
-				Scope:       target.Record.InstallScope,
-				FromVersion: target.Record.Version,
-				ToVersion:   target.Record.Version,
-				FromBranch:  target.Record.Branch,
-				ToBranch:    targetBranch,
-				InstallRoot: target.Record.InstallRoot,
-				Warnings:    append(warnings, "already on latest version for selected branch"),
-				Skipped:     true,
-			})
-			continue
-		}
-
-		summary, err := (installer.Service{}).Execute(cmd.Context(), installer.Request{
-			Package:   pkg,
-			Files:     files,
-			Deps:      deps,
-			Hooks:     hooks,
-			Questions: questions,
-			Branch:    targetBranch,
-			Global:    target.Record.InstallScope == "global",
-			RepoRoot:  repoRoot,
-		})
-		if err != nil {
-			if cfg.JSON {
-				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
-			}
-			return err
-		}
-		results = append(results, upgradeResult{
-			Package:            target.Record.Package,
-			Scope:              target.Record.InstallScope,
-			FromVersion:        target.Record.Version,
-			ToVersion:          pkg.Version,
-			FromBranch:         target.Record.Branch,
-			ToBranch:           targetBranch,
-			InstallRoot:        summary.InstallRoot,
-			Warnings:           warnings,
-			FilesWritten:       summary.FilesWritten,
-			TemplateWarnings:   summary.TemplateValidationWarnings,
-			DependencyWarnings: summary.DependencyWarnings,
-		})
-		successes++
 	}
 
 	if cfg.JSON {
-		return formatter.WriteJSON(upgradeResponse{OK: successes > 0 || len(results) == 0, Upgrades: results})
+		return formatter.WriteJSON(result.Response)
 	}
-	rows := make([][]string, 0, len(results))
-	for _, result := range results {
+	rows := make([][]string, 0, len(result.Response.Upgrades))
+	for _, item := range result.Response.Upgrades {
 		rows = append(rows, []string{
-			result.Package,
-			result.Scope,
-			result.FromVersion,
-			result.ToVersion,
-			result.ToBranch,
+			item.Package,
+			item.Scope,
+			item.FromVersion,
+			item.ToVersion,
+			item.ToBranch,
 		})
 	}
 	if err := formatter.Table([]string{"PACKAGE", "SCOPE", "FROM", "TO", "BRANCH"}, rows); err != nil {
 		return err
 	}
-	for _, result := range results {
-		for _, warning := range result.Warnings {
+	for _, item := range result.Response.Upgrades {
+		for _, warning := range item.Warnings {
 			formatter.Success("warning: " + warning)
 		}
 	}
-	if upgradeAll && successes == 0 && len(results) > 0 {
+	if !result.Response.OK && len(result.Response.Upgrades) > 0 {
 		return fmt.Errorf("all upgrades failed or were skipped")
 	}
 	return nil
@@ -272,17 +132,4 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 func branchFlagChanged(cmd *cobra.Command) bool {
 	flag := cmd.Flag("branch")
 	return flag != nil && flag.Changed
-}
-
-func upgradeBranchForTarget(defaultBranch string, branchExplicit bool, record installer.InstallRecord) string {
-	if branchExplicit {
-		return defaultBranch
-	}
-	if record.Branch != "" {
-		return record.Branch
-	}
-	if defaultBranch != "" {
-		return defaultBranch
-	}
-	return "main"
 }

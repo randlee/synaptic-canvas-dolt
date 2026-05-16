@@ -2,22 +2,25 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/randlee/synaptic-canvas-dolt/internal/config"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/api"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/dolt"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/installer"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
 )
 
-func TestInitCommandJSON(t *testing.T) {
+func TestJSONInitCommand(t *testing.T) {
 	root := t.TempDir()
 	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
 	restoreDir := chdirForTest(t, root)
@@ -46,7 +49,7 @@ func TestInitCommandJSON(t *testing.T) {
 	}
 }
 
-func TestInitCommandErrorJSON(t *testing.T) {
+func TestJSONInitCommandError(t *testing.T) {
 	root := t.TempDir()
 	restoreDir := chdirForTest(t, root)
 	defer restoreDir()
@@ -68,12 +71,12 @@ func TestInitCommandErrorJSON(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
 	}
-	if resp.OK || resp.Error.Code != "query_failed" || resp.Error.Message != "boom" {
+	if resp.OK || resp.Error.Code != "internal_error" || resp.Error.Message != "boom" {
 		t.Fatalf("unexpected response: %+v", resp)
 	}
 }
 
-func TestInstallCommandDryRunJSON(t *testing.T) {
+func TestJSONInstallCommandDryRun(t *testing.T) {
 	root := t.TempDir()
 	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
 	restoreDir := chdirForTest(t, root)
@@ -141,8 +144,65 @@ func TestInstallDependencyAcknowledgementRequiresYoloInNonTTY(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
 	}
-	if resp.OK || resp.Error.Message != "interactive confirmation required; use --yolo to proceed non-interactively" {
+	if resp.OK || resp.Error.Code != api.ErrorCodeConfirmationNeeded || resp.Error.Message != "interactive confirmation required; use --yolo to proceed non-interactively" {
 		t.Fatalf("unexpected response: %+v", resp)
+	}
+	if resp.Error.Retryable {
+		t.Fatalf("confirmation_required should not be retryable: %+v", resp.Error)
+	}
+	if resp.Error.SuggestedAction != "rerun with --yolo to proceed non-interactively" {
+		t.Fatalf("unexpected suggested_action: %+v", resp.Error)
+	}
+}
+
+func TestInstallScopeBothAllFailuresPreserveTypedCode(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
+	restoreDir := chdirForTest(t, root)
+	defer restoreDir()
+
+	mock := dolt.NewMockClient()
+	pkg := dolt.NewTestPackage("team-lead", "team-lead", "1.2.0", nil)
+	pkg.AgentVariant = "claude"
+	mock.AddPackage(pkg)
+	mock.AddFiles("team-lead", []models.PackageFile{{
+		DestPath: "SKILL.md", Content: "skill", SHA256: testSHA("skill"), FileType: models.FileTypeSkill,
+	}})
+	restore := installReadTestHooks(mock)
+	defer restore()
+
+	prevExecute := executeInstallService
+	executeInstallService = func(context.Context, installer.Request) (installer.Summary, error) {
+		return installer.Summary{}, errors.New("incompatible dependency: missing tool")
+	}
+	defer func() { executeInstallService = prevExecute }()
+
+	cmd := NewRootCmd("test", "abc", "2025-01-01")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"install", "team-lead", "--scope", "both", "--json", "--yolo"})
+
+	requireJSONCmdError(t, cmd.Execute())
+
+	var resp api.InstallResponse
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
+	}
+	if resp.OK || resp.Error == nil {
+		t.Fatalf("expected aggregate install failure, got %+v", resp)
+	}
+	if resp.Error.Code != api.ErrorCodeBlocked {
+		t.Fatalf("aggregate code = %q, want blocked", resp.Error.Code)
+	}
+	if resp.Error.Retryable {
+		t.Fatalf("blocked aggregate should not be retryable: %+v", resp.Error)
+	}
+	if len(resp.Failures) != 1 || resp.Failures[0].Code != api.ErrorCodeBlocked {
+		t.Fatalf("expected typed per-scope failure, got %+v", resp.Failures)
 	}
 }
 
@@ -401,7 +461,7 @@ func TestInstallScopeBothMixedWriteAndFailureReturnsExitOne(t *testing.T) {
 	if resp.OK || resp.Partial || len(resp.Installs) != 0 || len(resp.RolledBack) != 1 || len(resp.Failures) != 1 {
 		t.Fatalf("expected project rollback after global failure, got %+v", resp)
 	}
-	if resp.Error.Code != "install_failed" || resp.Error.Message != "install failed for all selected scopes" {
+	if resp.Error.Code != "internal_error" || resp.Error.Message != "install failed for all selected scopes" {
 		t.Fatalf("unexpected error envelope: %+v", resp.Error)
 	}
 	if resp.Failures[0].Scope != "global" {
@@ -422,7 +482,76 @@ func TestInstallScopeBothMixedWriteAndFailureReturnsExitOne(t *testing.T) {
 	}
 }
 
-func TestInstallCommandErrorJSON(t *testing.T) {
+func TestInstallScopeBothPartialFailurePreservesTypedSuberrors(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
+	restoreDir := chdirForTest(t, root)
+	defer restoreDir()
+
+	mock := dolt.NewMockClient()
+	pkg := dolt.NewTestPackage("team-lead", "team-lead", "1.2.0", nil)
+	pkg.AgentVariant = "claude"
+	mock.AddPackage(pkg)
+	mock.AddFiles("team-lead", []models.PackageFile{{
+		DestPath: "SKILL.md", Content: "skill", SHA256: testSHA("skill"), FileType: models.FileTypeSkill,
+	}})
+	restore := installReadTestHooks(mock)
+	defer restore()
+
+	callCount := 0
+	prevExecute := executeInstallService
+	executeInstallService = func(ctx context.Context, req installer.Request) (installer.Summary, error) {
+		callCount++
+		if callCount == 1 {
+			return installer.Summary{
+				PackageID:    req.Package.ID,
+				Version:      req.Package.Version,
+				Branch:       req.Branch,
+				Scope:        "project",
+				InstallRoot:  filepath.Join(root, ".claude", "skills", "team-lead"),
+				FilesWritten: 1,
+				Files: []installer.PlannedFile{{
+					Path: filepath.Join(root, ".claude", "skills", "team-lead", "SKILL.md"),
+				}},
+			}, nil
+		}
+		return installer.Summary{}, errors.New("interactive confirmation required; use --yolo to proceed non-interactively")
+	}
+	defer func() { executeInstallService = prevExecute }()
+
+	cmd := NewRootCmd("test", "abc", "2025-01-01")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"install", "team-lead", "--scope", "both", "--json", "--yolo"})
+
+	requireJSONCmdError(t, cmd.Execute())
+
+	var resp api.InstallResponse
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
+	}
+	if resp.OK || resp.Error == nil || resp.Error.Code != api.ErrorCodeConfirmationNeeded {
+		t.Fatalf("expected confirmation_required aggregate failure, got %+v", resp)
+	}
+	if resp.Error.Retryable {
+		t.Fatalf("confirmation aggregate should not be retryable: %+v", resp.Error)
+	}
+	if resp.Error.SuggestedAction != "rerun with --yolo to proceed non-interactively" {
+		t.Fatalf("unexpected aggregate suggested_action: %+v", resp.Error)
+	}
+	if len(resp.Failures) != 1 || resp.Failures[0].Code != api.ErrorCodeConfirmationNeeded {
+		t.Fatalf("expected typed failure entry, got %+v", resp.Failures)
+	}
+	if resp.Failures[0].SuggestedAction != "rerun with --yolo to proceed non-interactively" {
+		t.Fatalf("unexpected failure suggested_action: %+v", resp.Failures[0])
+	}
+}
+
+func TestJSONInstallCommandError(t *testing.T) {
 	root := t.TempDir()
 	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
 	restoreDir := chdirForTest(t, root)
@@ -445,8 +574,186 @@ func TestInstallCommandErrorJSON(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
 	}
-	if resp.OK || resp.Error.Code != "query_failed" || resp.Error.Message != "boom" {
+	if resp.OK || resp.Error.Code != "internal_error" || resp.Error.Message != "boom" {
 		t.Fatalf("unexpected response: %+v", resp)
+	}
+}
+
+func TestJSONInstallBackendFailureIncludesRetryableMetadata(t *testing.T) {
+	t.Run("get package path", func(t *testing.T) {
+		root := t.TempDir()
+		writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
+		restoreDir := chdirForTest(t, root)
+		defer restoreDir()
+
+		mock := dolt.NewMockClient()
+		mock.GetErr = fmt.Errorf("%w: upstream busy", dolt.ErrRateLimited)
+
+		cmd := NewRootCmd("test", "abc", "2025-01-01")
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetArgs([]string{"install", "team-lead", "--json"})
+
+		restore := installReadTestHooks(mock)
+		defer restore()
+
+		requireJSONCmdError(t, cmd.Execute())
+
+		var resp jsonErrorEnvelope
+		if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+			t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
+		}
+		if resp.OK || resp.Error.Code != api.ErrorCodeBackendUnavailable {
+			t.Fatalf("unexpected response: %+v", resp)
+		}
+		if !resp.Error.Retryable {
+			t.Fatalf("expected backend failure to be retryable: %+v", resp.Error)
+		}
+		if resp.Error.SuggestedAction != "retry or switch to a reachable backend" {
+			t.Fatalf("unexpected suggested_action: %+v", resp.Error)
+		}
+		if resp.Error.Details["cause_code"] != "rate_limited" || resp.Error.Details["operation"] != "get_package" {
+			t.Fatalf("unexpected backend details: %+v", resp.Error.Details)
+		}
+	})
+
+	t.Run("scope loop path", func(t *testing.T) {
+		root := t.TempDir()
+		writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
+		restoreDir := chdirForTest(t, root)
+		defer restoreDir()
+
+		mock := dolt.NewMockClient()
+		pkg := dolt.NewTestPackage("team-lead", "team-lead", "1.2.0", nil)
+		pkg.AgentVariant = "claude"
+		mock.AddPackage(pkg)
+		mock.AddFiles("team-lead", []models.PackageFile{{
+			DestPath: "SKILL.md", Content: "skill", SHA256: testSHA("skill"), FileType: models.FileTypeSkill,
+		}})
+
+		restore := installReadTestHooks(mock)
+		defer restore()
+
+		prevExecute := executeInstallService
+		executeInstallService = func(context.Context, installer.Request) (installer.Summary, error) {
+			return installer.Summary{}, fmt.Errorf("%w: upstream busy", dolt.ErrRateLimited)
+		}
+		defer func() { executeInstallService = prevExecute }()
+
+		cmd := NewRootCmd("test", "abc", "2025-01-01")
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetArgs([]string{"install", "team-lead", "--scope", "both", "--json", "--yolo"})
+
+		requireJSONCmdError(t, cmd.Execute())
+
+		var resp api.InstallResponse
+		if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+			t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
+		}
+		if resp.OK || resp.Error == nil || resp.Error.Code != api.ErrorCodeBackendUnavailable {
+			t.Fatalf("unexpected response: %+v", resp)
+		}
+		if !resp.Error.Retryable {
+			t.Fatalf("expected aggregate backend failure to be retryable: %+v", resp.Error)
+		}
+		if resp.Error.Details["cause_code"] != "rate_limited" || resp.Error.Details["operation"] != "install_scope" {
+			t.Fatalf("unexpected aggregate backend details: %+v", resp.Error.Details)
+		}
+		if len(resp.Failures) != 1 {
+			t.Fatalf("len(resp.Failures) = %d, want 1 (%+v)", len(resp.Failures), resp.Failures)
+		}
+		failure := resp.Failures[0]
+		if !failure.Retryable {
+			t.Fatalf("expected scoped failure to be retryable: %+v", failure)
+		}
+		if failure.Details["cause_code"] != "rate_limited" || failure.Details["operation"] != "install_scope" {
+			t.Fatalf("unexpected scoped backend details: %+v", failure.Details)
+		}
+	})
+}
+
+func TestInstallReadbackUsesStatusAndValidateJSON(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	setTestHome(t, home)
+	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
+	restoreDir := chdirForTest(t, root)
+	defer restoreDir()
+
+	mock := dolt.NewMockClient()
+	pkg := dolt.NewTestPackage("team-lead", "team-lead", "1.2.0", []string{"workflow"})
+	pkg.AgentVariant = "claude"
+	mock.AddPackage(pkg)
+	mock.AddFiles("team-lead", []models.PackageFile{
+		{DestPath: "SKILL.md", Content: "skill", SHA256: testSHA("skill"), FileType: models.FileTypeSkill},
+		{DestPath: "hooks/pre-commit.sh", Content: "#!/bin/sh\n", SHA256: testSHA("#!/bin/sh\n"), FileType: models.FileTypeHook},
+	})
+	mock.AddHooks("team-lead", []models.PackageHook{{
+		PackageID:  "team-lead",
+		Event:      models.HookPreToolUse,
+		Matcher:    "git commit",
+		ScriptPath: "hooks/pre-commit.sh",
+		Priority:   10,
+		Blocking:   true,
+	}})
+	restore := installReadTestHooks(mock)
+	defer restore()
+
+	installCmd := NewRootCmd("test", "abc", "2025-01-01")
+	var installOut bytes.Buffer
+	installCmd.SetOut(&installOut)
+	installCmd.SetErr(&installOut)
+	installCmd.SetArgs([]string{"install", "team-lead", "--scope", "project", "--json", "--yolo"})
+	if err := installCmd.Execute(); err != nil {
+		t.Fatalf("install Execute() error = %v\noutput=%s", err, installOut.String())
+	}
+
+	statusCmd := NewRootCmd("test", "abc", "2025-01-01")
+	var statusOut bytes.Buffer
+	statusCmd.SetOut(&statusOut)
+	statusCmd.SetErr(&statusOut)
+	statusCmd.SetArgs([]string{"status", "--json"})
+	if err := statusCmd.Execute(); err != nil {
+		t.Fatalf("status Execute() error = %v\noutput=%s", err, statusOut.String())
+	}
+	var statusResp statusResponse
+	if err := json.Unmarshal(statusOut.Bytes(), &statusResp); err != nil {
+		t.Fatalf("json.Unmarshal(status) error = %v\noutput=%s", err, statusOut.String())
+	}
+	if len(statusResp.Packages) != 1 || statusResp.Packages[0].Local == nil {
+		t.Fatalf("expected one local package, got %+v", statusResp)
+	}
+	local := statusResp.Packages[0].Local
+	if local.Version != "1.2.0" || local.Branch != "main" || local.Validation != "PASS" {
+		t.Fatalf("unexpected status local readback: %+v", local)
+	}
+	if local.HookSummary.Tracked != 1 || local.HookSummary.Registered != 1 || len(local.HookSummary.Hooks) != 1 {
+		t.Fatalf("unexpected hook summary: %+v", local.HookSummary)
+	}
+	if hook := local.HookSummary.Hooks[0]; hook.Event != "PreToolUse" || hook.Script != "hooks/pre-commit.sh" || !hook.Registered {
+		t.Fatalf("unexpected hook readback: %+v", hook)
+	}
+
+	validateCmd := NewRootCmd("test", "abc", "2025-01-01")
+	var validateOut bytes.Buffer
+	validateCmd.SetOut(&validateOut)
+	validateCmd.SetErr(&validateOut)
+	validateCmd.SetArgs([]string{"validate", "team-lead", "--scope", "project", "--json"})
+	if err := validateCmd.Execute(); err != nil {
+		t.Fatalf("validate Execute() error = %v\noutput=%s", err, validateOut.String())
+	}
+	var validateResp validateResponse
+	if err := json.Unmarshal(validateOut.Bytes(), &validateResp); err != nil {
+		t.Fatalf("json.Unmarshal(validate) error = %v\noutput=%s", err, validateOut.String())
+	}
+	if !validateResp.Pass || len(validateResp.Packages) != 1 {
+		t.Fatalf("unexpected validate response: %+v", validateResp)
+	}
+	if hook := validateResp.Packages[0].HookSummary.Hooks[0]; hook.Event != "PreToolUse" || hook.Script != "hooks/pre-commit.sh" || !hook.Registered {
+		t.Fatalf("unexpected validate hook readback: %+v", hook)
 	}
 }
 

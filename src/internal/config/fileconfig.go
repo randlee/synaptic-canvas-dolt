@@ -56,20 +56,8 @@ func (c *Config) LoadFileConfig() error {
 
 // Get returns a string config value using explicit CLI flag > env > file > default precedence.
 func (c *Config) Get(key, defaultVal string) string {
-	if value, ok := c.explicitFlags[key]; ok && value != "" {
-		return value
-	}
-	if envName := EnvNameForKey(key); envName != "" {
-		if value := os.Getenv(envName); value != "" {
-			return value
-		}
-	}
-	if c.fileValues != nil {
-		if value := c.fileValues[key]; value != "" {
-			return value
-		}
-	}
-	return defaultVal
+	value, _ := c.ResolveValue(key, defaultVal)
+	return value
 }
 
 // GetInt returns an int config value using Get's precedence.

@@ -1793,6 +1793,8 @@ through read commands rather than direct filesystem inspection alone.
 - Explicit natural-language to `sc --json` command mapping
 - Fixture-backed wrapper verification for representative success and error cases
 - Documentation clarifying that orchestration behavior stays outside the skill
+- Example set covering install, upgrade, uninstall, status, validate,
+  snapshot ambiguity, and backend failure flows
 
 **Key Requirements:**
 - The skill delegates business logic to the CLI rather than re-implementing it
@@ -1806,6 +1808,8 @@ through read commands rather than direct filesystem inspection alone.
   corrective-error presentation
 - The wrapper does not create a second business-payload schema separate from
   the CLI contract
+- Manual QA can review `.claude/skills/sc-plugin/examples/` and confirm that
+  every example maps to a JSON-only CLI invocation with no human-output parsing
 
 ### Sprint 4.5: Installer And Local Distribution
 
@@ -1830,6 +1834,154 @@ platforms with predictable config behavior.
   skill assets
 - Repository-owned verification exists for installer behavior on supported
   platforms
+
+### Sprint 4.6: Error Contract Completeness
+
+**Goal:** Close the remaining gap between the documented Phase 4 machine
+contract and runtime aggregate-install/backend error metadata.
+
+Detailed sprint plan: [4.6 Error Contract Completeness](./phase-4/4.6-error-contract-completeness.md)
+
+**Deliverables:**
+- Contract coverage for aggregate install failures with typed per-scope sub-errors
+- Runtime error metadata coverage for retryability, suggested action, cause code,
+  and operation fields
+- Phase documentation aligned with the implemented Phase 4 error surface
+
+**Key Requirements:**
+- Aggregate install failures preserve the most specific typed code instead of
+  collapsing to `internal_error`
+- Recoverable backend failures expose machine-readable retryability and recovery
+  guidance
+- CLI documentation stays synchronized with the shipped JSON error schema
+
+**Acceptance Criteria:**
+- All-scopes-failed and partial multi-scope install failures preserve typed
+  per-scope codes in `failures[]`
+- Backend failure envelopes include `retryable`, `suggested_action`,
+  `details.cause_code`, and `details.operation`
+- Contract and command tests cover both pre-install lookup failures and
+  scope-loop install failures
+
+### Sprint 4.7: sc:plugin Fixture Verification And Arch Cleanup
+
+**Goal:** Add repository-owned fixture verification for the `sc:plugin`
+wrapper and complete the Phase 4 architectural cleanup around shared warnings,
+install-ID constants, and test-only harness boundaries.
+
+Detailed sprint plan: [4.7 sc:plugin Fixture Verification And Arch Cleanup](./phase-4/4.7-fixture-verification-and-arch-cleanup.md)
+
+**Deliverables:**
+- Automated fixture verification for representative `sc:plugin` wrapper flows
+- Shared warning/output cleanup in command handlers
+- Shared install-ID format constant across command mutation helpers
+- Test-only build boundary for Dolt harness helpers
+
+**Key Requirements:**
+- Wrapper verification must be repository-owned and runnable without manual QA
+- The command layer must reuse shared output helpers rather than duplicating
+  warning emitters
+- Test harness code must stay out of production binaries
+
+**Acceptance Criteria:**
+- `.claude/skills/sc-plugin/tests/` exercises install success, install with
+  explicit global scope, snapshot ambiguity, backend failure, and `--json`
+  command generation
+- `catalog.go` uses the shared formatter warning path rather than a local
+  helper
+- Install-ID generation is driven by one named shared constant
+- `src/pkg/dolttest/harness.go` is excluded from production builds by build tag
+
+### Sprint 4.8: Installer Hardening And Doc Gaps
+
+**Goal:** Close the remaining installer safety and Phase 4 documentation gaps
+identified during QA.
+
+Detailed sprint plan: [4.8 Installer Hardening And Doc Gaps](./phase-4/4.8-installer-hardening-and-doc-gaps.md)
+
+**Deliverables:**
+- Atomic installer update flow for managed `sc:plugin` assets on shell and
+  PowerShell installers
+- Failure-injection installer coverage for interrupted managed-asset updates
+- Documentation corrections for transport precedence and installer boundary
+  behavior
+
+**Key Requirements:**
+- Installer updates must stage managed assets before swap so interruption cannot
+  leave a partial managed tree behind
+- Managed/unmanaged installer boundaries must remain explicit in both scripts
+  and docs
+- Phase 4 documentation must match the implemented client-selection precedence
+  and installer behavior
+
+**Acceptance Criteria:**
+- Installer updates stage managed assets before swap so interrupted writes do
+  not leave partial managed trees behind
+- Installer tests cover managed copy failure paths on both supported script
+  implementations
+- Phase 4 documentation matches the implemented five-level client-selection
+  precedence and installer behavior
+
+### Sprint 4.9: Uninstall Atomicity And Installer PATH Hardening
+
+**Goal:** Fix uninstall atomicity so manifest state never claims an uninstall
+completed when tracked files remain on disk, and harden fresh-install PATH
+setup/documentation across the shell and PowerShell installers.
+
+Detailed sprint plan: [4.9 Uninstall Atomicity And Installer PATH Hardening](./phase-4/4.9-uninstall-atomicity-and-installer-path-hardening.md)
+
+**Deliverables:**
+- Uninstall workflow ordering updated to delete tracked files before hook and
+  manifest removal, preserving the manifest on file-removal failure
+- Installer PATH persistence updates for shell and PowerShell fresh installs,
+  with isolated tests for the new behavior
+- Final Phase 4 documentation corrections for rollback reporting and client
+  selection terminology
+
+**Key Requirements:**
+- Uninstall failures during tracked-file removal must leave manifest tracking
+  intact so disk state and metadata cannot diverge
+- Fresh installs must update persistent PATH configuration instead of only
+  warning the user
+- Phase 4 docs must describe the actual emitted rollback schema and implemented
+  precedence rules
+
+**Acceptance Criteria:**
+- Uninstall removes the manifest record only after all managed files are
+  successfully deleted
+- Fresh install tests verify the installed bin directory is persisted onto PATH
+  for both shell and PowerShell installers
+- Phase 4 docs match the implemented uninstall failure behavior and five-level
+  client-selection precedence
+
+---
+
+### Sprint 4.10: Operations Layer Workflow Extraction
+
+**Goal:** Extract install, upgrade, and uninstall workflow policy from Cobra
+command handlers into `src/pkg/operations`, satisfying the MB-001 and MB-006
+module boundary requirements.
+
+Detailed sprint plan: [4.10 Operations Layer Workflow Extraction](./phase-4/4.10-operations-layer-workflow-extraction.md)
+
+**Deliverables:**
+- `src/pkg/operations/install.go`, `upgrade.go`, `uninstall.go` (new) containing
+  the extracted workflow logic with ≥70% statement coverage per file
+- `src/cmd/install.go`, `upgrade.go`, `uninstall.go` reduced to thin Cobra
+  bindings: flag parse → single operation call → output format
+
+**Key Requirements:**
+- MB-001 and MB-006: end-user workflows implemented behind shared operation-layer
+  packages below the Cobra layer
+- No `cobra` imports in `src/pkg/operations/`
+- Sprint 4.9 uninstall atomicity contract preserved after extraction
+
+**Acceptance Criteria:**
+- `RunInstall`, `RunUpgrade`, `RunUninstall` (or equivalents) exist in
+  `src/pkg/operations/` and contain all workflow policy
+- `src/cmd/` handlers make no direct calls to `installer.*`, `pkg/dolt.*`,
+  or `pkg/catalog.*` other than through the extracted operation functions
+- Coverage ≥70% per operations file; atomicity test still passes
 
 ---
 
@@ -1861,7 +2013,7 @@ platforms with predictable config behavior.
 | 1. Foundation | 1.1–1.5 | Scaffold + CI pipeline, Dolt client, integrity, log-debug agent, gap closure |
 | 2. Admin | 2.1–2.4 | Import, export, verify, publish |
 | 3. End-User | 3.1–3.9 | List, install, validate, upgrade, HTTP client, SHA catalog, scan, import collision, scope/yolo/severity |
-| 4. AI Surface | 4.1–4.5 | JSON contract, backend parity, readback, sc:plugin, installer |
+| 4. AI Surface | 4.1–4.10 | JSON contract, backend parity, readback, sc:plugin, installer, error/fixture hardening |
 | 5. Release | 5.1 | GoReleaser release pipeline |
 
 ---

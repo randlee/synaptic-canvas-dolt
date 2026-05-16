@@ -93,12 +93,16 @@ lightweight and operationally useful.
   the same top-level success schema, and equivalent failure classes shall use
   the same top-level CLI error codes.
 - DC-010 Backend-specific failure facts such as HTTP timeout, SQL auth failure,
-  or missing local dolt binary shall be reported through structured error
-  details without changing the top-level CLI error schema.
+  unsupported-backend rejection, or missing local dolt binary shall be
+  reported through structured error details without changing the top-level CLI
+  error schema. Backend JSON errors shall include `error.details.client` at a
+  minimum.
 - DC-011 File-backed configuration keys shall resolve in this precedence:
   explicitly supplied CLI flag, environment variable, config file value, then
   default. CLI flag default values that were not explicitly supplied shall not
-  override environment or file config.
+  override environment or file config. This rule applies equally to
+  compatibility-driving inputs such as `dolt.dir` regardless of whether the
+  value came from flag, environment, or file config.
 - DC-012 Admin or other write-path commands that mutate Dolt state shall not
   use `HTTPClient`. MVP write-capable backends are `SQLClient` and `CLIReader`.
   If a write-path command is invoked with `--client http` or an effective
@@ -205,8 +209,9 @@ The CLI is expected to be used by both humans and AI wrappers.
   mode, and adapt process-level concerns, but package-management business rules
   shall live below the Cobra command layer.
 - MB-002 Transport adapters, filesystem mutation, install tracking, catalog
-  state, and rendering concerns shall be isolated behind package boundaries or
-  interfaces so behavior can be tested without shelling through the full CLI.
+  state, rendering concerns, and reusable simulator harnesses shall be isolated
+  behind package boundaries or interfaces so behavior can be tested without
+  shelling through the full CLI.
 - MB-003 Shared machine-contract DTOs for public JSON payloads shall live
   outside command handlers and be reusable by wrappers or future MCP surfaces.
 - MB-004 Wrapper layers shall not parse human-readable CLI output, re-encode
@@ -442,11 +447,13 @@ branch.
   removed before the sprint is accepted.
 - VER-010 Each supported Dolt client shall have simulator-backed or equivalent
   deterministic adapter tests below the CLI layer. Routine CI shall not depend
-  on live DoltHub, a running SQL server, or a local Dolt clone.
+  on live DoltHub, a running SQL server, or a local Dolt clone. Shared harness
+  support may be reused by higher-layer command contract tests.
 - VER-011 Contract-conformance tests shall run equivalent command or adapter
   scenarios across `http`, `sql`, and `cli` client modes and assert the same
   top-level JSON success and error schemas where behavior is semantically
-  equivalent.
+  equivalent, including structured backend details when the top-level error
+  code is the same.
 - VER-012 Live DoltHub verification shall be an explicit human/AI-driven
   integration procedure, not a CI requirement. CI shall not make live network
   calls to DoltHub; live tests must be opt-in and configurable to use a

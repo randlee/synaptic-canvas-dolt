@@ -15,7 +15,7 @@ import (
 	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
 )
 
-func TestUpgradeCommandJSON(t *testing.T) {
+func TestJSONUpgradeCommand(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -229,7 +229,7 @@ func TestUpgradeCommandWarnsOnLocalModification(t *testing.T) {
 	}
 }
 
-func TestUpgradeAllForceRejectedJSON(t *testing.T) {
+func TestJSONUpgradeAllForceRejected(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -716,6 +716,189 @@ func TestUninstallYoloRemovesOnlySCInstalledDependencies(t *testing.T) {
 	}
 	if strings.Join(resp.Removed.RemovedDependencies, ",") != "owned" {
 		t.Fatalf("expected JSON to report only owned dependency, got %+v", resp.Removed.RemovedDependencies)
+	}
+}
+
+func TestUpgradeReadbackUsesStatusAndValidateJSON(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	setTestHome(t, home)
+	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
+	restoreDir := chdirForTest(t, root)
+	defer restoreDir()
+
+	installRoot := filepath.Join(root, ".claude", "skills", "team-lead")
+	writeCmdFile(t, filepath.Join(installRoot, "SKILL.md"), "old-skill")
+	writeCmdFile(t, filepath.Join(installRoot, "hooks", "pre-commit.sh"), "#!/bin/sh\nexit 0\n")
+	if err := installer.SaveManifestLock(root, installer.ManifestLock{Installs: []installer.InstallRecord{{
+		InstallID:    "pkg_team-lead_project",
+		Package:      "team-lead",
+		Version:      "1.0.0",
+		Branch:       "main",
+		Variant:      "claude",
+		InstallScope: "project",
+		InstallRoot:  installRoot,
+		InstallSite:  root,
+		Files: map[string]string{
+			"SKILL.md":            integrity.ComputeContentSHA256([]byte("old-skill")),
+			"hooks/pre-commit.sh": integrity.ComputeContentSHA256([]byte("#!/bin/sh\nexit 0\n")),
+		},
+		Hooks: []installer.HookEntry{{
+			Event:    "PreToolUse",
+			Matcher:  "git commit",
+			Skill:    "team-lead",
+			Scope:    "project",
+			Script:   "hooks/pre-commit.sh",
+			Priority: 10,
+			Blocking: true,
+		}},
+	}}}); err != nil {
+		t.Fatalf("SaveManifestLock() error = %v", err)
+	}
+	if err := installer.SaveHookRegistry(root, installer.HookRegistry{Hooks: []installer.HookEntry{{
+		Event:    "PreToolUse",
+		Matcher:  "git commit",
+		Skill:    "team-lead",
+		Scope:    "project",
+		Script:   filepath.Join(installRoot, "hooks", "pre-commit.sh"),
+		Priority: 10,
+		Blocking: true,
+	}}}); err != nil {
+		t.Fatalf("SaveHookRegistry() error = %v", err)
+	}
+
+	mock := dolt.NewMockClient()
+	pkg := dolt.NewTestPackage("team-lead", "team-lead", "2.0.0", nil)
+	pkg.AgentVariant = "claude"
+	mock.AddPackage(pkg)
+	mock.AddFiles("team-lead", []models.PackageFile{
+		{DestPath: "SKILL.md", Content: "new-skill", SHA256: testSHA("new-skill"), FileType: models.FileTypeSkill},
+		{DestPath: "hooks/pre-commit.sh", Content: "#!/bin/sh\necho upgraded\n", SHA256: testSHA("#!/bin/sh\necho upgraded\n"), FileType: models.FileTypeHook},
+	})
+	mock.AddHooks("team-lead", []models.PackageHook{{
+		PackageID:  "team-lead",
+		Event:      models.HookPreToolUse,
+		Matcher:    "git commit",
+		ScriptPath: "hooks/pre-commit.sh",
+		Priority:   10,
+		Blocking:   true,
+	}})
+	prevOpener := readClientOpener
+	readClientOpener = func(_ *config.Config) (readClient, error) { return mock, nil }
+	defer func() { readClientOpener = prevOpener }()
+
+	upgradeCmd := NewRootCmd("test", "abc", "2025-01-01")
+	var upgradeOut bytes.Buffer
+	upgradeCmd.SetOut(&upgradeOut)
+	upgradeCmd.SetErr(&upgradeOut)
+	upgradeCmd.SetArgs([]string{"upgrade", "team-lead", "--scope", "project", "--branch", "beta", "--json", "--yolo"})
+	if err := upgradeCmd.Execute(); err != nil {
+		t.Fatalf("upgrade Execute() error = %v\noutput=%s", err, upgradeOut.String())
+	}
+
+	statusCmd := NewRootCmd("test", "abc", "2025-01-01")
+	var statusOut bytes.Buffer
+	statusCmd.SetOut(&statusOut)
+	statusCmd.SetErr(&statusOut)
+	statusCmd.SetArgs([]string{"status", "--json"})
+	if err := statusCmd.Execute(); err != nil {
+		t.Fatalf("status Execute() error = %v\noutput=%s", err, statusOut.String())
+	}
+	var statusResp statusResponse
+	if err := json.Unmarshal(statusOut.Bytes(), &statusResp); err != nil {
+		t.Fatalf("json.Unmarshal(status) error = %v\noutput=%s", err, statusOut.String())
+	}
+	if len(statusResp.Packages) != 1 || statusResp.Packages[0].Local == nil {
+		t.Fatalf("expected one local package, got %+v", statusResp)
+	}
+	local := statusResp.Packages[0].Local
+	if local.Version != "2.0.0" || local.Branch != "beta" || local.Validation != "PASS" {
+		t.Fatalf("unexpected status after upgrade: %+v", local)
+	}
+	if hook := local.HookSummary.Hooks[0]; hook.Event != "PreToolUse" || hook.Script != "hooks/pre-commit.sh" || !hook.Registered {
+		t.Fatalf("unexpected upgraded hook readback: %+v", hook)
+	}
+
+	validateCmd := NewRootCmd("test", "abc", "2025-01-01")
+	var validateOut bytes.Buffer
+	validateCmd.SetOut(&validateOut)
+	validateCmd.SetErr(&validateOut)
+	validateCmd.SetArgs([]string{"validate", "team-lead", "--scope", "project", "--json"})
+	if err := validateCmd.Execute(); err != nil {
+		t.Fatalf("validate Execute() error = %v\noutput=%s", err, validateOut.String())
+	}
+	var validateResp validateResponse
+	if err := json.Unmarshal(validateOut.Bytes(), &validateResp); err != nil {
+		t.Fatalf("json.Unmarshal(validate) error = %v\noutput=%s", err, validateOut.String())
+	}
+	if !validateResp.Pass || len(validateResp.Packages) != 1 {
+		t.Fatalf("unexpected validate response after upgrade: %+v", validateResp)
+	}
+	if validateResp.Packages[0].Version != "2.0.0" || validateResp.Packages[0].Branch != "beta" {
+		t.Fatalf("unexpected validate package after upgrade: %+v", validateResp.Packages[0])
+	}
+}
+
+func TestUninstallReadbackUsesStatusAndValidateJSON(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	setTestHome(t, home)
+	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
+	restoreDir := chdirForTest(t, root)
+	defer restoreDir()
+
+	installRoot := filepath.Join(root, ".claude", "skills", "team-lead")
+	writeCmdFile(t, filepath.Join(installRoot, "SKILL.md"), "skill")
+	if err := installer.SaveManifestLock(root, installer.ManifestLock{Installs: []installer.InstallRecord{{
+		InstallID:    "pkg_team-lead_project",
+		Package:      "team-lead",
+		Version:      "1.0.0",
+		Branch:       "main",
+		InstallScope: "project",
+		InstallRoot:  installRoot,
+		InstallSite:  root,
+		Files:        map[string]string{"SKILL.md": integrity.ComputeContentSHA256([]byte("skill"))},
+	}}}); err != nil {
+		t.Fatalf("SaveManifestLock() error = %v", err)
+	}
+
+	uninstallCmd := NewRootCmd("test", "abc", "2025-01-01")
+	var uninstallOut bytes.Buffer
+	uninstallCmd.SetOut(&uninstallOut)
+	uninstallCmd.SetErr(&uninstallOut)
+	uninstallCmd.SetArgs([]string{"uninstall", "team-lead", "--scope", "project", "--json", "--force"})
+	if err := uninstallCmd.Execute(); err != nil {
+		t.Fatalf("uninstall Execute() error = %v\noutput=%s", err, uninstallOut.String())
+	}
+
+	statusCmd := NewRootCmd("test", "abc", "2025-01-01")
+	var statusOut bytes.Buffer
+	statusCmd.SetOut(&statusOut)
+	statusCmd.SetErr(&statusOut)
+	statusCmd.SetArgs([]string{"status", "--json"})
+	if err := statusCmd.Execute(); err != nil {
+		t.Fatalf("status Execute() error = %v\noutput=%s", err, statusOut.String())
+	}
+	var statusResp statusResponse
+	if err := json.Unmarshal(statusOut.Bytes(), &statusResp); err != nil {
+		t.Fatalf("json.Unmarshal(status) error = %v\noutput=%s", err, statusOut.String())
+	}
+	if len(statusResp.Packages) != 0 {
+		t.Fatalf("expected no packages after uninstall, got %+v", statusResp)
+	}
+
+	validateCmd := NewRootCmd("test", "abc", "2025-01-01")
+	var validateOut bytes.Buffer
+	validateCmd.SetOut(&validateOut)
+	validateCmd.SetErr(&validateOut)
+	validateCmd.SetArgs([]string{"validate", "team-lead", "--scope", "project", "--json"})
+	requireJSONCmdError(t, validateCmd.Execute())
+	var envelope jsonErrorEnvelope
+	if err := json.Unmarshal(validateOut.Bytes(), &envelope); err != nil {
+		t.Fatalf("json.Unmarshal(validate) error = %v\noutput=%s", err, validateOut.String())
+	}
+	if envelope.OK || envelope.Error.Code != "not_found" {
+		t.Fatalf("expected not_found after uninstall, got %+v", envelope)
 	}
 }
 

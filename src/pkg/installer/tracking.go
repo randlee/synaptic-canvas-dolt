@@ -16,6 +16,7 @@ const (
 	RepoProfilePath  = ".synaptic/repo-profile.toml"
 	EnvPath          = ".synaptic/env.toml"
 	HooksRegistry    = ".synaptic/hooks/registry.toml"
+	InstallIDFormat  = "pkg_%s_%s"
 )
 
 var stateFileMutexes sync.Map // map[string]*sync.Mutex, keyed by canonical lock path.
@@ -43,6 +44,7 @@ type InstallRecord struct {
 	TrackingOrigin     string                   `toml:"tracking_origin"`
 	TemplateRendered   bool                     `toml:"template_rendered"`
 	Files              map[string]string        `toml:"files"`
+	Hooks              []HookEntry              `toml:"hooks"`
 	Answers            map[string]any           `toml:"answers"`
 	QuestionSnapshot   QuestionSnapshot         `toml:"question_snapshot"`
 	Requirements       RequirementSnapshot      `toml:"requirements"`

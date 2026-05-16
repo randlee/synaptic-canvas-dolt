@@ -94,7 +94,14 @@ func TestDetectDoltDir(t *testing.T) {
 }
 
 func TestOpenReadClientWithDoltDir(t *testing.T) {
-	client, err := openReadClient(t.TempDir(), "main")
+	repoDir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(repoDir, ".dolt"), 0o755); err != nil { //nolint:gosec // G301: test temp directory permissions are intentional.
+		t.Fatalf("Mkdir(.dolt): %v", err)
+	}
+	t.Setenv("SC_DOLT_CLIENT", "cli")
+	t.Setenv("SC_DOLT_DIR", repoDir)
+	cfg := &config.Config{}
+	client, err := openReadClient(cfg, "main")
 	if err != nil {
 		t.Fatalf("openReadClient() error = %v", err)
 	}
@@ -193,12 +200,14 @@ func TestRunExportCmdRequiresOutput(t *testing.T) {
 
 func TestRunVerifyCmdDetectsMissingDoltDir(t *testing.T) {
 	cmd := NewVerifyCmd()
+	cmd.Root().PersistentFlags().String("client", "", "")
 	cmd.Root().PersistentFlags().String("dolt-dir", "", "")
 	cmd.Root().PersistentFlags().String("remote", "", "")
 	cmd.Root().PersistentFlags().String("branch", "", "")
 	cmd.Root().PersistentFlags().Bool("json", false, "")
 	cmd.Root().PersistentFlags().Bool("quiet", false, "")
 	cmd.Root().PersistentFlags().Bool("verbose", false, "")
+	t.Setenv("SC_DOLT_CLIENT", "cli")
 	t.Chdir(t.TempDir())
 	if err := runVerifyCmd(cmd, []string{"pkg"}); err == nil || !strings.Contains(err.Error(), "could not auto-detect Dolt database directory") {
 		t.Fatalf("unexpected error: %v", err)
@@ -282,7 +291,7 @@ func TestRunExportCmdUsesEffectiveBranchForReader(t *testing.T) {
 	t.Cleanup(func() { readClientOpener = originalOpener })
 
 	var openedBranch string
-	readClientOpener = func(_ string, branch string) (readClient, error) {
+	readClientOpener = func(_ *config.Config, branch string) (readClient, error) {
 		openedBranch = branch
 		mock := dolt.NewMockClient()
 		mock.AddPackage(&models.Package{ID: "pkg", Name: "pkg", Version: "1.0.0", SHA256: &pkgSHA})
@@ -379,7 +388,7 @@ func TestRunVerifyCmdUsesEffectiveBranchForReader(t *testing.T) {
 	t.Cleanup(func() { readClientOpener = originalOpener })
 
 	var openedBranch string
-	readClientOpener = func(_ string, branch string) (readClient, error) {
+	readClientOpener = func(_ *config.Config, branch string) (readClient, error) {
 		openedBranch = branch
 		mock := dolt.NewMockClient()
 		mock.AddPackage(pkg)

@@ -7,14 +7,12 @@ import (
 
 	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/api"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/operations"
 	"github.com/spf13/cobra"
 )
 
-type validateResponse struct {
-	OK       bool               `json:"ok"`
-	Pass     bool               `json:"pass"`
-	Packages []validatedInstall `json:"packages"`
-}
+type validateResponse = api.ValidateResponse
 
 // NewValidateCmd creates the sc validate command.
 func NewValidateCmd() *cobra.Command {
@@ -68,18 +66,18 @@ func runValidateCmd(cmd *cobra.Command, args []string) error {
 	repoRoot, err := currentRepoRoot()
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
+			return writeClassifiedJSONError(formatter, cfg, err, cmd.Name())
 		}
 		return err
 	}
-	installs, err := loadTrackedInstalls(repoRoot)
+	installs, err := operations.LoadTrackedInstalls(repoRoot)
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
+			return writeClassifiedJSONError(formatter, cfg, err, cmd.Name())
 		}
 		return err
 	}
-	filtered := filterInstallsByScope(filterInstalls(installs, packageID), scope)
+	filtered := operations.FilterInstallsByScope(operations.FilterInstalls(installs, packageID), scope)
 	if len(filtered) == 0 {
 		message := "no tracked installs found"
 		if packageID != "" {
@@ -96,7 +94,7 @@ func runValidateCmd(cmd *cobra.Command, args []string) error {
 		summary, err := validateTrackedInstall(cmd.Context(), install.Record)
 		if err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, "query_failed", err.Error())
+				return writeClassifiedJSONError(formatter, cfg, err, cmd.Name())
 			}
 			return err
 		}
@@ -115,7 +113,7 @@ func runValidateCmd(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		if !pass {
-			return errors.New("validation failed")
+			return jsonCmdError{cause: errors.New("validation failed")}
 		}
 		return nil
 	}
@@ -126,7 +124,7 @@ func runValidateCmd(cmd *cobra.Command, args []string) error {
 			summary.Package,
 			summary.Scope,
 			summary.Status,
-			fmt.Sprintf("%d", visibleValidatedFileCount(summary.Files, cfg.Verbose)),
+			fmt.Sprintf("%d", visibleValidatedFileCount(summary.Items, cfg.Verbose)),
 			summary.AggregateStatus,
 		})
 	}
@@ -138,18 +136,31 @@ func runValidateCmd(cmd *cobra.Command, args []string) error {
 		for _, warning := range summary.Warnings {
 			writeWarning(formatter, warning)
 		}
-		fileRows := make([][]string, 0, len(summary.Files))
-		for _, file := range summary.Files {
-			if !cfg.Verbose && file.Severity == ValidationSeverityInfo {
+		fileRows := make([][]string, 0, len(summary.Items))
+		for _, item := range summary.Items {
+			if !cfg.Verbose && item.Severity == ValidationSeverityInfo {
 				continue
 			}
-			status := file.Status
-			if file.Error != "" {
-				status += ": " + file.Error
+			status := string(item.State)
+			if item.Code != "" {
+				status += " (" + item.Code + ")"
 			}
-			fileRows = append(fileRows, []string{file.Path, status, string(file.Severity)})
+			if item.Message != "" {
+				status += ": " + item.Message
+			}
+			target := item.Path
+			if target == "" {
+				target = item.Target
+			}
+			if target == "" {
+				target = item.Dependency
+			}
+			if target == "" {
+				target = item.HookScript
+			}
+			fileRows = append(fileRows, []string{target, string(item.Kind), status, string(item.Severity)})
 		}
-		if err := formatter.Table([]string{"FILE", "STATUS", "SEVERITY"}, fileRows); err != nil {
+		if err := formatter.Table([]string{"TARGET", "KIND", "STATE", "SEVERITY"}, fileRows); err != nil {
 			return err
 		}
 	}
@@ -159,13 +170,13 @@ func runValidateCmd(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func visibleValidatedFileCount(files []validatedFile, verbose bool) int {
+func visibleValidatedFileCount(items []validatedItem, verbose bool) int {
 	if verbose {
-		return len(files)
+		return len(items)
 	}
 	count := 0
-	for _, file := range files {
-		if file.Severity != ValidationSeverityInfo {
+	for _, item := range items {
+		if item.Severity != ValidationSeverityInfo {
 			count++
 		}
 	}

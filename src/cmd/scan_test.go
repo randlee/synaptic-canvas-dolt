@@ -327,7 +327,7 @@ func TestScanAcceptAllZeroCandidatesNoOp(t *testing.T) {
 	}
 }
 
-func TestScanJSONAloneDoesNotMutate(t *testing.T) {
+func TestJSONScanAloneDoesNotMutate(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -391,7 +391,7 @@ func TestScanHumanReadableTableOutput(t *testing.T) {
 	}
 }
 
-func TestScanJSONAcceptAllWritesLockfile(t *testing.T) {
+func TestJSONScanAcceptAllWritesLockfile(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -593,7 +593,7 @@ func TestScanAbsentCatalogErrors(t *testing.T) {
 	}
 }
 
-func TestScanAbsentCatalogJSONError(t *testing.T) {
+func TestJSONScanAbsentCatalogError(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -612,15 +612,32 @@ func TestScanAbsentCatalogJSONError(t *testing.T) {
 	var envelope struct {
 		OK    bool `json:"ok"`
 		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
+			Code    string         `json:"code"`
+			Message string         `json:"message"`
+			Details map[string]any `json:"details"`
 		} `json:"error"`
 	}
 	if err := json.Unmarshal(out.Bytes(), &envelope); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
 	}
-	if envelope.OK || envelope.Error.Code != "query_failed" || !strings.Contains(envelope.Error.Message, "catalog not found for branch main") {
+	if envelope.OK || envelope.Error.Code != "validation_failed" || !strings.Contains(envelope.Error.Message, "catalog not found for branch main") {
 		t.Fatalf("unexpected JSON error envelope: %+v", envelope)
+	}
+	if envelope.Error.Details["required_action"] != "sc catalog update" {
+		t.Fatalf("expected recovery action in JSON details, got %+v", envelope)
+	}
+	gotPath, _ := envelope.Error.Details["catalog_path"].(string)
+	wantPath := filepath.Join(root, ".synaptic", "catalog-main.toml")
+	normalizePath := func(path string) string {
+		if runtime.GOOS == "darwin" {
+			return strings.TrimPrefix(path, "/private")
+		}
+		return path
+	}
+	gotResolved := normalizePath(gotPath)
+	wantResolved := normalizePath(wantPath)
+	if gotResolved != wantResolved {
+		t.Fatalf("catalog_path = %v (%v), want %v (%v)", gotPath, gotResolved, wantPath, wantResolved)
 	}
 }
 

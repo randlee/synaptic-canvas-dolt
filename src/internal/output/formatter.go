@@ -119,3 +119,15 @@ func (f *Formatter) Error(msg string) {
 	}
 	_, _ = fmt.Fprintln(w, "Error: "+msg) //nolint:errcheck // best-effort error output
 }
+
+// Warn prints a warning message to stderr. Suppressed in quiet mode.
+func (f *Formatter) Warn(msg string) {
+	if f.Quiet {
+		return
+	}
+	w := f.ErrW
+	if w == nil {
+		w = os.Stderr
+	}
+	_, _ = fmt.Fprintln(w, "warning: "+msg) //nolint:errcheck // best-effort warning output
+}

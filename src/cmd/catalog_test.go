@@ -17,11 +17,10 @@ import (
 	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
 )
 
-func TestCatalogUpdateCommandWritesBothScopes(t *testing.T) {
+func TestJSONCatalogUpdateWritesBothScopes(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
+	setTestHome(t, home)
 	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
 	restoreDir := chdirForTest(t, root)
 	defer restoreDir()
@@ -173,8 +172,8 @@ func TestValidateIgnoresCatalogEntryWithNoMatchingLockfileEntry(t *testing.T) {
 	if len(summary.Warnings) != 0 {
 		t.Fatalf("unexpected warnings for benign unmatched catalog entries: %+v", summary.Warnings)
 	}
-	if len(summary.Files) != 1 || summary.Files[0].Path != "SKILL.md" {
-		t.Fatalf("unexpected files: %+v", summary.Files)
+	if len(summary.Items) != 1 || summary.Items[0].Path != "SKILL.md" {
+		t.Fatalf("unexpected files: %+v", summary.Items)
 	}
 }
 

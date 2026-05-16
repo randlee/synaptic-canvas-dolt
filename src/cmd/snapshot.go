@@ -12,8 +12,9 @@ import (
 	toml "github.com/pelletier/go-toml/v2"
 	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/api"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/installer"
-	"github.com/randlee/synaptic-canvas-dolt/pkg/integrity"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/operations"
 	"github.com/spf13/cobra"
 )
 
@@ -28,13 +29,7 @@ type snapshotMetadata struct {
 	SnapshotAt string `toml:"snapshot_at"`
 }
 
-type snapshotResponse struct {
-	OK        bool     `json:"ok"`
-	Package   string   `json:"package"`
-	Scope     string   `json:"scope"`
-	OutputDir string   `json:"output_dir"`
-	Files     []string `json:"files"`
-}
+type snapshotResponse = api.SnapshotResponse
 
 // NewSnapshotCmd creates the sc snapshot command.
 func NewSnapshotCmd() *cobra.Command {
@@ -77,18 +72,18 @@ func runSnapshotCmd(cmd *cobra.Command, args []string) error {
 	repoRoot, err := currentRepoRoot()
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
+			return writeClassifiedJSONError(formatter, cfg, err, cmd.Name())
 		}
 		return err
 	}
-	installs, err := loadTrackedInstalls(repoRoot)
+	installs, err := operations.LoadTrackedInstalls(repoRoot)
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
+			return writeClassifiedJSONError(formatter, cfg, err, cmd.Name())
 		}
 		return err
 	}
-	selected := filterInstallsByScope(filterInstalls(installs, packageID), scope)
+	selected := operations.FilterInstallsByScope(operations.FilterInstalls(installs, packageID), scope)
 	if len(selected) == 0 {
 		message := fmt.Sprintf("package %q is not installed", packageID)
 		if cfg.JSON {
@@ -99,7 +94,7 @@ func runSnapshotCmd(cmd *cobra.Command, args []string) error {
 	if len(selected) > 1 && scope == "both" {
 		message := fmt.Sprintf("package %q is installed in multiple scopes; pass --scope", packageID)
 		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", message)
+			return writeJSONError(formatter, api.ErrorCodeAmbiguousTarget, message)
 		}
 		return errors.New(message)
 	}
@@ -108,7 +103,7 @@ func runSnapshotCmd(cmd *cobra.Command, args []string) error {
 	files, err := snapshotFiles(cmd.Context(), record, full)
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
+			return writeClassifiedJSONError(formatter, cfg, err, cmd.Name())
 		}
 		return err
 	}
@@ -116,7 +111,7 @@ func runSnapshotCmd(cmd *cobra.Command, args []string) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
+			return writeClassifiedJSONError(formatter, cfg, err, cmd.Name())
 		}
 		return err
 	}
@@ -158,17 +153,23 @@ func runSnapshotCmd(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("encoding snapshot metadata: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(outputDir, "snapshot.toml"), data, 0o600); err != nil {
+	metadataPath := filepath.Join(outputDir, "snapshot.toml")
+	if err := os.WriteFile(metadataPath, data, 0o600); err != nil {
 		return fmt.Errorf("writing snapshot metadata: %w", err)
 	}
 
 	if cfg.JSON {
 		return formatter.WriteJSON(snapshotResponse{
-			OK:        true,
-			Package:   record.Package,
-			Scope:     record.InstallScope,
-			OutputDir: outputDir,
-			Files:     copied,
+			OK:           true,
+			Package:      record.Package,
+			Version:      record.Version,
+			Branch:       record.Branch,
+			Scope:        record.InstallScope,
+			InstallRoot:  record.InstallRoot,
+			InstallSite:  record.InstallSite,
+			OutputDir:    outputDir,
+			MetadataPath: metadataPath,
+			Files:        copied,
 		})
 	}
 
@@ -206,12 +207,16 @@ func snapshotFiles(ctx context.Context, record installer.InstallRecord, full boo
 		return nil, err
 	}
 	files := []string{}
-	for _, file := range summary.Files {
-		if file.Status != integrity.StatusOK.String() {
-			path := filepath.Join(record.InstallRoot, filepath.FromSlash(file.Path))
-			if _, err := os.Stat(path); err == nil {
-				files = append(files, file.Path)
-			}
+	for _, file := range summary.Items {
+		if file.Kind != ValidationKindFile || file.State == ValidationStateOK {
+			continue
+		}
+		if file.Path == "" {
+			continue
+		}
+		path := filepath.Join(record.InstallRoot, filepath.FromSlash(file.Path))
+		if _, err := os.Stat(path); err == nil {
+			files = append(files, file.Path)
 		}
 	}
 	return files, nil
