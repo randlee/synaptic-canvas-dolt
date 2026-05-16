@@ -1984,7 +1984,7 @@ Detailed sprint plan: [4.9 Uninstall Atomicity And Installer PATH Hardening](./p
 | 1. Foundation | 1.1–1.5 | Scaffold + CI pipeline, Dolt client, integrity, log-debug agent, gap closure |
 | 2. Admin | 2.1–2.4 | Import, export, verify, publish |
 | 3. End-User | 3.1–3.9 | List, install, validate, upgrade, HTTP client, SHA catalog, scan, import collision, scope/yolo/severity |
-| 4. AI Surface | 4.1–4.9 | JSON contract, backend parity, readback, sc:plugin, installer, error/fixture hardening |
+| 4. AI Surface | 4.1–4.10 | JSON contract, backend parity, readback, sc:plugin, installer, error/fixture hardening |
 | 5. Release | 5.1 | GoReleaser release pipeline |
 
 ---
