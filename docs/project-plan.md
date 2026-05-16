@@ -1487,10 +1487,10 @@ const (
 )
 ```
 
-`config.Config` has no `Global` or `Local` field. Remove `--global` and
-`--local` aliases from all command registrations, documentation, help text, and
-tests. Known implementation cleanup points include:
-- `src/cmd/install.go:21` (`cmd.Flags().BoolP("global", ...)`)
+`config.Config` has no `Global` or `Local` field. Remove legacy scope aliases
+from all command registrations, documentation, help text, and tests. Known
+implementation cleanup points include:
+- `src/cmd/install.go:21`
 - `src/cmd/upgrade.go:28`
 - `src/cmd/uninstall.go:26`
 
@@ -1501,7 +1501,7 @@ Default when `--scope` omitted: `both`.
 
 Command audit requirement: Sprint 3.9 must audit all command registrations,
 help output, docs, JSON examples, and tests to ensure `--scope` is the only
-local/global selection interface. `--global` and `--local` must not appear as
+local/global selection interface. Legacy scope aliases must not appear as
 accepted CLI flags after this sprint.
 
 ---
@@ -1654,7 +1654,7 @@ Mandatory test cases:
 **Acceptance Criteria:**
 
 - All scope-aware commands accept `--scope` enum; omitting defaults to `both`
-- `--global` and `--local` flags removed from all CLI commands
+- Legacy scope aliases removed from all CLI commands
 - Scope audit confirms command registrations, help text, docs, JSON examples,
   and tests use `--scope` consistently
 - `--yolo` skips interactive prompts while recording full provenance

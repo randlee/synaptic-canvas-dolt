@@ -90,7 +90,7 @@ func initPublishRepo(t *testing.T) string {
 
 func importFixtureToBranch(t *testing.T, repoDir, branch, fixtureDir string) {
 	t.Helper()
-	svc := importer.Service{Writer: dolt.NewCLIWriter(repoDir)}
+	svc := importer.Service{Writer: dolt.NewCLIWriter(repoDir), Client: dolt.NewCLIReader(repoDir, branch)}
 	if _, err := svc.Import(context.Background(), importer.ImportRequest{
 		PackageDir: fixtureDir,
 		Branch:     branch,

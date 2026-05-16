@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/installer"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/repo"
@@ -18,6 +17,7 @@ type initResponse struct {
 	Root      string   `json:"root"`
 	Created   []string `json:"created"`
 	Refreshed []string `json:"refreshed"`
+	Warnings  []string `json:"warnings,omitempty"`
 }
 
 var initializeRepoFunc = initializeRepo
@@ -31,7 +31,7 @@ func NewInitCmd() *cobra.Command {
 }
 
 func runInitCmd(cmd *cobra.Command, _ []string) error {
-	cfg, err := config.NewConfigFromFlags(cmd)
+	cfg, err := loadConfig(cmd)
 	if err != nil {
 		return fmt.Errorf("reading config flags: %w", err)
 	}
@@ -55,6 +55,7 @@ func runInitCmd(cmd *cobra.Command, _ []string) error {
 		}
 		return err
 	}
+	resp.Warnings = refreshCatalogWithConfigNonFatal(cmd.Context(), formatter, root, cfg)
 	if cfg.JSON {
 		return formatter.WriteJSON(resp)
 	}
@@ -89,11 +90,9 @@ func initializeRepo(root string) (initResponse, error) {
 		"SYNAPTIC_AGENTS":       "claude",
 	}
 
-	lock, err := installer.LoadManifestLock(root)
-	if err != nil {
-		return initResponse{}, err
-	}
-	if err := installer.SaveManifestLock(root, lock); err != nil {
+	if err := installer.WithManifestLock(root, func(_ *installer.ManifestLock) error {
+		return nil
+	}); err != nil {
 		return initResponse{}, err
 	}
 	if err := installer.SaveRepoProfile(root, profile); err != nil {
@@ -102,7 +101,9 @@ func initializeRepo(root string) (initResponse, error) {
 	if err := installer.SaveEnv(root, env); err != nil {
 		return initResponse{}, err
 	}
-	if err := installer.SaveHookRegistry(root, installer.HookRegistry{}); err != nil {
+	if err := installer.WithHookRegistry(root, func(_ *installer.HookRegistry) error {
+		return nil
+	}); err != nil {
 		return initResponse{}, err
 	}
 

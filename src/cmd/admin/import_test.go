@@ -1,12 +1,19 @@
 package admin
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/randlee/synaptic-canvas-dolt/internal/output"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/importer"
 	"github.com/spf13/cobra"
 )
 
@@ -29,6 +36,7 @@ func TestNewImportCmdUsesEffectiveBranch(t *testing.T) {
 		"    if [ \"$2\" = \"--list\" ]; then echo \"$3\"; exit 0; fi\n" +
 		"    ;;\n" +
 		"  --branch)\n" +
+		"    if [ \"$3\" = \"sql\" ] && [ \"$4\" = \"-q\" ]; then echo '{\"rows\":[]}'; exit 0; fi\n" +
 		"    if [ \"$3\" = \"sql\" ]; then cat > \"" + sqlPath + "\"; exit 0; fi\n" +
 		"    ;;\n" +
 		"esac\n" +
@@ -43,12 +51,13 @@ func TestNewImportCmdUsesEffectiveBranch(t *testing.T) {
 
 	cmd := NewImportCmd()
 	cmd.Root().PersistentFlags().String("dolt-dir", "", "")
+	cmd.Root().PersistentFlags().String("dolt-client", "", "")
 	cmd.Root().PersistentFlags().String("remote", "", "")
 	cmd.Root().PersistentFlags().String("branch", "", "")
 	cmd.Root().PersistentFlags().Bool("json", false, "")
 	cmd.Root().PersistentFlags().Bool("quiet", false, "")
 	cmd.Root().PersistentFlags().Bool("verbose", false, "")
-	cmd.SetArgs([]string{"--dolt-dir", tempDir, filepath.Join("..", "..", "pkg", "importer", "testdata", "basic-package")})
+	cmd.SetArgs([]string{"--dolt-dir", tempDir, "--dolt-client", "cli", filepath.Join("..", "..", "pkg", "importer", "testdata", "basic-package")})
 	err := cmd.Execute()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -67,6 +76,94 @@ func TestFormatImportAck(t *testing.T) {
 	t.Parallel()
 	if got := FormatImportAck("pkg", "develop"); got != "importing pkg into develop" {
 		t.Fatalf("FormatImportAck() = %q", got)
+	}
+}
+
+func TestImportCommandPropagatesCommandContext(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a POSIX shell fake dolt executable")
+	}
+
+	tempDir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(tempDir, ".dolt"), 0o755); err != nil { //nolint:gosec // G301: test directory permissions are intentional.
+		t.Fatal(err)
+	}
+	scriptPath := filepath.Join(tempDir, "dolt")
+	script := "#!/bin/sh\nsleep 10\n"
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil { //nolint:gosec // G306: test helper script permissions are intentional.
+		t.Fatal(err)
+	}
+	oldPath := os.Getenv("PATH")
+	t.Setenv("PATH", tempDir+string(os.PathListSeparator)+oldPath)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cmd := NewImportCmd()
+	cmd.SetContext(ctx)
+	cmd.Root().PersistentFlags().String("dolt-dir", "", "")
+	cmd.Root().PersistentFlags().String("dolt-client", "", "")
+	cmd.Root().PersistentFlags().String("remote", "", "")
+	cmd.Root().PersistentFlags().String("branch", "", "")
+	cmd.Root().PersistentFlags().Bool("json", false, "")
+	cmd.Root().PersistentFlags().Bool("quiet", false, "")
+	cmd.Root().PersistentFlags().Bool("verbose", false, "")
+	cmd.SetArgs([]string{"--dolt-dir", tempDir, "--dolt-client", "cli", filepath.Join("..", "..", "pkg", "importer", "testdata", "basic-package")})
+
+	start := time.Now()
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("Execute() error = nil, want context cancellation")
+	}
+	if time.Since(start) > time.Second {
+		t.Fatalf("Execute() did not return promptly after context cancellation: %v", err)
+	}
+}
+
+func TestWriteImportJSONErrorShape(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	formatter := output.NewFormatter(true, false)
+	formatter.Writer = &out
+	handled, err := writeImportJSONError(formatter, &importer.SHACollisionError{
+		File:        "skills/sample-skill/SKILL.md.j2",
+		Package:     "sample-skill",
+		Version:     "1.2.3",
+		Branch:      "develop",
+		ExistingSHA: "existing",
+		IncomingSHA: "incoming",
+	})
+	if !handled {
+		t.Fatal("collision error was not handled")
+	}
+	if err == nil {
+		t.Fatal("writeImportJSONError() error = nil, want collision error")
+	}
+	var got struct {
+		OK    bool `json:"ok"`
+		File  string
+		Error struct {
+			Code        string `json:"code"`
+			Message     string `json:"message"`
+			Package     string `json:"package"`
+			Version     string `json:"version"`
+			Branch      string `json:"branch"`
+			ExistingSHA string `json:"existing_sha"`
+			IncomingSHA string `json:"incoming_sha"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
+	}
+	if got.OK || got.File != "skills/sample-skill/SKILL.md.j2" || got.Error.Code != "sha_collision" {
+		t.Fatalf("unexpected envelope: %+v", got)
+	}
+	if got.Error.Package != "sample-skill" || got.Error.Version != "1.2.3" || got.Error.Branch != "develop" ||
+		got.Error.ExistingSHA != "existing" || got.Error.IncomingSHA != "incoming" {
+		t.Fatalf("unexpected collision detail: %+v", got.Error)
+	}
+	if !strings.Contains(got.Error.Message, "SHA collision") {
+		t.Fatalf("message = %q, want collision text", got.Error.Message)
 	}
 }
 

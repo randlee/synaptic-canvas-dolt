@@ -98,6 +98,19 @@ func GetPackageFilesQuery(database, branch string) string {
 	)
 }
 
+// GetPackageFileSHAsQuery returns SQL for checking immutable package file SHAs.
+func GetPackageFileSHAsQuery(database, branch string) string {
+	return fmt.Sprintf(
+		`SELECT pf.package_id, p.version, pf.dest_path AS doc_path, pf.sha256
+FROM %s AS pf
+JOIN %s AS p ON p.id = pf.package_id
+WHERE pf.package_id = ? AND pf.dest_path = ?
+ORDER BY p.version`,
+		BranchQualifiedFrom(database, branch, "package_files"),
+		BranchQualifiedFrom(database, branch, "packages"),
+	)
+}
+
 // GetPackageDepsQuery returns the SQL for fetching package dependencies.
 func GetPackageDepsQuery(database, branch string) string {
 	return fmt.Sprintf(
@@ -127,5 +140,19 @@ func ResolveVariantQuery(database, branch string) string {
 	return fmt.Sprintf(
 		"SELECT variant_package_id FROM %s WHERE logical_id = ? AND agent_profile = ?",
 		BranchQualifiedFrom(database, branch, "package_variants"),
+	)
+}
+
+// GetPackageCatalogQuery returns package asset hashes for catalog refresh.
+func GetPackageCatalogQuery(database, branch string) string {
+	packagesTable := BranchQualifiedFrom(database, branch, "packages")
+	filesTable := BranchQualifiedFrom(database, branch, "package_files")
+	return fmt.Sprintf(
+		`SELECT f.package_id, p.version, f.dest_path AS doc_path, f.sha256
+FROM %s AS f
+JOIN %s AS p ON p.id = f.package_id
+WHERE COALESCE(f.sha256, '') <> ''
+ORDER BY f.package_id, p.version, f.dest_path`,
+		filesTable, packagesTable,
 	)
 }

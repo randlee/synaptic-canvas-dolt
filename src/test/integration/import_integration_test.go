@@ -27,7 +27,7 @@ func TestImportWritesRowsToRealDoltRepo(t *testing.T) {
 	runCmd(t, repoDir, "dolt", "commit", "-m", "init schema")
 	runCmd(t, repoDir, "dolt", "branch", "develop")
 
-	svc := importer.Service{Writer: dolt.NewCLIWriter(repoDir)}
+	svc := importer.Service{Writer: dolt.NewCLIWriter(repoDir), Client: dolt.NewCLIReader(repoDir, "develop")}
 	fixtureDir := filepath.Join("..", "..", "pkg", "importer", "testdata", "basic-package")
 	summary, err := svc.Import(context.Background(), importer.ImportRequest{
 		PackageDir: fixtureDir,

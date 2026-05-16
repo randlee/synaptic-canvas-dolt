@@ -25,6 +25,7 @@ func NewValidateCmd() *cobra.Command {
 		RunE:  runValidateCmd,
 	}
 	cmd.Flags().Bool("all", false, "validate all tracked installs")
+	cmd.Flags().String("scope", "both", "validation scope: project, global, or both")
 	return cmd
 }
 
@@ -37,6 +38,10 @@ func runValidateCmd(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("reading --all: %w", err)
 	}
+	scope, err := cmd.Flags().GetString("scope")
+	if err != nil {
+		return fmt.Errorf("reading --scope: %w", err)
+	}
 
 	cfg, err := config.NewConfigFromFlags(cmd)
 	if err != nil {
@@ -45,6 +50,12 @@ func runValidateCmd(cmd *cobra.Command, args []string) error {
 	formatter := output.NewFormatter(cfg.JSON, cfg.Quiet)
 	formatter.Writer = cmd.OutOrStdout()
 	formatter.ErrW = cmd.ErrOrStderr()
+	if err := validateScope(scope); err != nil {
+		if cfg.JSON {
+			return writeJSONError(formatter, "invalid_args", err.Error())
+		}
+		return err
+	}
 
 	if packageID == "" && !all {
 		message := "specify a package name or use --all to validate all installs"
@@ -68,7 +79,7 @@ func runValidateCmd(cmd *cobra.Command, args []string) error {
 		}
 		return err
 	}
-	filtered := filterInstalls(installs, packageID)
+	filtered := filterInstallsByScope(filterInstalls(installs, packageID), scope)
 	if len(filtered) == 0 {
 		message := "no tracked installs found"
 		if packageID != "" {
@@ -82,7 +93,7 @@ func runValidateCmd(cmd *cobra.Command, args []string) error {
 	summaries := make([]validatedInstall, 0, len(filtered))
 	pass := true
 	for _, install := range filtered {
-		summary, err := validateTrackedInstall(install.Record)
+		summary, err := validateTrackedInstall(cmd.Context(), install.Record)
 		if err != nil {
 			if cfg.JSON {
 				return writeJSONError(formatter, "query_failed", err.Error())
@@ -96,11 +107,17 @@ func runValidateCmd(cmd *cobra.Command, args []string) error {
 	}
 
 	if cfg.JSON {
-		return formatter.WriteJSON(validateResponse{
+		if err := formatter.WriteJSON(validateResponse{
 			OK:       true,
 			Pass:     pass,
 			Packages: summaries,
-		})
+		}); err != nil {
+			return err
+		}
+		if !pass {
+			return errors.New("validation failed")
+		}
+		return nil
 	}
 
 	rows := make([][]string, 0, len(summaries))
@@ -109,35 +126,50 @@ func runValidateCmd(cmd *cobra.Command, args []string) error {
 			summary.Package,
 			summary.Scope,
 			summary.Status,
-			fmt.Sprintf("%d", len(summary.Files)),
-			boolLabel(summary.AggregatePass),
+			fmt.Sprintf("%d", visibleValidatedFileCount(summary.Files, cfg.Verbose)),
+			summary.AggregateStatus,
 		})
 	}
-	if err := formatter.Table([]string{"PACKAGE", "SCOPE", "STATUS", "FILES", "AGGREGATE"}, rows); err != nil {
+	if err := formatter.Table([]string{"PACKAGE", "SCOPE", "STATUS", "ITEMS", "AGGREGATE"}, rows); err != nil {
 		return err
 	}
 	for _, summary := range summaries {
 		formatter.Success(fmt.Sprintf("%s [%s]", summary.Package, summary.Scope))
+		for _, warning := range summary.Warnings {
+			writeWarning(formatter, warning)
+		}
 		fileRows := make([][]string, 0, len(summary.Files))
 		for _, file := range summary.Files {
+			if !cfg.Verbose && file.Severity == ValidationSeverityInfo {
+				continue
+			}
 			status := file.Status
 			if file.Error != "" {
 				status += ": " + file.Error
 			}
-			fileRows = append(fileRows, []string{file.Path, status})
+			fileRows = append(fileRows, []string{file.Path, status, string(file.Severity)})
 		}
-		if err := formatter.Table([]string{"FILE", "STATUS"}, fileRows); err != nil {
+		if err := formatter.Table([]string{"FILE", "STATUS", "SEVERITY"}, fileRows); err != nil {
 			return err
 		}
+	}
+	if !pass {
+		return errors.New("validation failed")
 	}
 	return nil
 }
 
-func boolLabel(v bool) string {
-	if v {
-		return "PASS"
+func visibleValidatedFileCount(files []validatedFile, verbose bool) int {
+	if verbose {
+		return len(files)
 	}
-	return "FAIL"
+	count := 0
+	for _, file := range files {
+		if file.Severity != ValidationSeverityInfo {
+			count++
+		}
+	}
+	return count
 }
 
 func currentRepoRoot() (string, error) {

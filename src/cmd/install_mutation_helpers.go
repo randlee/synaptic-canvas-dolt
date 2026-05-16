@@ -23,17 +23,19 @@ type upgradeResult struct {
 	ToBranch           string   `json:"to_branch"`
 	InstallRoot        string   `json:"install_root"`
 	Warnings           []string `json:"warnings,omitempty"`
+	Skipped            bool     `json:"skipped,omitempty"`
 	FilesWritten       int      `json:"files_written"`
 	TemplateWarnings   []string `json:"template_warnings,omitempty"`
 	DependencyWarnings []string `json:"dependency_warnings,omitempty"`
 }
 
 type uninstallResult struct {
-	Package      string   `json:"package"`
-	Scope        string   `json:"scope"`
-	RemovedFiles []string `json:"removed_files"`
-	Warnings     []string `json:"warnings,omitempty"`
-	HooksRemoved int      `json:"hooks_removed"`
+	Package             string   `json:"package"`
+	Scope               string   `json:"scope"`
+	RemovedFiles        []string `json:"removed_files"`
+	RemovedDependencies []string `json:"removed_dependencies,omitempty"`
+	Warnings            []string `json:"warnings,omitempty"`
+	HooksRemoved        int      `json:"hooks_removed"`
 }
 
 func stateRootForScope(repoRoot, scope string) (string, error) {
@@ -47,40 +49,17 @@ func stateRootForScope(repoRoot, scope string) (string, error) {
 	return repoRoot, nil
 }
 
-func selectInstall(installs []trackedInstall, packageID string, global bool) (*trackedInstall, error) {
-	scope := "project"
-	if global {
-		scope = "global"
-	}
+func selectInstalls(installs []trackedInstall, packageID, scope string) []trackedInstall {
 	var matches []trackedInstall
 	for _, install := range installs {
-		if install.Record.Package == packageID && install.Record.InstallScope == scope {
+		if install.Record.Package == packageID && (scope == "both" || install.Record.InstallScope == scope) {
 			matches = append(matches, install)
 		}
 	}
-	if len(matches) == 1 {
-		return &matches[0], nil
-	}
-	if len(matches) == 0 {
-		if !global {
-			for _, install := range installs {
-				if install.Record.Package == packageID {
-					return &install, nil
-				}
-			}
-		}
-		return nil, fmt.Errorf("package %q is not installed", packageID)
-	}
-	return nil, fmt.Errorf("package %q has multiple %s installs", packageID, scope)
+	return matches
 }
 
-func fetchUpgradePackage(ctx context.Context, opener func(string, string) (readClient, error), doltDir string, branch string, install installer.InstallRecord) (*models.Package, []models.PackageFile, []models.PackageDep, []models.PackageHook, []models.PackageQuestion, error) {
-	client, err := opener(doltDir, branch)
-	if err != nil {
-		return nil, nil, nil, nil, nil, err
-	}
-	defer func() { _ = client.Close() }()
-
+func fetchUpgradePackage(ctx context.Context, client readClient, branch string, install installer.InstallRecord) (*models.Package, []models.PackageFile, []models.PackageDep, []models.PackageHook, []models.PackageQuestion, error) {
 	targetID := install.Package
 	if variantID, err := client.ResolveVariant(ctx, install.Package, install.Variant); err != nil {
 		return nil, nil, nil, nil, nil, err
@@ -144,6 +123,17 @@ func buildUpgradeWarnings(install installer.InstallRecord, validation validatedI
 	return warnings
 }
 
+func dependencyBlockers(deps []models.PackageDep) []string {
+	blockers := []string{}
+	for _, dep := range deps {
+		name := strings.ToLower(dep.DepName + " " + dep.DepSpec)
+		if strings.Contains(name, "incompatible") || strings.Contains(name, "missing") || strings.Contains(name, "blocked") {
+			blockers = append(blockers, fmt.Sprintf("incompatible dependency: %s%s", dep.DepName, dep.DepSpec))
+		}
+	}
+	return blockers
+}
+
 func hasLocalModifications(validation validatedInstall) bool {
 	for _, file := range validation.Files {
 		if file.Status == "MODIFIED" || file.Status == "UNREADABLE" {
@@ -167,6 +157,50 @@ func removeOwnedFiles(root string, record installer.InstallRecord) ([]string, er
 	return removed, nil
 }
 
+func removeInstallRecord(lock *installer.ManifestLock, record installer.InstallRecord) bool {
+	if lock.RemoveInstall(record.InstallID) {
+		return true
+	}
+	for i := range lock.Installs {
+		current := lock.Installs[i]
+		if current.Package == record.Package && current.InstallScope == record.InstallScope {
+			lock.Installs = append(lock.Installs[:i], lock.Installs[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+func rollbackInstallSummary(repoRoot string, summary installer.Summary) error {
+	stateRoot, err := stateRootForScope(repoRoot, summary.Scope)
+	if err != nil {
+		return err
+	}
+	errs := make([]error, 0, 3)
+	for _, file := range summary.Files {
+		path := filepath.FromSlash(file.Path)
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			errs = append(errs, fmt.Errorf("removing %s: %w", file.Path, err))
+			continue
+		}
+		pruneEmptyParents(filepath.Dir(path), summary.InstallRoot)
+	}
+	pruneEmptyParents(filepath.FromSlash(summary.InstallRoot), stateRoot)
+	if err := installer.WithManifestLock(stateRoot, func(lock *installer.ManifestLock) error {
+		lock.RemoveInstall(fmt.Sprintf("pkg_%s_%s", summary.PackageID, summary.Scope))
+		return nil
+	}); err != nil {
+		errs = append(errs, err)
+	}
+	if err := installer.WithHookRegistry(stateRoot, func(registry *installer.HookRegistry) error {
+		registry.RemovePackageHooks(summary.PackageID, summary.Scope)
+		return nil
+	}); err != nil {
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
+}
+
 func pruneEmptyParents(path, stop string) {
 	current := path
 	for strings.HasPrefix(current, stop) && current != stop {
@@ -176,31 +210,6 @@ func pruneEmptyParents(path, stop string) {
 		}
 		current = filepath.Dir(current)
 	}
-}
-
-func removeHookEntries(registry installer.HookRegistry, skill string, keep bool) (installer.HookRegistry, int) {
-	if keep {
-		return registry, 0
-	}
-	filtered := installer.HookRegistry{Hooks: make([]installer.HookEntry, 0, len(registry.Hooks))}
-	removed := 0
-	for _, hook := range registry.Hooks {
-		if hook.Skill == skill {
-			removed++
-			continue
-		}
-		filtered.Hooks = append(filtered.Hooks, hook)
-	}
-	return filtered, removed
-}
-
-func hasOtherInstall(installs []trackedInstall, record installer.InstallRecord) bool {
-	for _, install := range installs {
-		if install.Record.InstallID != record.InstallID && install.Record.Package == record.Package {
-			return true
-		}
-	}
-	return false
 }
 
 func currentProfileSnapshot(repoRoot string) map[string]any {

@@ -205,7 +205,7 @@ Architecture rules:
   `uninstall` must be able to reason about project-local installs, global
   installs, or both in one invocation
 - scope-aware end-user commands use `--scope` with an enum and default to
-  `both` when omitted; `--global` and `--local` are not accepted aliases
+  `both` when omitted; legacy scope aliases are not accepted
 - validation is broader than file checksum verification; it includes installed
   file presence, aggregate package integrity, dependency presence, dependency
   version compatibility, hook registration state, and template-validation state

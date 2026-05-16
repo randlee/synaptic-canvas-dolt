@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -43,7 +44,7 @@ func NewSnapshotCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE:  runSnapshotCmd,
 	}
-	cmd.Flags().String("scope", "", "project or global")
+	cmd.Flags().String("scope", "both", "snapshot scope: project, global, or both")
 	cmd.Flags().Bool("full", false, "snapshot the full installed package")
 	return cmd
 }
@@ -66,6 +67,12 @@ func runSnapshotCmd(cmd *cobra.Command, args []string) error {
 	formatter := output.NewFormatter(cfg.JSON, cfg.Quiet)
 	formatter.Writer = cmd.OutOrStdout()
 	formatter.ErrW = cmd.ErrOrStderr()
+	if err := validateScope(scope); err != nil {
+		if cfg.JSON {
+			return writeJSONError(formatter, "invalid_args", err.Error())
+		}
+		return err
+	}
 
 	repoRoot, err := currentRepoRoot()
 	if err != nil {
@@ -89,7 +96,7 @@ func runSnapshotCmd(cmd *cobra.Command, args []string) error {
 		}
 		return errors.New(message)
 	}
-	if len(selected) > 1 && scope == "" {
+	if len(selected) > 1 && scope == "both" {
 		message := fmt.Sprintf("package %q is installed in multiple scopes; pass --scope", packageID)
 		if cfg.JSON {
 			return writeJSONError(formatter, "query_failed", message)
@@ -98,7 +105,7 @@ func runSnapshotCmd(cmd *cobra.Command, args []string) error {
 	}
 
 	record := selected[0].Record
-	files, err := snapshotFiles(record, full)
+	files, err := snapshotFiles(cmd.Context(), record, full)
 	if err != nil {
 		if cfg.JSON {
 			return writeJSONError(formatter, "query_failed", err.Error())
@@ -174,7 +181,7 @@ func runSnapshotCmd(cmd *cobra.Command, args []string) error {
 	return formatter.Table([]string{"FIELD", "VALUE"}, rows)
 }
 
-func snapshotFiles(record installer.InstallRecord, full bool) ([]string, error) {
+func snapshotFiles(ctx context.Context, record installer.InstallRecord, full bool) ([]string, error) {
 	if full {
 		files := []string{}
 		err := filepath.Walk(record.InstallRoot, func(path string, info os.FileInfo, walkErr error) error {
@@ -194,7 +201,7 @@ func snapshotFiles(record installer.InstallRecord, full bool) ([]string, error) 
 		return files, err
 	}
 
-	summary, err := validateTrackedInstall(record)
+	summary, err := validateTrackedInstall(ctx, record)
 	if err != nil {
 		return nil, err
 	}
