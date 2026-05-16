@@ -42,17 +42,17 @@ brews:
     description: "Dolt-backed package manager for Claude Code skills"
     license: "MIT"
 
-# TODO: Enable winget publisher once publisher ID is registered.
-# winget:
-#   - name: sc
-#     publisher: randlee
-#     short_description: "Dolt-backed package manager for Claude Code skills"
-#     license: "MIT"
-#     publisher_url: "https://github.com/randlee/synaptic-canvas"
-#     repository:
-#       owner: randlee
-#       name: winget-pkgs
-#       branch: main
+winget:
+  - name: sc
+    publisher: randlee
+    short_description: "Dolt-backed package manager for Claude Code skills"
+    license: "MIT"
+    publisher_url: "https://github.com/randlee/synaptic-canvas-dolt"
+    repository:
+      owner: randlee
+      name: winget-pkgs
+      branch: main
+      token: "{{ .Env.WINGET_GITHUB_TOKEN }}"
 
 changelog:
   sort: asc
