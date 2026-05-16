@@ -4,6 +4,10 @@ This document records how `sc` connects to Dolt, with direct citations from
 official Dolt documentation. It is the authoritative trace from requirements
 BR-001 through BR-009 to Dolt-supplied API contracts.
 
+It supplements the normative requirements and architecture documents and should
+be reviewed alongside ADR-0002 when transport behavior or client selection is
+changed.
+
 All information below is sourced verbatim from official Dolt documentation.
 URLs are provided for every claim.
 
@@ -11,9 +15,14 @@ URLs are provided for every claim.
 
 ## 1. Deployment Models
 
-Three Dolt deployment models are available. Only one is the MVP target.
+Three Dolt deployment models are supported by Synaptic Canvas. They share one
+public CLI contract but use different transport adapters.
 
-### 1.1 DoltHub.com — HTTP SQL API (MVP)
+For MVP, these modes are not symmetrical for writes: `HTTPClient` is a
+supported read transport only, while write-path admin commands require
+`SQLClient` or `CLIReader` against a writable server or local clone.
+
+### 1.1 DoltHub.com — HTTP SQL API
 
 DoltHub public repos expose an HTTP REST endpoint only. MySQL wire protocol
 is **not** available on dolthub.com.
@@ -34,8 +43,8 @@ GET https://www.dolthub.com/api/v1alpha1/randlee/synaptic-canvas/main?q=SELECT+*
 for any branch name that may contain `/` or other URL-unsafe characters.
 
 **Request method:** DoltHub SQL API reads use GET with the SQL in the `q`
-query parameter. The MVP `HTTPClient` must keep generated SQL short enough for
-GET and must not switch to POST for long queries.
+query parameter. `HTTPClient` must keep generated SQL short enough for GET and
+must not switch to POST for long queries.
 
 Response envelope:
 ```json
@@ -73,9 +82,10 @@ Authorization: token <TOKEN>
 
 Branch targeting is in the URL path — no session mutation.
 
-### 1.2 Hosted Dolt — MySQL Protocol (Future)
+### 1.2 Hosted Dolt — MySQL Protocol
 
-DoltHub's managed hosting exposes MySQL wire protocol.
+Hosted Dolt or another MySQL-compatible Dolt server can be accessed through
+`SQLClient`.
 
 - **Source:** https://docs.dolthub.com/products/hosted/getting-started
 
@@ -103,10 +113,11 @@ SELECT * FROM `randlee/synaptic-canvas/main`.packages WHERE id = ?
 > queries."
 > — https://docs.dolthub.com/sql-reference/version-control/branches
 
-### 1.3 Local dolt sql-server — MySQL Protocol (Alternative)
+### 1.3 Local dolt sql-server — MySQL Protocol
 
 Self-hosted `dolt sql-server` on the developer's machine or a private server.
-Same MySQL protocol as Hosted Dolt. Not part of MVP.
+Same MySQL protocol as Hosted Dolt. Synaptic Canvas may use `SQLClient`
+against this deployment model when configured to do so.
 
 - **Source:** https://docs.dolthub.com/sql-reference/supported-clients/clients
 
@@ -116,11 +127,11 @@ Same MySQL protocol as Hosted Dolt. Not part of MVP.
 > "Once a server is running, any MySQL client should be able to connect to Dolt
 > SQL Server in the exact same way it connects to a standard MySQL database."
 
-### 1.4 CLIReader — Local dolt binary (Alternative / Dev Only)
+### 1.4 CLIReader — Local dolt binary
 
 Shells out to `dolt sql -q` with the local dolt binary. Requires dolt
-installed in PATH and a local repo clone. Not part of MVP; retained as a
-documented alternative for offline or development use.
+installed in PATH and a local repo clone. Synaptic Canvas supports this mode as
+the local-clone adapter for repositories that use a checked-out Dolt database.
 
 ---
 
@@ -197,12 +208,12 @@ Source: https://docs.dolthub.com/sql-reference/version-control/querying-history
 
 ## 4. MVP vs Future Deployment
 
-| Mode | MVP | Notes |
-|------|-----|-------|
-| DoltHub HTTP API | **Yes** | Public repo = no auth; private = token header |
-| Hosted Dolt MySQL | Future | MySQL protocol; branch-qualified table references |
-| Local dolt sql-server | Alternative | Dev/offline; MySQL protocol; requires dolt binary |
-| CLIReader (dolt binary) | Dev only | Subprocess; not for end users |
+| Mode | Supported | Notes |
+|------|-----------|-------|
+| DoltHub HTTP API | **Yes** | Use `HTTPClient`; public repo = no auth; private = token header |
+| Hosted Dolt MySQL | **Yes** | Use `SQLClient`; branch-qualified table references |
+| Local dolt sql-server | **Yes** | Use `SQLClient`; dev/private deployments |
+| CLIReader (dolt binary) | **Yes** | Use `CLIReader`; local clone / subprocess mode |
 
 Private repo access in MVP requires a DoltHub API token stored in sc config.
 Public repo requires no credentials.
