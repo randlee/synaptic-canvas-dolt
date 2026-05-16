@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
@@ -107,14 +108,16 @@ func runUninstallCmd(cmd *cobra.Command, args []string) error {
 			}
 			return err
 		}
-		if err := installer.WithManifestLock(stateRoot, func(lock *installer.ManifestLock) error {
-			removeInstallRecord(lock, target.Record)
-			return nil
-		}); err != nil {
+		removedFiles, failedFiles := removeOwnedFiles(stateRoot, target.Record)
+		if len(failedFiles) > 0 {
+			message := fmt.Sprintf(
+				"conflict removing tracked files: %s; manifest record preserved",
+				strings.Join(failedFiles, ", "),
+			)
 			if cfg.JSON {
-				return writeClassifiedJSONError(formatter, cfg, err, cmd.Name())
+				return writeJSONError(formatter, api.ErrorCodeConflict, message)
 			}
-			return err
+			return fmt.Errorf("%s", message)
 		}
 		hooksRemoved := 0
 		if err := installer.WithHookRegistry(stateRoot, func(registry *installer.HookRegistry) error {
@@ -126,11 +129,12 @@ func runUninstallCmd(cmd *cobra.Command, args []string) error {
 			}
 			return err
 		}
-		removedFiles, err := removeOwnedFiles(stateRoot, target.Record)
-		if err != nil {
-			writeWarning(formatter, "manifest updated but file removal failed: "+err.Error())
+		if err := installer.WithManifestLock(stateRoot, func(lock *installer.ManifestLock) error {
+			removeInstallRecord(lock, target.Record)
+			return nil
+		}); err != nil {
 			if cfg.JSON {
-				return writeClassifiedJSONError(formatter, cfg, err)
+				return writeClassifiedJSONError(formatter, cfg, err, cmd.Name())
 			}
 			return err
 		}

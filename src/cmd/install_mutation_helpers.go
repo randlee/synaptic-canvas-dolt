@@ -123,18 +123,27 @@ func hasLocalModifications(validation validatedInstall) bool {
 	return false
 }
 
-func removeOwnedFiles(root string, record installer.InstallRecord) ([]string, error) {
+func removeOwnedFiles(root string, record installer.InstallRecord) ([]string, []string) {
 	removed := make([]string, 0, len(record.Files))
+	failed := make([]string, 0)
+	paths := make([]string, 0, len(record.Files))
 	for rel := range record.Files {
+		paths = append(paths, rel)
+	}
+	slices.Sort(paths)
+	for _, rel := range paths {
 		path := filepath.Join(record.InstallRoot, filepath.FromSlash(rel))
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return removed, err
+			failed = append(failed, rel)
+			continue
 		}
 		removed = append(removed, rel)
 		pruneEmptyParents(filepath.Dir(path), record.InstallRoot)
 	}
-	pruneEmptyParents(record.InstallRoot, root)
-	return removed, nil
+	if len(failed) == 0 {
+		pruneEmptyParents(record.InstallRoot, root)
+	}
+	return removed, failed
 }
 
 func removeInstallRecord(lock *installer.ManifestLock, record installer.InstallRecord) bool {

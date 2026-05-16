@@ -29,6 +29,29 @@ function Write-Note {
     Write-Host $Message
 }
 
+function Add-PathEntry {
+    param([string]$BinDir)
+
+    $separator = [System.IO.Path]::PathSeparator
+    $pathEntries = @()
+    if ($env:PATH) {
+        $pathEntries = $env:PATH -split [System.IO.Path]::PathSeparator | Where-Object { $_ }
+    }
+    if (-not ($pathEntries -contains $BinDir)) {
+        $env:PATH = if ($env:PATH) { $BinDir + $separator + $env:PATH } else { $BinDir }
+    }
+
+    $userPath = [Environment]::GetEnvironmentVariable("PATH", [EnvironmentVariableTarget]::User)
+    $userEntries = @()
+    if ($userPath) {
+        $userEntries = $userPath -split [System.IO.Path]::PathSeparator | Where-Object { $_ }
+    }
+    if (-not ($userEntries -contains $BinDir)) {
+        $updatedUserPath = if ($userPath) { $userPath + $separator + $BinDir } else { $BinDir }
+        [Environment]::SetEnvironmentVariable("PATH", $updatedUserPath, [EnvironmentVariableTarget]::User)
+    }
+}
+
 function Get-UniqueSiblingPath {
     param(
         [string]$Parent,
@@ -192,9 +215,7 @@ try {
     }
     Set-Content -LiteralPath $skillManifest -Value $sourceFiles
 
-    if (-not (($env:PATH -split [System.IO.Path]::PathSeparator) -contains $binDir)) {
-        Write-Note "warning: $binDir is not currently on PATH"
-    }
+    Add-PathEntry -BinDir $binDir
 
     Write-Note "Installed sc to $binPath"
     Write-Note "Installed sc:plugin to $skillTarget"

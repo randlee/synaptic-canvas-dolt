@@ -10,6 +10,33 @@ note() {
   printf '%s\n' "$*"
 }
 
+ensure_current_path() {
+  case ":${PATH:-}:" in
+    *":$BIN_DIR:"*) ;;
+    *)
+      export PATH="$BIN_DIR:${PATH:-}"
+      ;;
+  esac
+}
+
+path_rc_file() {
+  case "$(basename "${SHELL:-bash}")" in
+    zsh) printf '%s\n' "$HOME_DIR/.zshrc" ;;
+    *) printf '%s\n' "$HOME_DIR/.bashrc" ;;
+  esac
+}
+
+ensure_shell_rc_path() {
+  local rc_file path_line
+  rc_file="$(path_rc_file)"
+  path_line="export PATH=\"$BIN_DIR:\$PATH\""
+  mkdir -p "$(dirname "$rc_file")"
+  touch "$rc_file"
+  if ! grep -Fqx "$path_line" "$rc_file"; then
+    printf '%s\n' "$path_line" >> "$rc_file"
+  fi
+}
+
 maybe_fail_skill_copy() {
   local threshold="${SC_INSTALL_TEST_FAIL_AFTER_SKILL_COPY:-0}"
   if [[ ! "$threshold" =~ ^[0-9]+$ ]] || (( threshold <= 0 )); then
@@ -145,13 +172,8 @@ else
   die "failed to move staged skill payload into place"
 fi
 cp "$SOURCE_LIST" "$SKILL_MANIFEST"
-
-case ":${PATH:-}:" in
-  *":$BIN_DIR:"*) ;;
-  *)
-    note "warning: $BIN_DIR is not currently on PATH"
-    ;;
-esac
+ensure_current_path
+ensure_shell_rc_path
 
 note "Installed sc to $BIN_PATH"
 note "Installed sc:plugin to $SKILL_TARGET"
