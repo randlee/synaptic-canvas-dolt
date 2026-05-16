@@ -8,6 +8,7 @@ import (
 	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/api"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/operations"
 	"github.com/spf13/cobra"
 )
 
@@ -69,14 +70,14 @@ func runValidateCmd(cmd *cobra.Command, args []string) error {
 		}
 		return err
 	}
-	installs, err := loadTrackedInstalls(repoRoot)
+	installs, err := operations.LoadTrackedInstalls(repoRoot)
 	if err != nil {
 		if cfg.JSON {
 			return writeClassifiedJSONError(formatter, cfg, err)
 		}
 		return err
 	}
-	filtered := filterInstallsByScope(filterInstalls(installs, packageID), scope)
+	filtered := operations.FilterInstallsByScope(operations.FilterInstalls(installs, packageID), scope)
 	if len(filtered) == 0 {
 		message := "no tracked installs found"
 		if packageID != "" {

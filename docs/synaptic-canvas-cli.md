@@ -584,6 +584,9 @@ file-state vocabulary only: `ok`, `modified`, `missing`, `unreadable`, and
 target-identification fields such as `dependency`, `hook_event`, or
 `hook_script`.
 
+The validation severity vocabulary is fixed and normative: `info`, `warn`,
+`error`, and `critical`.
+
 Representative dependency item:
 
 ```json
