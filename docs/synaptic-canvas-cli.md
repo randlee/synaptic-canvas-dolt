@@ -68,6 +68,24 @@ The `sc` installer installs both:
 
 This means any repo immediately has both the CLI and Claude's ability to use it.
 
+Managed install roots for the MVP installer are:
+- `sc` binary at the selected executable target, defaulting to `~/.local/bin/sc`
+  on macOS/Linux and `%USERPROFILE%/AppData/Local/Programs/SynapticCanvas/bin/sc.exe`
+  on Windows unless an explicit installer bin directory override is supplied
+- `sc:plugin` under `~/.claude/skills/sc-plugin/`
+- CLI config at `~/.sc/config.toml`
+- installer-owned reconciliation metadata under `~/.synaptic/installers/sc-plugin/`
+
+Reruns preserve a strict managed/unmanaged split:
+- managed: the installed `sc` binary, tracked `sc:plugin` files, and the
+  installer manifest under `~/.synaptic/`
+- unmanaged: user edits to `~/.sc/config.toml`, unrelated files under
+  `~/.claude/`, and repository-local package installs
+
+Installer reruns overwrite managed files from source, remove no-longer-managed
+`sc:plugin` files listed in the installer manifest, and leave unrelated user
+files untouched.
+
 ---
 
 ## Command Surface
