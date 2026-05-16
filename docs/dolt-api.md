@@ -138,6 +138,27 @@ of a local `.dolt/` directory from the current working directory. An explicit
 `--dolt-dir` supplied alongside effective `http` or `sql` client selection is
 treated as an invalid conflicting transport input.
 
+### 1.5 Client Selection Precedence
+
+Synaptic Canvas resolves the active Dolt client mode using a fixed four-level
+precedence chain:
+
+1. explicit CLI flag
+2. environment variable
+3. config file
+4. compiled default
+
+For the current CLI, the effective source priority is:
+
+- `--client`
+- `SC_DOLT_CLIENT`
+- `dolt.client` from `~/.sc/config.toml`
+- compiled default client mode
+
+The same pattern applies to related transport selectors such as `--dolt-dir`
+and `--branch`, but client mode precedence is the authoritative transport
+selection chain for Phase 4.
+
 ---
 
 ## 2. Branch Access — Per-Query, No Session Mutation

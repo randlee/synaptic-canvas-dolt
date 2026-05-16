@@ -258,6 +258,37 @@ Architecture rules:
 This keeps runtime-facing files aligned with the host tool while allowing
 Synaptic Canvas to own its own operational state cleanly.
 
+## 6.1 Installer Managed/Unmanaged Boundary
+
+The installer owns a narrow managed set and must preserve everything else.
+
+Managed by the installer:
+
+- the `sc` binary at the selected install location
+- the `sc:plugin` managed payload under `~/.claude/skills/sc-plugin/`
+- installer state under `~/.synaptic/installers/sc-plugin/`
+- the initial creation of `~/.sc/config.toml` when it does not yet exist
+
+Not managed by the installer:
+
+- user edits to `~/.sc/config.toml` after creation
+- unrelated files under `~/.claude/`, such as `~/.claude/agents/`
+- unmanaged files added by the user inside `~/.claude/skills/sc-plugin/`
+- any repo-local package installs or product state outside the installer-owned paths
+
+Boundary enforcement rules:
+
+- the installer updates managed skill payload files by reconstructing the next
+  tree in a staging directory, then swapping it into place only after the copy
+  succeeds
+- unmanaged files inside the target skill tree are preserved into the staged
+  replacement tree before the final swap
+- installer reruns may delete previously managed files that are no longer part
+  of the shipped `sc:plugin` payload, but must not delete unmanaged files
+- failure during staged copy must leave the live installed skill tree unchanged
+- managed/unmanaged behavior is repository-verified by installer tests on both
+  macOS/Linux and Windows
+
 ## 7. Command Architecture
 
 The end-user CLI surface is split into read, install, validation, and export

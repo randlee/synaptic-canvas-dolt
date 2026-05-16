@@ -1892,6 +1892,36 @@ Detailed sprint plan: [4.7 sc:plugin Fixture Verification And Arch Cleanup](./ph
 - Install-ID generation is driven by one named shared constant
 - `src/pkg/dolttest/harness.go` is excluded from production builds by build tag
 
+### Sprint 4.8: Installer Hardening And Doc Gaps
+
+**Goal:** Close the remaining installer safety and Phase 4 documentation gaps
+identified during QA.
+
+Detailed sprint plan: [4.8 Installer Hardening And Doc Gaps](./phase-4/4.8-installer-hardening-and-doc-gaps.md)
+
+**Deliverables:**
+- Atomic installer update flow for managed `sc:plugin` assets on shell and
+  PowerShell installers
+- Failure-injection installer coverage for interrupted managed-asset updates
+- Documentation corrections for transport precedence and installer boundary
+  behavior
+
+**Key Requirements:**
+- Installer updates must stage managed assets before swap so interruption cannot
+  leave a partial managed tree behind
+- Managed/unmanaged installer boundaries must remain explicit in both scripts
+  and docs
+- Phase 4 documentation must match the implemented client-selection precedence
+  and installer behavior
+
+**Acceptance Criteria:**
+- Installer updates stage managed assets before swap so interrupted writes do
+  not leave partial managed trees behind
+- Installer tests cover managed copy failure paths on both supported script
+  implementations
+- Phase 4 documentation matches the implemented four-level client-selection
+  precedence and installer behavior
+
 ---
 
 ## Phase 5: Release Pipeline
@@ -1922,7 +1952,7 @@ Detailed sprint plan: [4.7 sc:plugin Fixture Verification And Arch Cleanup](./ph
 | 1. Foundation | 1.1–1.5 | Scaffold + CI pipeline, Dolt client, integrity, log-debug agent, gap closure |
 | 2. Admin | 2.1–2.4 | Import, export, verify, publish |
 | 3. End-User | 3.1–3.9 | List, install, validate, upgrade, HTTP client, SHA catalog, scan, import collision, scope/yolo/severity |
-| 4. AI Surface | 4.1–4.7 | JSON contract, backend parity, readback, sc:plugin, installer, error/fixture hardening |
+| 4. AI Surface | 4.1–4.8 | JSON contract, backend parity, readback, sc:plugin, installer, error/fixture hardening |
 | 5. Release | 5.1 | GoReleaser release pipeline |
 
 ---
