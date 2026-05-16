@@ -186,6 +186,12 @@ func classifyJSONError(message string) api.ErrorCode {
 	switch {
 	case strings.Contains(lower, "not found"):
 		return api.ErrorCodeNotFound
+	case strings.Contains(lower, "invalid --scope"),
+		strings.Contains(lower, "requires <package> or --all"),
+		strings.Contains(lower, "cannot be used with --all"),
+		strings.Contains(lower, "cannot be installed globally"),
+		strings.Contains(lower, "no install scopes were eligible"):
+		return api.ErrorCodeInvalidArgs
 	case strings.Contains(lower, "--dolt-dir may only be used with client=cli"):
 		return api.ErrorCodeInvalidArgs
 	case strings.Contains(lower, "unsupported dolt.client"), strings.Contains(lower, "unsupported backend"):

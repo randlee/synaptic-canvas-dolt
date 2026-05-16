@@ -8,8 +8,6 @@ import (
 	"github.com/randlee/synaptic-canvas-dolt/pkg/operations"
 )
 
-type trackedInstall = operations.TrackedInstall
-
 type validatedInstall = api.ValidatedInstall
 type ValidationSeverity = api.ValidationSeverity
 type ValidationKind = api.ValidationKind
