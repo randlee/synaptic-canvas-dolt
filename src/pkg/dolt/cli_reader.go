@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -36,6 +37,12 @@ type CLIReader struct {
 	Branch  string
 }
 
+type cliCommandResult struct {
+	Stdout []byte
+	Stderr []byte
+	Err    error
+}
+
 func NewCLIReader(doltDir, branch string) *CLIReader {
 	return &CLIReader{DoltDir: doltDir, Branch: branch}
 }
@@ -46,7 +53,16 @@ func (r *CLIReader) Close() error {
 
 func (r *CLIReader) ListPackages(ctx context.Context, opts ListOptions) ([]models.Package, error) {
 	rows, err := runCLIQuery[models.Package](ctx, r.DoltDir, opts.Branch,
-		"SELECT id, name, version, description, agent_variant, tags, install_scope, sha256 FROM packages ORDER BY name",
+		`SELECT p.id, p.name, p.version, p.description, p.agent_variant, p.tags, p.install_scope, p.sha256,
+COALESCE(fc.file_count, 0) AS file_count, COALESCE(dc.dep_count, 0) AS dependency_count
+FROM packages AS p
+LEFT JOIN (
+  SELECT package_id, COUNT(*) AS file_count FROM package_files GROUP BY package_id
+) AS fc ON p.id = fc.package_id
+LEFT JOIN (
+  SELECT package_id, COUNT(*) AS dep_count FROM package_deps GROUP BY package_id
+) AS dc ON p.id = dc.package_id
+ORDER BY p.name`,
 	)
 	if err != nil {
 		return nil, err
@@ -178,23 +194,43 @@ ORDER BY f.package_id, p.version, f.dest_path`,
 }
 
 func runCLIQuery[T any](ctx context.Context, doltDir, branch, query string) ([]T, error) {
-	cmd := exec.CommandContext(ctx, doltCommand, "--branch", branch, "sql", "-q", query, "-r", "json") //nolint:gosec // G204: dolt binary is hardcoded constant.
-	cmd.Dir = doltDir
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("running dolt query on %s: %w: %s", branch, err, strings.TrimSpace(stderr.String()))
+	commandResult := runCLICommand(ctx, doltDir, branch, query)
+	if commandResult.Err != nil {
+		if errors.Is(commandResult.Err, exec.ErrNotFound) {
+			return nil, fmt.Errorf("%w: dolt binary not found in PATH", ErrServerError)
+		}
+		if errors.Is(commandResult.Err, ErrUnauthorized) || errors.Is(commandResult.Err, ErrServerError) || errors.Is(commandResult.Err, ErrBadQuery) {
+			return nil, fmt.Errorf("running dolt query on %s: %w: %s", branch, commandResult.Err, strings.TrimSpace(string(commandResult.Stderr)))
+		}
+		return nil, fmt.Errorf("running dolt query on %s: %w: %s", branch, commandResult.Err, strings.TrimSpace(string(commandResult.Stderr)))
 	}
-	var result cliQueryResult[T]
-	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+	var payload cliQueryResult[T]
+	if err := json.Unmarshal(commandResult.Stdout, &payload); err != nil {
 		return nil, fmt.Errorf("decoding dolt query json: %w", err)
 	}
-	return result.Rows, nil
+	return payload.Rows, nil
 }
 
 var _ Client = (*CLIReader)(nil)
 
 func cliSQLString(v string) string {
 	return "'" + strings.ReplaceAll(v, "'", "''") + "'"
+}
+
+var cliCommandRunner = func(ctx context.Context, doltDir, branch, query string) cliCommandResult {
+	cmd := exec.CommandContext(ctx, doltCommand, "--branch", branch, "sql", "-q", query, "-r", "json") //nolint:gosec // G204: dolt binary is hardcoded constant.
+	cmd.Dir = doltDir
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	return cliCommandResult{
+		Stdout: stdout.Bytes(),
+		Stderr: stderr.Bytes(),
+		Err:    err,
+	}
+}
+
+func runCLICommand(ctx context.Context, doltDir, branch, query string) cliCommandResult {
+	return cliCommandRunner(ctx, doltDir, branch, query)
 }

@@ -250,6 +250,19 @@ Client selection rules:
 4. compatibility inference such as `--dolt-dir` implying `cli`
 5. documented default
 
+`--dolt-dir` is both a path input and a compatibility selector. If no client
+is selected by flag, environment, or file config, an explicit `--dolt-dir`
+implies `cli`. If `--dolt-dir` is supplied while the effective client is
+`http` or `sql`, the CLI fails with `invalid_args` rather than silently
+switching transports.
+
+When the effective client is `cli`, Dolt clone root resolution is:
+
+1. explicit `--dolt-dir`
+2. `SC_DOLT_DIR`
+3. `dolt.dir` from config
+4. upward auto-detection of a local `.dolt/` directory from the current working directory
+
 The public JSON contract must remain the same across `http`, `sql`, and `cli`
 client modes. Backend-specific differences belong in structured metadata or
 error details, not in top-level schema drift.
@@ -258,6 +271,10 @@ Write-path admin commands are different: MVP admin mutations may use `sql` or
 `cli` only. If an admin mutation command resolves to `http`, the CLI returns a
 typed `unsupported_backend` error and does not attempt a silent transport
 switch.
+
+`--client` is the primary public flag. A hidden legacy alias `--dolt-client`
+may remain temporarily for compatibility, but new automation should use
+`--client`.
 
 ---
 

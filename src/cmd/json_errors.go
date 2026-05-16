@@ -6,6 +6,7 @@ import (
 
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/api"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/dolt"
 )
 
 type jsonErrorEnvelope = api.ErrorEnvelope
@@ -79,5 +80,20 @@ func classifyJSONError(message string) api.ErrorCode {
 		return api.ErrorCodeBackendUnavailable
 	default:
 		return api.ErrorCodeInternal
+	}
+}
+
+func classifyJSONErr(err error) api.ErrorCode {
+	switch {
+	case errors.Is(err, dolt.ErrUnauthorized):
+		return api.ErrorCodeBackendAuthFailed
+	case errors.Is(err, dolt.ErrServerError), errors.Is(err, dolt.ErrRateLimited):
+		return api.ErrorCodeBackendUnavailable
+	case errors.Is(err, dolt.ErrBadQuery):
+		return api.ErrorCodeBackendUnavailable
+	case errors.Is(err, dolt.ErrNotFound):
+		return api.ErrorCodeNotFound
+	default:
+		return classifyJSONError(err.Error())
 	}
 }

@@ -19,6 +19,7 @@ func newTestCmd() *cobra.Command {
 		},
 	}
 	pf := cmd.PersistentFlags()
+	pf.String("client", "", "Dolt client to use: http, sql, or cli")
 	pf.String("dolt-client", "", "Dolt client to use: http, sql, or cli")
 	pf.String("dolt-host", "", "DoltHub HTTP API host")
 	pf.String("dolt-database", "", "DoltHub database slug in owner/database format")
@@ -237,7 +238,7 @@ func TestAllDoltConfigFlagsOverrideEnvAndFile(t *testing.T) {
 		flag  string
 		value string
 	}{
-		{key: KeyDoltClient, flag: "--dolt-client", value: "sql"},
+		{key: KeyDoltClient, flag: "--client", value: "sql"},
 		{key: KeyDoltHost, flag: "--dolt-host", value: "example.invalid"},
 		{key: KeyDoltDatabase, flag: "--dolt-database", value: "flag/db"},
 		{key: KeyDoltToken, flag: "--dolt-token", value: "flag-token"},

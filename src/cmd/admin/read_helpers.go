@@ -21,12 +21,8 @@ type readClient interface {
 
 var readClientOpener = openReadClient
 
-func openReadClient(doltDir string, branch string) (readClient, error) {
-	if doltDir != "" {
-		return dolt.NewCLIReader(doltDir, branch), nil
-	}
-	cfg := dolt.DefaultConfig()
-	return dolt.OpenForBranch(cfg, branch)
+func openReadClient(cfg *config.Config, branch string) (readClient, error) {
+	return dolt.OpenConfiguredReadClient(cfg, branch)
 }
 
 func loadConfigAndDoltDir(cmd *cobra.Command) (*config.Config, string, error) {
@@ -34,9 +30,19 @@ func loadConfigAndDoltDir(cmd *cobra.Command) (*config.Config, string, error) {
 	if err != nil {
 		return nil, "", fmt.Errorf("reading config flags: %w", err)
 	}
-	doltDir, err := detectDoltDir(cfg.DoltDirExpanded())
+	if err := cfg.LoadFileConfig(); err != nil {
+		return nil, "", err
+	}
+	selection, err := cfg.ResolveDoltClient()
 	if err != nil {
 		return nil, "", err
+	}
+	doltDir := ""
+	if selection.Client == "cli" {
+		doltDir, err = dolt.DetectDoltDir(selection.DoltDir)
+		if err != nil {
+			return nil, "", err
+		}
 	}
 	return cfg, doltDir, nil
 }
@@ -50,12 +56,12 @@ func resolveReadBranch(cmd *cobra.Command) (string, error) {
 }
 
 func withReadClient(cmd *cobra.Command, branch string, fn func(*config.Config, readClient) error) error {
-	cfg, doltDir, err := loadConfigAndDoltDir(cmd)
+	cfg, _, err := loadConfigAndDoltDir(cmd)
 	if err != nil {
 		return err
 	}
 
-	client, err := readClientOpener(doltDir, branch)
+	client, err := readClientOpener(cfg, branch)
 	if err != nil {
 		return err
 	}
@@ -65,18 +71,18 @@ func withReadClient(cmd *cobra.Command, branch string, fn func(*config.Config, r
 }
 
 func withReadClients(cmd *cobra.Command, branch1, branch2 string, fn func(*config.Config, readClient, readClient) error) error {
-	cfg, doltDir, err := loadConfigAndDoltDir(cmd)
+	cfg, _, err := loadConfigAndDoltDir(cmd)
 	if err != nil {
 		return err
 	}
 
-	client1, err := readClientOpener(doltDir, branch1)
+	client1, err := readClientOpener(cfg, branch1)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = client1.Close() }()
 
-	client2, err := readClientOpener(doltDir, branch2)
+	client2, err := readClientOpener(cfg, branch2)
 	if err != nil {
 		return err
 	}
