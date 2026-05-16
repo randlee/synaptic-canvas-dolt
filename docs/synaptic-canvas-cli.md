@@ -401,16 +401,88 @@ inventing a command-specific top-level code.
     {
       "package": "team-lead",
       "global": {
+        "scope": "global",
         "branch": "main",
         "version": "1.4.0",
+        "install_site": "/Users/randlee",
         "install_root": "/Users/randlee/.claude/skills/team-lead",
-        "validation": "PASS"
+        "validation": "PASS",
+        "aggregate_status": "info",
+        "dependency_summary": {
+          "tracked": 2,
+          "verified": 2,
+          "missing": 0,
+          "items": [
+            {
+              "name": "gh>=2",
+              "dependency_type": "tool",
+              "verified": true,
+              "provenance": "verified-at-install"
+            }
+          ]
+        },
+        "hook_summary": {
+          "tracked": 1,
+          "registered": 1,
+          "missing": 0,
+          "hooks": [
+            {
+              "hook_event": "PreToolUse",
+              "hook_matcher": "git commit",
+              "hook_script": "hooks/pre-commit.sh",
+              "scope": "global",
+              "registered": true
+            }
+          ]
+        },
+        "modification_summary": {
+          "ok": 4,
+          "modified": 0,
+          "missing": 0,
+          "unreadable": 0,
+          "extra": 0
+        }
       },
       "local": {
+        "scope": "project",
         "branch": "main",
         "version": "1.3.0",
         "install_root": "/repo/.claude/skills/team-lead",
-        "validation": "FAIL"
+        "install_site": "/repo",
+        "validation": "FAIL",
+        "aggregate_status": "error",
+        "modification_summary": {
+          "ok": 3,
+          "modified": 1,
+          "missing": 0,
+          "unreadable": 0,
+          "extra": 1
+        },
+        "modifications": [
+          {
+            "kind": "file",
+            "severity": "warn",
+            "state": "modified",
+            "path": "SKILL.md"
+          },
+          {
+            "kind": "file",
+            "severity": "info",
+            "state": "extra",
+            "path": "NOTES.md"
+          }
+        ],
+        "issues": [
+          {
+            "kind": "hook",
+            "severity": "warn",
+            "state": "missing",
+            "code": "hook_not_registered",
+            "hook_script": "hooks/pre-commit.sh",
+            "scope": "project",
+            "message": "tracked hook script is not registered"
+          }
+        ]
       }
     }
   ]
@@ -431,21 +503,78 @@ inventing a command-specific top-level code.
       "scope": "project",
       "install_root": "/repo/.claude/skills/team-lead",
       "install_site": "/repo",
+      "tracking_origin": "local-install",
       "aggregate_expected": "abc123",
       "aggregate_actual": "def456",
       "aggregate_pass": false,
       "aggregate_status": "error",
+      "dependency_summary": {
+        "tracked": 2,
+        "verified": 2,
+        "missing": 0
+      },
+      "hook_summary": {
+        "tracked": 1,
+        "registered": 0,
+        "missing": 1
+      },
+      "modification_summary": {
+        "ok": 2,
+        "modified": 1,
+        "missing": 0,
+        "unreadable": 0,
+        "extra": 0
+      },
       "status": "FAIL",
       "warnings": [],
       "items": [
         {
+          "kind": "file",
+          "state": "modified",
           "path": "SKILL.md",
-          "status": "MODIFIED",
           "severity": "warn"
+        },
+        {
+          "kind": "hook",
+          "state": "missing",
+          "code": "hook_not_registered",
+          "hook_script": "hooks/pre-commit.sh",
+          "scope": "project",
+          "message": "tracked hook script is not registered",
+          "severity": "warn"
+        },
+        {
+          "kind": "aggregate",
+          "state": "modified",
+          "code": "aggregate_mismatch",
+          "expected": "abc123",
+          "actual": "def456",
+          "message": "aggregate SHA256 does not match tracked package state",
+          "severity": "error"
         }
       ]
     }
   ]
+}
+```
+
+`items` is a flat, typed validation list. File items use the fixed
+file-state vocabulary only: `ok`, `modified`, `missing`, `unreadable`, and
+`extra`. Higher-level problems carry a `kind`, severity, optional `code`, and
+target-identification fields such as `dependency`, `hook_event`, or
+`hook_script`.
+
+Representative dependency item:
+
+```json
+{
+  "kind": "dependency",
+  "state": "missing",
+  "code": "dependency_provenance_missing",
+  "dependency": "atm",
+  "dependency_type": "cli",
+  "severity": "critical",
+  "message": "installed dependency provenance is missing"
 }
 ```
 
@@ -523,6 +652,8 @@ emit command-specific typed payloads from `src/pkg/api/`.
 
 ### `sc scan --json`
 
+Successful scan:
+
 ```json
 {
   "ok": true,
@@ -550,6 +681,21 @@ emit command-specific typed payloads from `src/pkg/api/`.
     }
   ],
   "warnings": []
+}
+```
+
+Missing-catalog failure:
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "validation_failed",
+    "message": "catalog not found for branch main; run: sc catalog update",
+    "details": {
+      "required_action": "sc catalog update"
+    }
+  }
 }
 ```
 
@@ -594,8 +740,13 @@ emit command-specific typed payloads from `src/pkg/api/`.
 {
   "ok": true,
   "package": "team-lead",
+  "version": "1.3.0",
+  "branch": "main",
   "scope": "project",
+  "install_root": "/repo/.claude/skills/team-lead",
+  "install_site": "/repo",
   "output_dir": "/Users/example/.synaptic/mod-snapshots/team-lead/main/repo/20260425T120000Z",
+  "metadata_path": "/Users/example/.synaptic/mod-snapshots/team-lead/main/repo/20260425T120000Z/snapshot.toml",
   "files": [
     "SKILL.md",
     "README.md"
@@ -843,11 +994,17 @@ A Claude Code skill installed globally by the `sc` installer. Replaces the curre
 **Commands mapped to CLI:**
 ```
 "list packages"        → sc list --json
+"show team-lead"       → sc info team-lead --json
 "install <pkg>"        → sc install <pkg> --json
+"install <pkg> from <branch> globally"
+                       → sc install <pkg> --branch <branch> --scope global --json
 "upgrade <pkg>"        → sc upgrade <pkg> --json
+"upgrade <pkg> to <version> on <branch> in this repo"
+                       → sc upgrade <pkg> --branch <branch> --version <version> --scope project --json
 "uninstall <pkg>"      → sc uninstall <pkg> --json
 "validate <pkg>"       → sc validate <pkg> --json
 "show status"          → sc status --json
+"snapshot <pkg>"       → sc snapshot <pkg> --json
 ```
 
 The skill parses `--json` output from the CLI and presents it conversationally.
@@ -855,6 +1012,10 @@ The skill itself is a thin markdown file with tool definitions — all package
 logic lives in the `sc` binary. ATM message polling, autonomous task loops, and
 repository orchestration remain out of scope for this skill and belong to
 higher-level orchestration layers.
+
+The authoritative in-repo skill package lives under
+`.claude/skills/sc-plugin/`. Its `examples/` directory is the manual-QA
+fixture set for utterance-to-command mapping and expected structured outcomes.
 
 ### Admin Skill (separate, opt-in)
 
@@ -918,3 +1079,4 @@ ALTER TABLE packages ADD COLUMN signed_by VARCHAR(256) AFTER signature;
 | 2026-02-22 | Initial design document |
 | 2026-02-22 | Add template variable validation to admin publish (blocking gate) and import (warning) |
 | 2026-05-15 | Sprint 4.1 hardening: shared JSON contract, typed error coverage, warning formatter, and command JSON shape examples |
+| 2026-05-15 | Sprint 4.3 readback/audit symmetry: richer status and validate JSON, typed validation items, snapshot metadata path, and scan recovery contract |

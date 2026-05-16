@@ -612,15 +612,19 @@ func TestJSONScanAbsentCatalogError(t *testing.T) {
 	var envelope struct {
 		OK    bool `json:"ok"`
 		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
+			Code    string         `json:"code"`
+			Message string         `json:"message"`
+			Details map[string]any `json:"details"`
 		} `json:"error"`
 	}
 	if err := json.Unmarshal(out.Bytes(), &envelope); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
 	}
-	if envelope.OK || envelope.Error.Code != "not_found" || !strings.Contains(envelope.Error.Message, "catalog not found for branch main") {
+	if envelope.OK || envelope.Error.Code != "validation_failed" || !strings.Contains(envelope.Error.Message, "catalog not found for branch main") {
 		t.Fatalf("unexpected JSON error envelope: %+v", envelope)
+	}
+	if envelope.Error.Details["required_action"] != "sc catalog update" {
+		t.Fatalf("expected recovery action in JSON details, got %+v", envelope)
 	}
 }
 

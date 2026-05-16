@@ -38,7 +38,7 @@ stored in a Dolt database.`,
 			}
 			cfg, err := loadConfig(cmd)
 			if err != nil {
-				return renderRootJSONError(cmd, classifyJSONError(err.Error()), err)
+				return renderRootJSONError(cmd, classifyJSONErr(err), err)
 			}
 			if err := cfg.Validate(); err != nil {
 				return renderRootJSONError(cmd, api.ErrorCodeInvalidArgs, fmt.Errorf("invalid configuration: %w", err))
@@ -67,6 +67,7 @@ stored in a Dolt database.`,
 
 	// Register persistent (global) flags.
 	pf := rootCmd.PersistentFlags()
+	pf.String("client", "", "Dolt client to use: http, sql, or cli")
 	pf.String("dolt-client", "", "Dolt client to use: http, sql, or cli")
 	pf.String("dolt-host", "", "DoltHub HTTP API host")
 	pf.String("dolt-database", "", "DoltHub database slug in owner/database format")
@@ -79,6 +80,7 @@ stored in a Dolt database.`,
 	pf.Bool("json", false, "output as JSON")
 	pf.Bool("quiet", false, "suppress non-essential output")
 	pf.Bool("verbose", false, "enable debug logging")
+	_ = pf.MarkHidden("dolt-client")
 
 	rootCmd.AddCommand(NewInitCmd())
 	rootCmd.AddCommand(NewInstallCmd())
@@ -102,7 +104,7 @@ func executeCommand(rootCmd *cobra.Command) error {
 	if err == nil || isJSONCmdError(err) || !jsonRequested(rootCmd) {
 		return err
 	}
-	return renderRootJSONError(rootCmd, classifyJSONError(err.Error()), err)
+	return renderRootJSONError(rootCmd, classifyJSONErr(err), err)
 }
 
 func renderRootJSONError(cmd *cobra.Command, code api.ErrorCode, err error) error {
@@ -112,7 +114,11 @@ func renderRootJSONError(cmd *cobra.Command, code api.ErrorCode, err error) erro
 	formatter := output.NewFormatter(true, quietRequested(cmd))
 	formatter.Writer = cmd.OutOrStdout()
 	formatter.ErrW = cmd.ErrOrStderr()
-	if writeErr := writeJSONError(formatter, code, err.Error()); writeErr != nil {
+	var details map[string]any
+	if cfg, cfgErr := loadConfig(cmd); cfgErr == nil {
+		details = jsonErrorDetails(cfg, code)
+	}
+	if writeErr := writeJSONError(formatter, code, err.Error(), details); writeErr != nil {
 		return writeErr
 	}
 	return jsonCmdError{cause: err}

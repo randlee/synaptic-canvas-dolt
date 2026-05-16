@@ -19,6 +19,7 @@ type Config struct {
 	Verbose       bool
 	fileValues    map[string]string
 	explicitFlags map[string]string
+	changedFlags  map[string]bool
 }
 
 // NewConfigFromFlags extracts global flag values from the given cobra command.
@@ -63,18 +64,31 @@ func NewConfigFromFlags(cmd *cobra.Command) (*Config, error) {
 		Verbose:       verbose,
 		fileValues:    map[string]string{},
 		explicitFlags: map[string]string{},
+		changedFlags:  map[string]bool{},
 	}
 	for _, spec := range doltFlagSpecs {
-		flag := flags.Lookup(spec.Flag)
-		if flag == nil {
-			continue
+		var changed []string
+		var explicitValue string
+		for _, flagName := range spec.Flags {
+			flag := flags.Lookup(flagName)
+			if flag == nil {
+				continue
+			}
+			if flag.Changed {
+				cfg.changedFlags[flagName] = true
+				value, err := flags.GetString(flagName)
+				if err != nil {
+					return nil, fmt.Errorf("reading --%s: %w", flagName, err)
+				}
+				if len(changed) > 0 && explicitValue != value {
+					return nil, fmt.Errorf("conflicting values supplied for %s via %s", spec.Key, strings.Join(spec.Flags, " and "))
+				}
+				explicitValue = value
+				changed = append(changed, flagName)
+			}
 		}
-		value, err := flags.GetString(spec.Flag)
-		if err != nil {
-			return nil, fmt.Errorf("reading --%s: %w", spec.Flag, err)
-		}
-		if flag.Changed {
-			cfg.explicitFlags[spec.Key] = value
+		if len(changed) > 0 {
+			cfg.explicitFlags[spec.Key] = explicitValue
 		}
 	}
 	return cfg, nil
@@ -123,16 +137,83 @@ func ExpandPath(path string) string {
 }
 
 type doltFlagSpec struct {
-	Flag string
-	Key  string
+	Flags []string
+	Key   string
 }
 
 var doltFlagSpecs = []doltFlagSpec{
-	{Flag: "dolt-client", Key: KeyDoltClient},
-	{Flag: "dolt-host", Key: KeyDoltHost},
-	{Flag: "dolt-database", Key: KeyDoltDatabase},
-	{Flag: "dolt-token", Key: KeyDoltToken},
-	{Flag: "dolt-dsn", Key: KeyDoltDSN},
-	{Flag: "dolt-dir", Key: KeyDoltDir},
-	{Flag: "dolt-timeout", Key: KeyDoltTimeout},
+	{Flags: []string{"client", "dolt-client"}, Key: KeyDoltClient},
+	{Flags: []string{"dolt-host"}, Key: KeyDoltHost},
+	{Flags: []string{"dolt-database"}, Key: KeyDoltDatabase},
+	{Flags: []string{"dolt-token"}, Key: KeyDoltToken},
+	{Flags: []string{"dolt-dsn"}, Key: KeyDoltDSN},
+	{Flags: []string{"dolt-dir"}, Key: KeyDoltDir},
+	{Flags: []string{"dolt-timeout"}, Key: KeyDoltTimeout},
+}
+
+type ValueSource string
+
+const (
+	ValueSourceExplicit      ValueSource = "explicit"
+	ValueSourceEnvironment   ValueSource = "environment"
+	ValueSourceFile          ValueSource = "file"
+	ValueSourceCompatibility ValueSource = "compatibility"
+	ValueSourceDefault       ValueSource = "default"
+)
+
+type DoltClientSelection struct {
+	Client        string
+	ClientSource  ValueSource
+	DoltDir       string
+	DoltDirSource ValueSource
+}
+
+func (c *Config) FlagChanged(name string) bool {
+	return c.changedFlags[name]
+}
+
+func (c *Config) ResolveValue(key, defaultVal string) (string, ValueSource) {
+	if value, ok := c.explicitFlags[key]; ok && value != "" {
+		return value, ValueSourceExplicit
+	}
+	if envName := EnvNameForKey(key); envName != "" {
+		if value := os.Getenv(envName); value != "" {
+			return value, ValueSourceEnvironment
+		}
+	}
+	if c.fileValues != nil {
+		if value := c.fileValues[key]; value != "" {
+			return value, ValueSourceFile
+		}
+	}
+	return defaultVal, ValueSourceDefault
+}
+
+func (c *Config) ResolveDoltClient() (DoltClientSelection, error) {
+	client, clientSource := c.ResolveValue(KeyDoltClient, "")
+	doltDir, dirSource := c.ResolveValue(KeyDoltDir, "")
+
+	if client == "" && doltDir != "" {
+		client = "cli"
+		clientSource = ValueSourceCompatibility
+	}
+	if client == "" {
+		client = "http"
+		clientSource = ValueSourceDefault
+	}
+	if doltDir != "" && client != "cli" {
+		return DoltClientSelection{}, fmt.Errorf("--dolt-dir may only be used with client=cli; effective client is %s", client)
+	}
+	switch client {
+	case "http", "sql", "cli":
+	default:
+		return DoltClientSelection{}, fmt.Errorf("unsupported dolt.client %q", client)
+	}
+
+	return DoltClientSelection{
+		Client:        client,
+		ClientSource:  clientSource,
+		DoltDir:       doltDir,
+		DoltDirSource: dirSource,
+	}, nil
 }

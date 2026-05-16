@@ -115,8 +115,8 @@ func dependencyBlockers(deps []models.PackageDep) []string {
 }
 
 func hasLocalModifications(validation validatedInstall) bool {
-	for _, file := range validation.Files {
-		if file.Status == "MODIFIED" || file.Status == "UNREADABLE" {
+	for _, file := range validation.Items {
+		if file.Kind == ValidationKindFile && (file.State == ValidationStateModified || file.State == ValidationStateUnreadable) {
 			return true
 		}
 	}

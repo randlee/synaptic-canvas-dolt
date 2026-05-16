@@ -127,3 +127,24 @@ func TestJSONBootstrapFailureUsesErrorEnvelope(t *testing.T) {
 		t.Fatalf("unexpected JSON bootstrap envelope: %+v", envelope)
 	}
 }
+
+func TestJSONDoltDirConflictUsesInvalidArgs(t *testing.T) {
+	t.Parallel()
+
+	cmd := NewRootCmd("test", "abc123", "2025-01-01")
+	cmd.SetArgs([]string{"list", "--json", "--client", "http", "--dolt-dir", "/tmp/repo"})
+
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	requireJSONCmdError(t, executeCommand(cmd))
+
+	var envelope jsonErrorEnvelope
+	if err := json.Unmarshal(buf.Bytes(), &envelope); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, buf.String())
+	}
+	if envelope.OK || envelope.Error.Code != "invalid_args" || !strings.Contains(envelope.Error.Message, "--dolt-dir may only be used with client=cli") {
+		t.Fatalf("unexpected JSON conflict envelope: %+v", envelope)
+	}
+}

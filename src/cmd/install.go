@@ -64,7 +64,7 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 		pkg, err := client.GetPackage(cmd.Context(), packageID)
 		if err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
+				return writeClassifiedJSONError(formatter, cfg, err)
 			}
 			return err
 		}
@@ -85,28 +85,28 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 		files, err := client.GetPackageFiles(cmd.Context(), packageID)
 		if err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
+				return writeClassifiedJSONError(formatter, cfg, err)
 			}
 			return err
 		}
 		deps, err := client.GetPackageDeps(cmd.Context(), packageID)
 		if err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
+				return writeClassifiedJSONError(formatter, cfg, err)
 			}
 			return err
 		}
 		hooks, err := client.GetPackageHooks(cmd.Context(), packageID)
 		if err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
+				return writeClassifiedJSONError(formatter, cfg, err)
 			}
 			return err
 		}
 		questions, err := client.GetPackageQuestions(cmd.Context(), packageID)
 		if err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
+				return writeClassifiedJSONError(formatter, cfg, err)
 			}
 			return err
 		}
@@ -167,7 +167,7 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 					break
 				}
 				if cfg.JSON {
-					return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
+					return writeClassifiedJSONError(formatter, cfg, err)
 				}
 				return err
 			}
@@ -266,10 +266,10 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		for _, warning := range allWarnings {
-			formatter.Warn(warning)
+			writeWarning(formatter, warning)
 		}
 		for _, failure := range failures {
-			formatter.Warn(fmt.Sprintf("%s [%s] failed: %s", failure.Package, failure.Scope, failure.Error))
+			writeWarning(formatter, fmt.Sprintf("%s [%s] failed: %s", failure.Package, failure.Scope, failure.Error))
 		}
 		for _, summary := range summaries {
 			for _, warning := range summary.DependencyWarnings {

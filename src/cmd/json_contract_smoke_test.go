@@ -9,7 +9,7 @@ import (
 	"github.com/randlee/synaptic-canvas-dolt/pkg/dolt"
 )
 
-func TestJSONVER011ListShapeAcrossBackends(t *testing.T) {
+func TestJSONVER011ListShapeAcrossConfiguredBackends(t *testing.T) {
 	prevOpener := readClientOpener
 	readClientOpener = func(cfg *config.Config) (readClient, error) {
 		mock := dolt.NewMockClient()

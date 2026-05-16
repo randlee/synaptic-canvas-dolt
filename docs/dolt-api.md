@@ -132,6 +132,11 @@ against this deployment model when configured to do so.
 Shells out to `dolt sql -q` with the local dolt binary. Requires dolt
 installed in PATH and a local repo clone. Synaptic Canvas supports this mode as
 the local-clone adapter for repositories that use a checked-out Dolt database.
+When `cli` is the effective transport, `sc` resolves the clone root from
+`--dolt-dir`, then `SC_DOLT_DIR`, then `dolt.dir`, then upward auto-detection
+of a local `.dolt/` directory from the current working directory. An explicit
+`--dolt-dir` supplied alongside effective `http` or `sql` client selection is
+treated as an invalid conflicting transport input.
 
 ---
 
@@ -223,3 +228,9 @@ not depend on a live DoltHub repository, branch, network path, or mutable remote
 state. Any live test must be opt-in, skipped by default, and configurable with a
 dedicated project test repository and branch containing deterministic fixture
 data.
+
+Routine CI instead uses simulator-backed or equivalent adapter harnesses for all
+three transports:
+- `httptest.Server` for `HTTPClient`
+- fake `database/sql` driver coverage for `SQLClient`
+- injected subprocess shim coverage for `CLIReader`

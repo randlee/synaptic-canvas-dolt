@@ -14,7 +14,6 @@ import (
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/api"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/installer"
-	"github.com/randlee/synaptic-canvas-dolt/pkg/integrity"
 	"github.com/spf13/cobra"
 )
 
@@ -72,14 +71,14 @@ func runSnapshotCmd(cmd *cobra.Command, args []string) error {
 	repoRoot, err := currentRepoRoot()
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
+			return writeClassifiedJSONError(formatter, cfg, err)
 		}
 		return err
 	}
 	installs, err := loadTrackedInstalls(repoRoot)
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
+			return writeClassifiedJSONError(formatter, cfg, err)
 		}
 		return err
 	}
@@ -103,7 +102,7 @@ func runSnapshotCmd(cmd *cobra.Command, args []string) error {
 	files, err := snapshotFiles(cmd.Context(), record, full)
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
+			return writeClassifiedJSONError(formatter, cfg, err)
 		}
 		return err
 	}
@@ -111,7 +110,7 @@ func runSnapshotCmd(cmd *cobra.Command, args []string) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
+			return writeClassifiedJSONError(formatter, cfg, err)
 		}
 		return err
 	}
@@ -153,17 +152,23 @@ func runSnapshotCmd(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("encoding snapshot metadata: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(outputDir, "snapshot.toml"), data, 0o600); err != nil {
+	metadataPath := filepath.Join(outputDir, "snapshot.toml")
+	if err := os.WriteFile(metadataPath, data, 0o600); err != nil {
 		return fmt.Errorf("writing snapshot metadata: %w", err)
 	}
 
 	if cfg.JSON {
 		return formatter.WriteJSON(snapshotResponse{
-			OK:        true,
-			Package:   record.Package,
-			Scope:     record.InstallScope,
-			OutputDir: outputDir,
-			Files:     copied,
+			OK:           true,
+			Package:      record.Package,
+			Version:      record.Version,
+			Branch:       record.Branch,
+			Scope:        record.InstallScope,
+			InstallRoot:  record.InstallRoot,
+			InstallSite:  record.InstallSite,
+			OutputDir:    outputDir,
+			MetadataPath: metadataPath,
+			Files:        copied,
 		})
 	}
 
@@ -201,12 +206,16 @@ func snapshotFiles(ctx context.Context, record installer.InstallRecord, full boo
 		return nil, err
 	}
 	files := []string{}
-	for _, file := range summary.Files {
-		if file.Status != integrity.StatusOK.String() {
-			path := filepath.Join(record.InstallRoot, filepath.FromSlash(file.Path))
-			if _, err := os.Stat(path); err == nil {
-				files = append(files, file.Path)
-			}
+	for _, file := range summary.Items {
+		if file.Kind != ValidationKindFile || file.State == ValidationStateOK {
+			continue
+		}
+		if file.Path == "" {
+			continue
+		}
+		path := filepath.Join(record.InstallRoot, filepath.FromSlash(file.Path))
+		if _, err := os.Stat(path); err == nil {
+			files = append(files, file.Path)
 		}
 	}
 	return files, nil
