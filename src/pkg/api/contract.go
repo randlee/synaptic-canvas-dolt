@@ -1,11 +1,6 @@
 package api
 
-import (
-	"github.com/randlee/synaptic-canvas-dolt/pkg/installer"
-	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
-)
-
-type ErrorCode = string
+type ErrorCode string
 
 const (
 	ErrorCodeInvalidArgs        ErrorCode = "invalid_args"
@@ -46,17 +41,17 @@ type ListFilters struct {
 }
 
 type ListItem struct {
-	ID              string              `json:"id"`
-	Name            string              `json:"name"`
-	Version         string              `json:"version"`
-	Branch          string              `json:"branch"`
-	Description     *string             `json:"description,omitempty"`
-	Tags            []string            `json:"tags,omitempty"`
-	Variant         string              `json:"variant"`
-	InstallScope    models.InstallScope `json:"install_scope"`
-	FileCount       int                 `json:"file_count"`
-	DependencyCount int                 `json:"dependency_count"`
-	SHA256          *string             `json:"sha256,omitempty"`
+	ID              string       `json:"id"`
+	Name            string       `json:"name"`
+	Version         string       `json:"version"`
+	Branch          string       `json:"branch"`
+	Description     *string      `json:"description,omitempty"`
+	Tags            []string     `json:"tags,omitempty"`
+	Variant         string       `json:"variant"`
+	InstallScope    InstallScope `json:"install_scope"`
+	FileCount       int          `json:"file_count"`
+	DependencyCount int          `json:"dependency_count"`
+	SHA256          *string      `json:"sha256,omitempty"`
 }
 
 type InfoResponse struct {
@@ -66,23 +61,23 @@ type InfoResponse struct {
 }
 
 type InfoPackage struct {
-	ID              string              `json:"id"`
-	Name            string              `json:"name"`
-	Version         string              `json:"version"`
-	Description     *string             `json:"description,omitempty"`
-	Variant         string              `json:"variant"`
-	InstallScope    models.InstallScope `json:"install_scope"`
-	SHA256          *string             `json:"sha256,omitempty"`
-	FileCount       int                 `json:"file_count"`
-	DependencyCount int                 `json:"dependency_count"`
-	Dependencies    []Dependency        `json:"dependencies"`
-	HookCount       int                 `json:"hook_count"`
-	QuestionCount   int                 `json:"question_count"`
+	ID              string       `json:"id"`
+	Name            string       `json:"name"`
+	Version         string       `json:"version"`
+	Description     *string      `json:"description,omitempty"`
+	Variant         string       `json:"variant"`
+	InstallScope    InstallScope `json:"install_scope"`
+	SHA256          *string      `json:"sha256,omitempty"`
+	FileCount       int          `json:"file_count"`
+	DependencyCount int          `json:"dependency_count"`
+	Dependencies    []Dependency `json:"dependencies"`
+	HookCount       int          `json:"hook_count"`
+	QuestionCount   int          `json:"question_count"`
 }
 
 type Dependency struct {
 	Name string         `json:"name"`
-	Type models.DepType `json:"type"`
+	Type DependencyType `json:"type"`
 	Spec string         `json:"spec,omitempty"`
 }
 
@@ -106,25 +101,64 @@ type InstallScopeFailure struct {
 	Error   string `json:"error"`
 }
 
+type InstallScope string
+
+type DependencyType string
+
+type InstallHookEntry struct {
+	Event    string `json:"event"`
+	Matcher  string `json:"matcher"`
+	Skill    string `json:"skill"`
+	Scope    string `json:"scope,omitempty"`
+	Script   string `json:"script"`
+	Priority int    `json:"priority"`
+	Blocking bool   `json:"blocking"`
+}
+
+type InstallPlannedFile struct {
+	Path       string `json:"path"`
+	IsTemplate bool   `json:"is_template"`
+	Preview    string `json:"preview,omitempty"`
+}
+
+type InstallAnswers struct {
+	Values map[string]any `json:"values,omitempty"`
+}
+
+type InstallSummary struct {
+	PackageID                  string               `json:"package_id"`
+	Version                    string               `json:"version"`
+	Branch                     string               `json:"branch"`
+	Scope                      string               `json:"scope"`
+	InstallRoot                string               `json:"install_root,omitempty"`
+	FilesWritten               int                  `json:"files_written,omitempty"`
+	Dependencies               []string             `json:"dependencies,omitempty"`
+	DependencyWarnings         []string             `json:"dependency_warnings,omitempty"`
+	HooksRegistered            []InstallHookEntry   `json:"hooks_registered,omitempty"`
+	TemplateValidationWarnings []string             `json:"template_validation_warnings,omitempty"`
+	Files                      []InstallPlannedFile `json:"files,omitempty"`
+	Answers                    *InstallAnswers      `json:"answers,omitempty"`
+}
+
 type InstallResponse struct {
-	OK                         bool                    `json:"ok"`
-	Error                      *Error                  `json:"error,omitempty"`
-	Plan                       bool                    `json:"plan"`
-	Scope                      string                  `json:"scope"`
-	Partial                    bool                    `json:"partial,omitempty"`
-	Package                    *InstallPackageRef      `json:"package,omitempty"`
-	InstallRoot                string                  `json:"install_root,omitempty"`
-	FilesWritten               int                     `json:"files_written,omitempty"`
-	Dependencies               []string                `json:"dependencies,omitempty"`
-	DependencyWarnings         []string                `json:"dependency_warnings,omitempty"`
-	HooksRegistered            []installer.HookEntry   `json:"hooks_registered,omitempty"`
-	TemplateValidationWarnings []string                `json:"template_validation_warnings,omitempty"`
-	Warnings                   []string                `json:"warnings,omitempty"`
-	Files                      []installer.PlannedFile `json:"files,omitempty"`
-	Answers                    map[string]any          `json:"answers,omitempty"`
-	Installs                   []installer.Summary     `json:"installs,omitempty"`
-	RolledBack                 []installer.Summary     `json:"rolled_back,omitempty"`
-	Failures                   []InstallScopeFailure   `json:"failures,omitempty"`
+	OK                         bool                  `json:"ok"`
+	Error                      *Error                `json:"error,omitempty"`
+	Plan                       bool                  `json:"plan"`
+	Scope                      string                `json:"scope"`
+	Partial                    bool                  `json:"partial,omitempty"`
+	Package                    *InstallPackageRef    `json:"package,omitempty"`
+	InstallRoot                string                `json:"install_root,omitempty"`
+	FilesWritten               int                   `json:"files_written,omitempty"`
+	Dependencies               []string              `json:"dependencies,omitempty"`
+	DependencyWarnings         []string              `json:"dependency_warnings,omitempty"`
+	HooksRegistered            []InstallHookEntry    `json:"hooks_registered,omitempty"`
+	TemplateValidationWarnings []string              `json:"template_validation_warnings,omitempty"`
+	Warnings                   []string              `json:"warnings,omitempty"`
+	Files                      []InstallPlannedFile  `json:"files,omitempty"`
+	Answers                    *InstallAnswers       `json:"answers,omitempty"`
+	Installs                   []InstallSummary      `json:"installs,omitempty"`
+	RolledBack                 []InstallSummary      `json:"rolled_back,omitempty"`
+	Failures                   []InstallScopeFailure `json:"failures,omitempty"`
 }
 
 type StatusResponse struct {

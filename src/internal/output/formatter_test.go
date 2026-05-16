@@ -171,6 +171,21 @@ func TestErrorWritesToErrWriter(t *testing.T) {
 	}
 }
 
+func TestWarnWritesToErrWriter(t *testing.T) {
+	t.Parallel()
+
+	var stdBuf, errBuf bytes.Buffer
+	f := &Formatter{JSON: false, Quiet: false, Writer: &stdBuf, ErrW: &errBuf}
+	f.Warn("check this")
+
+	if stdBuf.Len() > 0 {
+		t.Error("warning should not write to stdout writer")
+	}
+	if !strings.Contains(errBuf.String(), "warning: check this") {
+		t.Errorf("warning should write to stderr writer, got: %q", errBuf.String())
+	}
+}
+
 func TestNewFormatter(t *testing.T) {
 	t.Parallel()
 

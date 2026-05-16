@@ -17,7 +17,7 @@ import (
 	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
 )
 
-func TestInitCommandJSON(t *testing.T) {
+func TestJSONInitCommand(t *testing.T) {
 	root := t.TempDir()
 	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
 	restoreDir := chdirForTest(t, root)
@@ -46,7 +46,7 @@ func TestInitCommandJSON(t *testing.T) {
 	}
 }
 
-func TestInitCommandErrorJSON(t *testing.T) {
+func TestJSONInitCommandError(t *testing.T) {
 	root := t.TempDir()
 	restoreDir := chdirForTest(t, root)
 	defer restoreDir()
@@ -73,7 +73,7 @@ func TestInitCommandErrorJSON(t *testing.T) {
 	}
 }
 
-func TestInstallCommandDryRunJSON(t *testing.T) {
+func TestJSONInstallCommandDryRun(t *testing.T) {
 	root := t.TempDir()
 	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
 	restoreDir := chdirForTest(t, root)
@@ -422,7 +422,7 @@ func TestInstallScopeBothMixedWriteAndFailureReturnsExitOne(t *testing.T) {
 	}
 }
 
-func TestInstallCommandErrorJSON(t *testing.T) {
+func TestJSONInstallCommandError(t *testing.T) {
 	root := t.TempDir()
 	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
 	restoreDir := chdirForTest(t, root)

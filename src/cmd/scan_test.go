@@ -327,7 +327,7 @@ func TestScanAcceptAllZeroCandidatesNoOp(t *testing.T) {
 	}
 }
 
-func TestScanJSONAloneDoesNotMutate(t *testing.T) {
+func TestJSONScanAloneDoesNotMutate(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -391,7 +391,7 @@ func TestScanHumanReadableTableOutput(t *testing.T) {
 	}
 }
 
-func TestScanJSONAcceptAllWritesLockfile(t *testing.T) {
+func TestJSONScanAcceptAllWritesLockfile(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -593,7 +593,7 @@ func TestScanAbsentCatalogErrors(t *testing.T) {
 	}
 }
 
-func TestScanAbsentCatalogJSONError(t *testing.T) {
+func TestJSONScanAbsentCatalogError(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)

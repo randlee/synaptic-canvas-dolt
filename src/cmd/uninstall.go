@@ -127,7 +127,7 @@ func runUninstallCmd(cmd *cobra.Command, args []string) error {
 		}
 		removedFiles, err := removeOwnedFiles(stateRoot, target.Record)
 		if err != nil {
-			writeWarning(formatter, "manifest updated but file removal failed: "+err.Error())
+			formatter.Warn("manifest updated but file removal failed: " + err.Error())
 			if cfg.JSON {
 				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 			}
@@ -195,7 +195,7 @@ func runUninstallCmd(cmd *cobra.Command, args []string) error {
 	}
 	for _, result := range results {
 		for _, warning := range result.Warnings {
-			writeWarning(formatter, warning)
+			formatter.Warn(warning)
 		}
 	}
 	return nil

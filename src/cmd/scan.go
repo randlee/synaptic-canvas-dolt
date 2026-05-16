@@ -161,7 +161,7 @@ func runScanCmd(cmd *cobra.Command, args []string) error {
 		return formatter.WriteJSON(resp)
 	}
 	for _, warning := range resp.Warnings {
-		writeWarning(formatter, warning)
+		formatter.Warn(warning)
 	}
 	rows := make([][]string, 0, len(resp.Candidates))
 	for _, candidate := range resp.Candidates {
