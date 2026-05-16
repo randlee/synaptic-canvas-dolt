@@ -42,7 +42,12 @@ Imported packages must still work in traditional marketplaces:
 - do not remove standard human installation instructions
 - do not assume the consumer has `sc`
 
-## 5. Candidate-Specific Rules
+## 5. Skill QA Reference
+
+When a converted package includes skills or agents, review them against:
+- `/Users/randlee/Documents/github/synaptic-canvas/docs/claude-code-skills-agents-guidelines.md`
+
+## 6. Candidate-Specific Rules
 
 ### `claude-history/.claude`
 
@@ -70,7 +75,7 @@ Imported packages must still work in traditional marketplaces:
 - Preserve templates/assets as package artifacts.
 - Make sure manifest metadata reflects template files actually used by the skill.
 
-## 6. Import Readiness Gate
+## 7. Import Readiness Gate
 
 Ready for `sc admin import` when:
 - topology is settled

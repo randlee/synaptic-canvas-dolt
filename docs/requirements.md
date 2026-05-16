@@ -226,9 +226,8 @@ The CLI is expected to be used by both humans and AI wrappers.
 ## 7. Agents And Scripts
 
 - AG-001 Agent definitions in this repository shall comply with the shared
-  Claude Code skills/agents guidelines located in the sibling
-  `synaptic-canvas` repository at
-  `../synaptic-canvas/docs/claude-code-skills-agents-guidelines.md`.
+  Claude Code skills/agents guidelines located at
+  `/Users/randlee/Documents/github/synaptic-canvas/docs/claude-code-skills-agents-guidelines.md`.
 - AG-002 Each agent shall define a clear input contract and output contract.
 - AG-003 Every repository-owned helper script shall have unit tests.
 - AG-004 Script tests shall avoid nondeterministic dependence on wall-clock

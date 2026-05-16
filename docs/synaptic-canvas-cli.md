@@ -1004,7 +1004,7 @@ Following `claude-history` patterns:
 - Homebrew tap update
 - GitHub release archives, checksums, and generated notes
 
-**release-validate.yml** (PR/push):
+**release-validate.yml** (planned under Sprint 5.1):
 - `goreleaser check`
 - Non-publishing validation of the release configuration before tags are cut
 

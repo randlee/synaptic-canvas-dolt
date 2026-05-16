@@ -156,7 +156,7 @@ Scaffold the Go project, establish patterns, connect to Dolt.
 
 **Deliverables:**
 - `.claude/agents/sc-log-debug.md` — log monitoring agent
-- Agent definition aligned with `../synaptic-canvas/docs/claude-code-skills-agents-guidelines.md`
+- Agent definition aligned with `/Users/randlee/Documents/github/synaptic-canvas/docs/claude-code-skills-agents-guidelines.md`
 - Python helper scripts under `.claude/scripts/`
 - Unit tests for all helper scripts
 - Tails `~/.sc/logs/sc.log` in background
