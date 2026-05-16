@@ -43,6 +43,7 @@ type InstallRecord struct {
 	TrackingOrigin     string                   `toml:"tracking_origin"`
 	TemplateRendered   bool                     `toml:"template_rendered"`
 	Files              map[string]string        `toml:"files"`
+	Hooks              []HookEntry              `toml:"hooks"`
 	Answers            map[string]any           `toml:"answers"`
 	QuestionSnapshot   QuestionSnapshot         `toml:"question_snapshot"`
 	Requirements       RequirementSnapshot      `toml:"requirements"`

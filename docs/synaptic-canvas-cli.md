@@ -473,14 +473,15 @@ inventing a command-specific top-level code.
           }
         ],
         "issues": [
-          {
-            "kind": "hook",
-            "severity": "warn",
-            "state": "missing",
-            "code": "hook_not_registered",
-            "hook_script": "hooks/pre-commit.sh",
-            "scope": "project",
-            "message": "tracked hook script is not registered"
+        {
+          "kind": "hook",
+          "severity": "warn",
+          "state": "missing",
+          "code": "hook_not_registered",
+          "hook_event": "PreToolUse",
+          "hook_script": "hooks/pre-commit.sh",
+          "scope": "project",
+          "message": "tracked hook script is not registered"
           }
         ]
       }
@@ -538,6 +539,7 @@ inventing a command-specific top-level code.
           "kind": "hook",
           "state": "missing",
           "code": "hook_not_registered",
+          "hook_event": "PreToolUse",
           "hook_script": "hooks/pre-commit.sh",
           "scope": "project",
           "message": "tracked hook script is not registered",
@@ -691,9 +693,10 @@ Missing-catalog failure:
   "ok": false,
   "error": {
     "code": "validation_failed",
-    "message": "catalog not found for branch main; run: sc catalog update",
+    "message": "catalog not found for branch main at /repo/.synaptic/catalog-main.toml; run: sc catalog update",
     "details": {
-      "required_action": "sc catalog update"
+      "required_action": "sc catalog update",
+      "catalog_path": "/repo/.synaptic/catalog-main.toml"
     }
   }
 }

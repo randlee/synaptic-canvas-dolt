@@ -450,6 +450,88 @@ func TestJSONInstallCommandError(t *testing.T) {
 	}
 }
 
+func TestInstallReadbackUsesStatusAndValidateJSON(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	setTestHome(t, home)
+	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
+	restoreDir := chdirForTest(t, root)
+	defer restoreDir()
+
+	mock := dolt.NewMockClient()
+	pkg := dolt.NewTestPackage("team-lead", "team-lead", "1.2.0", []string{"workflow"})
+	pkg.AgentVariant = "claude"
+	mock.AddPackage(pkg)
+	mock.AddFiles("team-lead", []models.PackageFile{
+		{DestPath: "SKILL.md", Content: "skill", SHA256: testSHA("skill"), FileType: models.FileTypeSkill},
+		{DestPath: "hooks/pre-commit.sh", Content: "#!/bin/sh\n", SHA256: testSHA("#!/bin/sh\n"), FileType: models.FileTypeHook},
+	})
+	mock.AddHooks("team-lead", []models.PackageHook{{
+		PackageID:  "team-lead",
+		Event:      models.HookPreToolUse,
+		Matcher:    "git commit",
+		ScriptPath: "hooks/pre-commit.sh",
+		Priority:   10,
+		Blocking:   true,
+	}})
+	restore := installReadTestHooks(mock)
+	defer restore()
+
+	installCmd := NewRootCmd("test", "abc", "2025-01-01")
+	var installOut bytes.Buffer
+	installCmd.SetOut(&installOut)
+	installCmd.SetErr(&installOut)
+	installCmd.SetArgs([]string{"install", "team-lead", "--scope", "project", "--json", "--yolo"})
+	if err := installCmd.Execute(); err != nil {
+		t.Fatalf("install Execute() error = %v\noutput=%s", err, installOut.String())
+	}
+
+	statusCmd := NewRootCmd("test", "abc", "2025-01-01")
+	var statusOut bytes.Buffer
+	statusCmd.SetOut(&statusOut)
+	statusCmd.SetErr(&statusOut)
+	statusCmd.SetArgs([]string{"status", "--json"})
+	if err := statusCmd.Execute(); err != nil {
+		t.Fatalf("status Execute() error = %v\noutput=%s", err, statusOut.String())
+	}
+	var statusResp statusResponse
+	if err := json.Unmarshal(statusOut.Bytes(), &statusResp); err != nil {
+		t.Fatalf("json.Unmarshal(status) error = %v\noutput=%s", err, statusOut.String())
+	}
+	if len(statusResp.Packages) != 1 || statusResp.Packages[0].Local == nil {
+		t.Fatalf("expected one local package, got %+v", statusResp)
+	}
+	local := statusResp.Packages[0].Local
+	if local.Version != "1.2.0" || local.Branch != "main" || local.Validation != "PASS" {
+		t.Fatalf("unexpected status local readback: %+v", local)
+	}
+	if local.HookSummary.Tracked != 1 || local.HookSummary.Registered != 1 || len(local.HookSummary.Hooks) != 1 {
+		t.Fatalf("unexpected hook summary: %+v", local.HookSummary)
+	}
+	if hook := local.HookSummary.Hooks[0]; hook.Event != "PreToolUse" || hook.Script != "hooks/pre-commit.sh" || !hook.Registered {
+		t.Fatalf("unexpected hook readback: %+v", hook)
+	}
+
+	validateCmd := NewRootCmd("test", "abc", "2025-01-01")
+	var validateOut bytes.Buffer
+	validateCmd.SetOut(&validateOut)
+	validateCmd.SetErr(&validateOut)
+	validateCmd.SetArgs([]string{"validate", "team-lead", "--scope", "project", "--json"})
+	if err := validateCmd.Execute(); err != nil {
+		t.Fatalf("validate Execute() error = %v\noutput=%s", err, validateOut.String())
+	}
+	var validateResp validateResponse
+	if err := json.Unmarshal(validateOut.Bytes(), &validateResp); err != nil {
+		t.Fatalf("json.Unmarshal(validate) error = %v\noutput=%s", err, validateOut.String())
+	}
+	if !validateResp.Pass || len(validateResp.Packages) != 1 {
+		t.Fatalf("unexpected validate response: %+v", validateResp)
+	}
+	if hook := validateResp.Packages[0].HookSummary.Hooks[0]; hook.Event != "PreToolUse" || hook.Script != "hooks/pre-commit.sh" || !hook.Registered {
+		t.Fatalf("unexpected validate hook readback: %+v", hook)
+	}
+}
+
 func installReadTestHooks(mock *dolt.MockClient) func() {
 	prevOpener := readClientOpener
 	readClientOpener = func(_ *config.Config) (readClient, error) { return mock, nil }
