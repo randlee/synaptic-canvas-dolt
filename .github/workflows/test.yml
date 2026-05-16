@@ -45,6 +45,15 @@ jobs:
         working-directory: src
         run: go build -o sc .
 
+      - name: Installer test (Unix)
+        if: runner.os != 'Windows'
+        run: bash tests/installer/test_install.sh
+
+      - name: Installer test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tests/installer/test_install.ps1
+
       - name: Upload coverage
         if: matrix.os == 'ubuntu-latest'
         uses: codecov/codecov-action@v4
