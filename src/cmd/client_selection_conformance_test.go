@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/randlee/synaptic-canvas-dolt/internal/config"
-	"github.com/randlee/synaptic-canvas-dolt/pkg/dolt"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/dolttest"
 )
 
 func TestClientSelectionPrecedenceMatrix(t *testing.T) {
@@ -134,7 +134,7 @@ func TestClientSelectionPrecedenceMatrix(t *testing.T) {
 }
 
 func TestConformanceJSONErrorCodesAcrossBackends(t *testing.T) {
-	for _, harness := range dolt.FailingHarnesses() {
+	for _, harness := range dolttest.FailingHarnesses() {
 		t.Run(harness.Name, func(t *testing.T) {
 			prev := readClientOpener
 			readClientOpener = func(*config.Config) (readClient, error) { return harness.Open(t), nil }
@@ -163,7 +163,7 @@ func TestConformanceJSONErrorCodesAcrossBackends(t *testing.T) {
 }
 
 func TestJSONVER011ListShapeAcrossBackends(t *testing.T) {
-	for _, harness := range dolt.ConformanceHarnesses() {
+	for _, harness := range dolttest.ConformanceHarnesses() {
 		t.Run(harness.Name, func(t *testing.T) {
 			prev := readClientOpener
 			readClientOpener = func(*config.Config) (readClient, error) { return harness.Open(t), nil }

@@ -64,7 +64,7 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 		pkg, err := client.GetPackage(cmd.Context(), packageID)
 		if err != nil {
 			if cfg.JSON {
-				return writeClassifiedJSONError(formatter, cfg, err)
+				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 			}
 			return err
 		}
@@ -85,28 +85,28 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 		files, err := client.GetPackageFiles(cmd.Context(), packageID)
 		if err != nil {
 			if cfg.JSON {
-				return writeClassifiedJSONError(formatter, cfg, err)
+				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 			}
 			return err
 		}
 		deps, err := client.GetPackageDeps(cmd.Context(), packageID)
 		if err != nil {
 			if cfg.JSON {
-				return writeClassifiedJSONError(formatter, cfg, err)
+				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 			}
 			return err
 		}
 		hooks, err := client.GetPackageHooks(cmd.Context(), packageID)
 		if err != nil {
 			if cfg.JSON {
-				return writeClassifiedJSONError(formatter, cfg, err)
+				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 			}
 			return err
 		}
 		questions, err := client.GetPackageQuestions(cmd.Context(), packageID)
 		if err != nil {
 			if cfg.JSON {
-				return writeClassifiedJSONError(formatter, cfg, err)
+				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 			}
 			return err
 		}
@@ -167,7 +167,7 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 					break
 				}
 				if cfg.JSON {
-					return writeClassifiedJSONError(formatter, cfg, err)
+					return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
 				}
 				return err
 			}
