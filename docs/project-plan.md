@@ -1833,6 +1833,53 @@ platforms with predictable config behavior.
 
 ---
 
+### Sprint 4.9: Uninstall Atomicity And Installer PATH Hardening
+
+Detailed sprint plan: [4.9 Uninstall Atomicity And Installer PATH Hardening](./phase-4/4.9-uninstall-atomicity-and-installer-path-hardening.md)
+
+**Goal:** Fix uninstall manifest-removal ordering so partial file-deletion failures leave tracked state intact. Fix installer to actually add the bin directory to PATH on fresh install (not merely warn).
+
+**Deliverables:**
+- `src/cmd/uninstall.go` — reordered to file-delete → hook-remove → manifest-remove; structured error on partial failure
+- `src/cmd/uninstall_test.go` — corrected atomicity assertions
+- `scripts/install.sh` — adds bin dir to rc file and session PATH on fresh install
+- `scripts/install.ps1` — adds bin dir to Windows user PATH via SetEnvironmentVariable
+- `tests/installer/test_install.sh` and `test_install.ps1` — fresh-PATH scenario without pre-seeded PATH
+- `docs/phase-4/4.8-installer-hardening-and-doc-gaps.md` added to branch
+
+**Key Requirements:** ST-009, REQ-004, FS-001, ADR-0005
+
+**Acceptance Criteria:**
+- Uninstall removes manifest record only after all managed files successfully deleted
+- File-removal failure preserves manifest and returns structured error listing unremoved files
+- Fresh `install.sh` run modifies rc file and adds bin dir to PATH without pre-seeded PATH in tests
+- Fresh `install.ps1` run adds bin dir to Windows user PATH
+- All installer and Go tests pass
+
+---
+
+### Sprint 4.10: Operations Layer: Install, Upgrade, Uninstall Workflow Extraction
+
+Detailed sprint plan: [4.10 Operations Layer Workflow Extraction](./phase-4/4.10-operations-layer-workflow-extraction.md)
+
+**Goal:** Move install, upgrade, and uninstall workflow policy out of Cobra handlers into `src/pkg/operations`, satisfying MB-001 and MB-006 module boundary requirements.
+
+**Deliverables:**
+- `src/pkg/operations/install.go` — install scope-loop and multi-scope aggregation
+- `src/pkg/operations/upgrade.go` — upgrade workflow
+- `src/pkg/operations/uninstall.go` — uninstall workflow
+- `src/cmd/install.go`, `src/cmd/upgrade.go`, `src/cmd/uninstall.go` — thin bindings only (flag parse + operation call + output format)
+
+**Key Requirements:** MB-001, MB-006, REQ-005, ADR-0004
+
+**Acceptance Criteria:**
+- No package-management business logic in `src/cmd/` handlers
+- No `cobra` imports in `src/pkg/operations/`
+- `go test ./src/pkg/operations/...` passes with direct workflow coverage
+- All existing tests pass; no regressions
+
+---
+
 ## Phase 5: Release Pipeline
 
 ### Sprint 5.1: Release Pipeline
@@ -1861,7 +1908,7 @@ platforms with predictable config behavior.
 | 1. Foundation | 1.1–1.5 | Scaffold + CI pipeline, Dolt client, integrity, log-debug agent, gap closure |
 | 2. Admin | 2.1–2.4 | Import, export, verify, publish |
 | 3. End-User | 3.1–3.9 | List, install, validate, upgrade, HTTP client, SHA catalog, scan, import collision, scope/yolo/severity |
-| 4. AI Surface | 4.1–4.5 | JSON contract, backend parity, readback, sc:plugin, installer |
+| 4. AI Surface | 4.1–4.10 | JSON contract, backend parity, readback, sc:plugin, installer, error/fixture hardening, uninstall atomicity, PATH, operations layer |
 | 5. Release | 5.1 | GoReleaser release pipeline |
 
 ---
