@@ -10,6 +10,19 @@ note() {
   printf '%s\n' "$*"
 }
 
+maybe_fail_skill_copy() {
+  local threshold="${SC_INSTALL_TEST_FAIL_AFTER_SKILL_COPY:-0}"
+  if [[ ! "$threshold" =~ ^[0-9]+$ ]] || (( threshold <= 0 )); then
+    return 0
+  fi
+  SC_INSTALL_SKILL_COPY_COUNT="${SC_INSTALL_SKILL_COPY_COUNT:-0}"
+  SC_INSTALL_SKILL_COPY_COUNT=$((SC_INSTALL_SKILL_COPY_COUNT + 1))
+  export SC_INSTALL_SKILL_COPY_COUNT
+  if (( SC_INSTALL_SKILL_COPY_COUNT >= threshold )); then
+    die "simulated skill copy failure after $SC_INSTALL_SKILL_COPY_COUNT managed file copies"
+  fi
+}
+
 prune_empty_dirs() {
   local current="$1"
   local stop="$2"
@@ -36,13 +49,24 @@ CONFIG_DIR="$HOME_DIR/.sc"
 CONFIG_PATH="$CONFIG_DIR/config.toml"
 STATE_ROOT="$HOME_DIR/.synaptic/installers/sc-plugin"
 SKILL_TARGET="$HOME_DIR/.claude/skills/sc-plugin"
+SKILL_PARENT="$(dirname "$SKILL_TARGET")"
 SKILL_MANIFEST="$STATE_ROOT/managed-files.txt"
 BINARY_MANIFEST="$STATE_ROOT/binary-path.txt"
 
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sc-install.XXXXXX")"
-trap 'rm -rf "$TMP_DIR"' EXIT
+STAGED_SKILL=""
+BACKUP_SKILL=""
+cleanup() {
+  if [[ -n "$BACKUP_SKILL" && -d "$BACKUP_SKILL" && ! -e "$SKILL_TARGET" ]]; then
+    mv "$BACKUP_SKILL" "$SKILL_TARGET" 2>/dev/null || true
+  fi
+  [[ -n "$STAGED_SKILL" ]] && rm -rf "$STAGED_SKILL" 2>/dev/null || true
+  [[ -n "$BACKUP_SKILL" ]] && rm -rf "$BACKUP_SKILL" 2>/dev/null || true
+  rm -rf "$TMP_DIR" 2>/dev/null || true
+}
+trap cleanup EXIT
 
-mkdir -p "$BIN_DIR" "$CONFIG_DIR" "$STATE_ROOT" "$SKILL_TARGET"
+mkdir -p "$BIN_DIR" "$CONFIG_DIR" "$STATE_ROOT" "$SKILL_PARENT"
 
 BUILD_PATH="$TMP_DIR/sc"
 if [[ -n "${SC_INSTALL_BINARY:-}" ]]; then
@@ -77,12 +101,17 @@ SOURCE_LIST="$TMP_DIR/source-files.txt"
   find . -type f | sed 's#^\./##' | LC_ALL=C sort
 ) > "$SOURCE_LIST"
 
+STAGED_SKILL="$(mktemp -d "$SKILL_PARENT/.sc-plugin.stage.XXXXXX")"
+if [[ -d "$SKILL_TARGET" ]]; then
+  cp -a "$SKILL_TARGET/." "$STAGED_SKILL/"
+fi
+
 if [[ -f "$SKILL_MANIFEST" ]]; then
   while IFS= read -r rel; do
     [[ -n "$rel" ]] || continue
     if ! grep -Fqx "$rel" "$SOURCE_LIST"; then
-      rm -f "$SKILL_TARGET/$rel"
-      prune_empty_dirs "$(dirname "$SKILL_TARGET/$rel")" "$SKILL_TARGET"
+      rm -f "$STAGED_SKILL/$rel"
+      prune_empty_dirs "$(dirname "$STAGED_SKILL/$rel")" "$STAGED_SKILL"
     fi
   done < "$SKILL_MANIFEST"
 fi
@@ -90,14 +119,31 @@ fi
 while IFS= read -r rel; do
   [[ -n "$rel" ]] || continue
   src="$SKILL_SOURCE/$rel"
-  dst="$SKILL_TARGET/$rel"
+  dst="$STAGED_SKILL/$rel"
   mkdir -p "$(dirname "$dst")"
   mode=0644
   if [[ -x "$src" ]]; then
     mode=0755
   fi
   install -m "$mode" "$src" "$dst"
+  maybe_fail_skill_copy
 done < "$SOURCE_LIST"
+
+if [[ -d "$SKILL_TARGET" ]]; then
+  BACKUP_SKILL="$SKILL_PARENT/.sc-plugin.backup.$$"
+  mv "$SKILL_TARGET" "$BACKUP_SKILL"
+fi
+if mv "$STAGED_SKILL" "$SKILL_TARGET"; then
+  STAGED_SKILL=""
+  [[ -n "$BACKUP_SKILL" ]] && rm -rf "$BACKUP_SKILL"
+  BACKUP_SKILL=""
+else
+  if [[ -n "$BACKUP_SKILL" && -d "$BACKUP_SKILL" && ! -e "$SKILL_TARGET" ]]; then
+    mv "$BACKUP_SKILL" "$SKILL_TARGET"
+    BACKUP_SKILL=""
+  fi
+  die "failed to move staged skill payload into place"
+fi
 cp "$SOURCE_LIST" "$SKILL_MANIFEST"
 
 case ":${PATH:-}:" in

@@ -46,3 +46,13 @@ grep -Fq 'user note' "$HOME_DIR/.claude/skills/sc-plugin/USER-NOTES.md" || { ech
 grep -Fq 'assistant instructions' "$HOME_DIR/.claude/agents/my-agent.md" || { echo "unrelated file outside managed skill tree was modified" >&2; exit 1; }
 VERSION_OUTPUT="$("$BIN_DIR/sc" --version)"
 [[ "$VERSION_OUTPUT" == *"sc version "* ]] || { echo "unexpected version output after rerun: $VERSION_OUTPUT" >&2; exit 1; }
+
+cp -a "$HOME_DIR/.claude/skills/sc-plugin" "$TMP_ROOT/skill-before-failure"
+if SC_INSTALL_TEST_FAIL_AFTER_SKILL_COPY=1 bash "$REPO_ROOT/scripts/install.sh"; then
+  echo "expected simulated installer failure" >&2
+  exit 1
+fi
+diff -ru "$TMP_ROOT/skill-before-failure" "$HOME_DIR/.claude/skills/sc-plugin" >/dev/null || {
+  echo "skill tree changed after simulated copy failure" >&2
+  exit 1
+}

@@ -11,6 +11,18 @@ function Assert-True {
     }
 }
 
+function Get-TreeSnapshot {
+    param([string]$Root)
+
+    $snapshot = @{}
+    Get-ChildItem -LiteralPath $Root -File -Recurse -Force | ForEach-Object {
+        $relative = $_.FullName.Substring($Root.Length + 1)
+        $snapshot[$relative] = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash
+    }
+    return $snapshot
+}
+
+$repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("sc-installer-test-" + [System.Guid]::NewGuid().ToString("N"))
 $homeDir = Join-Path $tempRoot "home"
@@ -63,6 +75,29 @@ try {
     Assert-True ($agentContents -match "assistant instructions") "unrelated file outside managed skill tree was modified"
     $versionOutput = & $binaryPath --version
     Assert-True ($versionOutput -match "sc version ") "unexpected version output after rerun: $versionOutput"
+
+    $skillRoot = Join-Path $homeDir ".claude/skills/sc-plugin"
+    $beforeFailure = Get-TreeSnapshot -Root $skillRoot
+    $env:SC_INSTALL_TEST_FAIL_AFTER_SKILL_COPY = "1"
+    $failedAsExpected = $false
+    try {
+        & (Join-Path $repoRoot "scripts/install.ps1")
+    } catch {
+        $failedAsExpected = $_.Exception.Message -match "simulated skill copy failure"
+        if (-not $failedAsExpected) {
+            throw
+        }
+    } finally {
+        Remove-Item Env:SC_INSTALL_TEST_FAIL_AFTER_SKILL_COPY -ErrorAction SilentlyContinue
+        Remove-Item Env:SC_INSTALL_SKILL_COPY_COUNT -ErrorAction SilentlyContinue
+    }
+    Assert-True $failedAsExpected "expected simulated installer failure"
+    $afterFailure = Get-TreeSnapshot -Root $skillRoot
+    Assert-True ($beforeFailure.Count -eq $afterFailure.Count) "skill file count changed after simulated copy failure"
+    foreach ($key in $beforeFailure.Keys) {
+        Assert-True ($afterFailure.ContainsKey($key)) "missing skill file after failure: $key"
+        Assert-True ($afterFailure[$key] -eq $beforeFailure[$key]) "skill file changed after failure: $key"
+    }
 } finally {
     if (Test-Path -LiteralPath $tempRoot) {
         try {
