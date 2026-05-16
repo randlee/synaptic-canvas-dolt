@@ -303,6 +303,8 @@ Rules:
 - `details` may vary by command or backend but must remain structured JSON
 - `retryable` is explicit when retry behavior matters for automation
 - `suggested_action` is included when caller recovery is possible
+- `details.operation` names the CLI workflow step that raised the failure, such
+  as `get_package`, `list_packages`, `validate_scope`, or `install_scope`
 - bootstrap failures in `--json` mode use the same error envelope family
 - root-level config, branch, and argument failures must render through the same
   envelope instead of escaping as raw Go/Cobra stderr

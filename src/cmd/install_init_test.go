@@ -580,41 +580,96 @@ func TestJSONInstallCommandError(t *testing.T) {
 }
 
 func TestJSONInstallBackendFailureIncludesRetryableMetadata(t *testing.T) {
-	root := t.TempDir()
-	writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
-	restoreDir := chdirForTest(t, root)
-	defer restoreDir()
+	t.Run("get package path", func(t *testing.T) {
+		root := t.TempDir()
+		writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
+		restoreDir := chdirForTest(t, root)
+		defer restoreDir()
 
-	mock := dolt.NewMockClient()
-	mock.GetErr = fmt.Errorf("%w: upstream busy", dolt.ErrRateLimited)
+		mock := dolt.NewMockClient()
+		mock.GetErr = fmt.Errorf("%w: upstream busy", dolt.ErrRateLimited)
 
-	cmd := NewRootCmd("test", "abc", "2025-01-01")
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"install", "team-lead", "--json"})
+		cmd := NewRootCmd("test", "abc", "2025-01-01")
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetArgs([]string{"install", "team-lead", "--json"})
 
-	restore := installReadTestHooks(mock)
-	defer restore()
+		restore := installReadTestHooks(mock)
+		defer restore()
 
-	requireJSONCmdError(t, cmd.Execute())
+		requireJSONCmdError(t, cmd.Execute())
 
-	var resp jsonErrorEnvelope
-	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
-		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
-	}
-	if resp.OK || resp.Error.Code != api.ErrorCodeBackendUnavailable {
-		t.Fatalf("unexpected response: %+v", resp)
-	}
-	if !resp.Error.Retryable {
-		t.Fatalf("expected backend failure to be retryable: %+v", resp.Error)
-	}
-	if resp.Error.SuggestedAction != "retry or switch to a reachable backend" {
-		t.Fatalf("unexpected suggested_action: %+v", resp.Error)
-	}
-	if resp.Error.Details["cause_code"] != "rate_limited" || resp.Error.Details["operation"] != "get_package" {
-		t.Fatalf("unexpected backend details: %+v", resp.Error.Details)
-	}
+		var resp jsonErrorEnvelope
+		if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+			t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
+		}
+		if resp.OK || resp.Error.Code != api.ErrorCodeBackendUnavailable {
+			t.Fatalf("unexpected response: %+v", resp)
+		}
+		if !resp.Error.Retryable {
+			t.Fatalf("expected backend failure to be retryable: %+v", resp.Error)
+		}
+		if resp.Error.SuggestedAction != "retry or switch to a reachable backend" {
+			t.Fatalf("unexpected suggested_action: %+v", resp.Error)
+		}
+		if resp.Error.Details["cause_code"] != "rate_limited" || resp.Error.Details["operation"] != "get_package" {
+			t.Fatalf("unexpected backend details: %+v", resp.Error.Details)
+		}
+	})
+
+	t.Run("scope loop path", func(t *testing.T) {
+		root := t.TempDir()
+		writeCmdFile(t, filepath.Join(root, "go.mod"), "module test\n")
+		restoreDir := chdirForTest(t, root)
+		defer restoreDir()
+
+		mock := dolt.NewMockClient()
+		pkg := dolt.NewTestPackage("team-lead", "team-lead", "1.2.0", nil)
+		pkg.AgentVariant = "claude"
+		mock.AddPackage(pkg)
+		mock.AddFiles("team-lead", []models.PackageFile{{
+			DestPath: "SKILL.md", Content: "skill", SHA256: testSHA("skill"), FileType: models.FileTypeSkill,
+		}})
+
+		restore := installReadTestHooks(mock)
+		defer restore()
+
+		prevExecute := executeInstallService
+		executeInstallService = func(context.Context, installer.Request) (installer.Summary, error) {
+			return installer.Summary{}, fmt.Errorf("%w: upstream busy", dolt.ErrRateLimited)
+		}
+		defer func() { executeInstallService = prevExecute }()
+
+		cmd := NewRootCmd("test", "abc", "2025-01-01")
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetArgs([]string{"install", "team-lead", "--scope", "both", "--json", "--yolo"})
+
+		requireJSONCmdError(t, cmd.Execute())
+
+		var resp api.InstallResponse
+		if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+			t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, out.String())
+		}
+		if resp.OK || resp.Error == nil || resp.Error.Code != api.ErrorCodeBackendUnavailable {
+			t.Fatalf("unexpected response: %+v", resp)
+		}
+		if !resp.Error.Retryable {
+			t.Fatalf("expected aggregate backend failure to be retryable: %+v", resp.Error)
+		}
+		if len(resp.Failures) != 1 {
+			t.Fatalf("len(resp.Failures) = %d, want 1 (%+v)", len(resp.Failures), resp.Failures)
+		}
+		failure := resp.Failures[0]
+		if !failure.Retryable {
+			t.Fatalf("expected scoped failure to be retryable: %+v", failure)
+		}
+		if failure.Details["cause_code"] != "rate_limited" || failure.Details["operation"] != "install_scope" {
+			t.Fatalf("unexpected scoped backend details: %+v", failure.Details)
+		}
+	})
 }
 
 func TestInstallReadbackUsesStatusAndValidateJSON(t *testing.T) {
