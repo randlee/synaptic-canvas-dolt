@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/api"
 )
 
@@ -21,7 +22,7 @@ func TestSkillMappingsMatchNormativeExamples(t *testing.T) {
 	mappings := readSkillMappings(t)
 	for _, example := range exampleFixtures(t) {
 		if got := mappings[example.utterance]; got != example.command {
-			t.Fatalf("mapping mismatch for %q: got %q want %q", example.utterance, got, example.command)
+			t.Fatalf("mapping mismatch for %q (-got +want):\n%s", example.utterance, cmp.Diff(got, example.command))
 		}
 	}
 }
@@ -64,6 +65,16 @@ func exampleFixtures(t *testing.T) []exampleFixture {
 			}
 			if response.Error.Details["client"] != "http" {
 				t.Fatalf("unexpected client detail: %#v", response.Error.Details["client"])
+			}
+		}),
+		loadExampleFixture(t, "install-default.md", func(t *testing.T, payload string) {
+			var response api.InstallResponse
+			decodeJSONFixture(t, payload, &response)
+			if !response.OK || response.Scope != "project" {
+				t.Fatalf("unexpected install response: %+v", response)
+			}
+			if response.Package == nil || response.Package.Branch != "main" {
+				t.Fatalf("unexpected package payload: %+v", response.Package)
 			}
 		}),
 		loadExampleFixture(t, "install-beta-global.md", func(t *testing.T, payload string) {

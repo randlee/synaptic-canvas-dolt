@@ -1835,6 +1835,17 @@ platforms with predictable config behavior.
 - Repository-owned verification exists for installer behavior on supported
   platforms
 
+### Sprint 4.6: Error Contract Completeness
+
+**Goal:** Close the remaining gap between the documented Phase 4 machine
+contract and the runtime aggregate-install and backend error surface.
+
+### Sprint 4.7: sc:plugin Fixture Verification And Arch Cleanup
+
+**Goal:** Add repository-owned fixture verification for the `sc:plugin` wrapper
+and complete the Phase 4 architectural cleanup around shared warnings,
+install-ID constants, and test-only harness boundaries.
+
 ---
 
 ## Phase 5: Release Pipeline
@@ -1865,7 +1876,7 @@ platforms with predictable config behavior.
 | 1. Foundation | 1.1–1.5 | Scaffold + CI pipeline, Dolt client, integrity, log-debug agent, gap closure |
 | 2. Admin | 2.1–2.4 | Import, export, verify, publish |
 | 3. End-User | 3.1–3.9 | List, install, validate, upgrade, HTTP client, SHA catalog, scan, import collision, scope/yolo/severity |
-| 4. AI Surface | 4.1–4.5 | JSON contract, backend parity, readback, sc:plugin, installer |
+| 4. AI Surface | 4.1–4.7 | JSON contract, backend parity, readback, sc:plugin, installer, error/fixture hardening |
 | 5. Release | 5.1 | GoReleaser release pipeline |
 
 ---
