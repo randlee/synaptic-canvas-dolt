@@ -6,6 +6,7 @@ import (
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/api"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/installer"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/operations"
 	"github.com/spf13/cobra"
 )
 
@@ -81,7 +82,7 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 		}
 		return err
 	}
-	installs, err := loadTrackedInstalls(repoRoot)
+	installs, err := operations.LoadTrackedInstalls(repoRoot)
 	if err != nil {
 		if cfg.JSON {
 			return writeClassifiedJSONError(formatter, cfg, err)
@@ -91,7 +92,7 @@ func runUpgradeCmd(cmd *cobra.Command, args []string) error {
 
 	var targets []trackedInstall
 	if upgradeAll {
-		targets = filterInstallsByScope(installs, scope)
+		targets = operations.FilterInstallsByScope(installs, scope)
 	} else {
 		if packageID == "" {
 			err := fmt.Errorf("upgrade requires <package> or --all")

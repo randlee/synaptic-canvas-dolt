@@ -8,6 +8,7 @@ import (
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/api"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/installer"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/operations"
 	"github.com/spf13/cobra"
 )
 
@@ -63,7 +64,7 @@ func runUninstallCmd(cmd *cobra.Command, args []string) error {
 		}
 		return err
 	}
-	installs, err := loadTrackedInstalls(repoRoot)
+	installs, err := operations.LoadTrackedInstalls(repoRoot)
 	if err != nil {
 		if cfg.JSON {
 			return writeClassifiedJSONError(formatter, cfg, err)

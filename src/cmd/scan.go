@@ -132,9 +132,10 @@ func runScanCmd(cmd *cobra.Command, args []string) error {
 	})
 	if scanErr != nil {
 		if cfg.JSON {
-			if isMissingScanCatalogError(scanErr) {
+			if missing, ok := catalog.MissingCatalogDetails(scanErr); ok {
 				return writeJSONError(formatter, api.ErrorCodeValidationFailed, scanErr.Error(), map[string]any{
 					"required_action": "sc catalog update",
+					"catalog_path":    missing.Path,
 				})
 			}
 			return writeJSONError(formatter, classifyJSONError(scanErr.Error()), scanErr.Error())
@@ -183,13 +184,6 @@ func runScanCmd(cmd *cobra.Command, args []string) error {
 		})
 	}
 	return formatter.Table([]string{"PACKAGE", "VERSION", "SCOPE", "UPGRADE", "FILES"}, rows)
-}
-
-func isMissingScanCatalogError(err error) bool {
-	if err == nil {
-		return false
-	}
-	return strings.Contains(strings.ToLower(err.Error()), "catalog not found for branch")
 }
 
 type scanResult struct {
@@ -316,7 +310,7 @@ func scanTargets(opts scanOptions) ([]scanTarget, error) {
 func loadScanCatalog(path, branch string) (catalog.Catalog, []string, error) {
 	cat, warnings, err := catalog.Load(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return catalog.Catalog{}, nil, fmt.Errorf("catalog not found for branch %s; run: sc catalog update", branch)
+		return catalog.Catalog{}, nil, catalog.NewMissingCatalogError(path, branch)
 	}
 	if err != nil {
 		return catalog.Catalog{}, nil, err
