@@ -2009,6 +2009,8 @@ Detailed sprint plan: [5.1 Release Pipeline](./phase-5/5.1-release-pipeline.md)
 - PR/push validation runs `goreleaser check` before tags are cut
 - The release matrix is explicit: primary `darwin/arm64`, `windows/amd64`,
   `linux/amd64`; secondary `darwin/amd64`, `windows/arm64`, `linux/arm64`
+- `windows/arm64` is stated explicitly as an MVP secondary archive target,
+  while Winget publication remains deferred
 - Homebrew publication prerequisites and non-blocking failure behavior are
   documented
 - Winget publication is explicitly deferred pending publisher registration

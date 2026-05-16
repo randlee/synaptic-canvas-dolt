@@ -980,7 +980,10 @@ Following `claude-history` patterns:
 
 - **Source directory:** `./src`
 - **Binary name:** `sc`
-- **Targets:** linux/darwin (amd64, arm64), windows (amd64)
+- **Primary targets:** `darwin/arm64` (Apple Silicon macOS), `windows/amd64`
+  (Windows x64), `linux/amd64` (Linux x64)
+- **Secondary targets:** `darwin/amd64` (Intel macOS), `windows/arm64`,
+  `linux/arm64`
 - **CGO_ENABLED=0** (static binaries)
 - **Ldflags:** version, commit, date injection
 - **Homebrew:** `randlee/homebrew-tap` → `Formula/sc.rb`
@@ -1006,7 +1009,9 @@ Following `claude-history` patterns:
 - Non-publishing validation of the release configuration before tags are cut
 
 Winget publication is intentionally out of MVP release scope until publisher
-registration is complete (tracked in gh issue `#54`).
+registration is complete (tracked in gh issue `#54`). `windows/arm64` release
+archives remain in MVP scope as a secondary target; the deferred item is the
+Winget publication path, not the Windows ARM64 binary itself.
 
 ---
 
