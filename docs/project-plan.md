@@ -1956,6 +1956,35 @@ Detailed sprint plan: [4.9 Uninstall Atomicity And Installer PATH Hardening](./p
 
 ---
 
+### Sprint 4.10: Operations Layer Workflow Extraction
+
+**Goal:** Extract install, upgrade, and uninstall workflow policy from Cobra
+command handlers into `src/pkg/operations`, satisfying the MB-001 and MB-006
+module boundary requirements.
+
+Detailed sprint plan: [4.10 Operations Layer Workflow Extraction](./phase-4/4.10-operations-layer-workflow-extraction.md)
+
+**Deliverables:**
+- `src/pkg/operations/install.go`, `upgrade.go`, `uninstall.go` (new) containing
+  the extracted workflow logic with ≥70% statement coverage per file
+- `src/cmd/install.go`, `upgrade.go`, `uninstall.go` reduced to thin Cobra
+  bindings: flag parse → single operation call → output format
+
+**Key Requirements:**
+- MB-001 and MB-006: end-user workflows implemented behind shared operation-layer
+  packages below the Cobra layer
+- No `cobra` imports in `src/pkg/operations/`
+- Sprint 4.9 uninstall atomicity contract preserved after extraction
+
+**Acceptance Criteria:**
+- `RunInstall`, `RunUpgrade`, `RunUninstall` (or equivalents) exist in
+  `src/pkg/operations/` and contain all workflow policy
+- `src/cmd/` handlers make no direct calls to `installer.*`, `pkg/dolt.*`,
+  or `pkg/catalog.*` other than through the extracted operation functions
+- Coverage ≥70% per operations file; atomicity test still passes
+
+---
+
 ## Phase 5: Release Pipeline
 
 ### Sprint 5.1: Release Pipeline
