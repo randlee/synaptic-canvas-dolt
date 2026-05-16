@@ -16,6 +16,7 @@ const (
 	RepoProfilePath  = ".synaptic/repo-profile.toml"
 	EnvPath          = ".synaptic/env.toml"
 	HooksRegistry    = ".synaptic/hooks/registry.toml"
+	InstallIDFormat  = "pkg_%s_%s"
 )
 
 var stateFileMutexes sync.Map // map[string]*sync.Mutex, keyed by canonical lock path.

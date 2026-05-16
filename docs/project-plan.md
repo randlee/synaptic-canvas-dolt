@@ -1835,10 +1835,69 @@ platforms with predictable config behavior.
 - Repository-owned verification exists for installer behavior on supported
   platforms
 
+### Sprint 4.6: Error Contract Completeness
+
+**Goal:** Close the remaining gap between the documented Phase 4 machine
+contract and runtime aggregate-install/backend error metadata.
+
+Detailed sprint plan: [4.6 Error Contract Completeness](./phase-4/4.6-error-contract-completeness.md)
+
+**Deliverables:**
+- Contract coverage for aggregate install failures with typed per-scope sub-errors
+- Runtime error metadata coverage for retryability, suggested action, cause code,
+  and operation fields
+- Phase documentation aligned with the implemented Phase 4 error surface
+
+**Key Requirements:**
+- Aggregate install failures preserve the most specific typed code instead of
+  collapsing to `internal_error`
+- Recoverable backend failures expose machine-readable retryability and recovery
+  guidance
+- CLI documentation stays synchronized with the shipped JSON error schema
+
+**Acceptance Criteria:**
+- All-scopes-failed and partial multi-scope install failures preserve typed
+  per-scope codes in `failures[]`
+- Backend failure envelopes include `retryable`, `suggested_action`,
+  `details.cause_code`, and `details.operation`
+- Contract and command tests cover both pre-install lookup failures and
+  scope-loop install failures
+
+### Sprint 4.7: sc:plugin Fixture Verification And Arch Cleanup
+
+**Goal:** Add repository-owned fixture verification for the `sc:plugin`
+wrapper and complete the Phase 4 architectural cleanup around shared warnings,
+install-ID constants, and test-only harness boundaries.
+
+Detailed sprint plan: [4.7 sc:plugin Fixture Verification And Arch Cleanup](./phase-4/4.7-fixture-verification-and-arch-cleanup.md)
+
+**Deliverables:**
+- Automated fixture verification for representative `sc:plugin` wrapper flows
+- Shared warning/output cleanup in command handlers
+- Shared install-ID format constant across command mutation helpers
+- Test-only build boundary for Dolt harness helpers
+
+**Key Requirements:**
+- Wrapper verification must be repository-owned and runnable without manual QA
+- The command layer must reuse shared output helpers rather than duplicating
+  warning emitters
+- Test harness code must stay out of production binaries
+
+**Acceptance Criteria:**
+- `.claude/skills/sc-plugin/tests/` exercises install success, install with
+  explicit global scope, snapshot ambiguity, backend failure, and `--json`
+  command generation
+- `catalog.go` uses the shared formatter warning path rather than a local
+  helper
+- Install-ID generation is driven by one named shared constant
+- `src/pkg/dolttest/harness.go` is excluded from production builds by build tag
+
 ### Sprint 4.8: Installer Hardening And Doc Gaps
 
 **Goal:** Close the remaining installer safety and Phase 4 documentation gaps
 identified during QA.
+
+Detailed sprint plan: [4.8 Installer Hardening And Doc Gaps](./phase-4/4.8-installer-hardening-and-doc-gaps.md)
 
 **Deliverables:**
 - Atomic installer update flow for managed `sc:plugin` assets on shell and
@@ -1846,6 +1905,14 @@ identified during QA.
 - Failure-injection installer coverage for interrupted managed-asset updates
 - Documentation corrections for transport precedence and installer boundary
   behavior
+
+**Key Requirements:**
+- Installer updates must stage managed assets before swap so interruption cannot
+  leave a partial managed tree behind
+- Managed/unmanaged installer boundaries must remain explicit in both scripts
+  and docs
+- Phase 4 documentation must match the implemented client-selection precedence
+  and installer behavior
 
 **Acceptance Criteria:**
 - Installer updates stage managed assets before swap so interrupted writes do
@@ -1885,7 +1952,7 @@ identified during QA.
 | 1. Foundation | 1.1–1.5 | Scaffold + CI pipeline, Dolt client, integrity, log-debug agent, gap closure |
 | 2. Admin | 2.1–2.4 | Import, export, verify, publish |
 | 3. End-User | 3.1–3.9 | List, install, validate, upgrade, HTTP client, SHA catalog, scan, import collision, scope/yolo/severity |
-| 4. AI Surface | 4.1–4.5 | JSON contract, backend parity, readback, sc:plugin, installer |
+| 4. AI Surface | 4.1–4.8 | JSON contract, backend parity, readback, sc:plugin, installer, error/fixture hardening |
 | 5. Release | 5.1 | GoReleaser release pipeline |
 
 ---

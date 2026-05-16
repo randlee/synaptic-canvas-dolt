@@ -118,7 +118,7 @@ func runScanCmd(cmd *cobra.Command, args []string) error {
 	repoRoot, err := currentRepoRoot()
 	if err != nil {
 		if cfg.JSON {
-			return writeClassifiedJSONError(formatter, cfg, err)
+			return writeClassifiedJSONError(formatter, cfg, err, cmd.Name())
 		}
 		return err
 	}
@@ -148,7 +148,7 @@ func runScanCmd(cmd *cobra.Command, args []string) error {
 		accepted, upgraded, err = applyScanMutations(cmd.Context(), result.Candidates, acceptAll, upgradeAll)
 		if err != nil {
 			if cfg.JSON {
-				return writeClassifiedJSONError(formatter, cfg, err)
+				return writeClassifiedJSONError(formatter, cfg, err, cmd.Name())
 			}
 			return err
 		}
@@ -688,7 +688,7 @@ func applyScanMutations(ctx context.Context, candidates []scanCandidate, acceptA
 
 func scanInstallRecord(candidate scanCandidate) installer.InstallRecord {
 	return installer.InstallRecord{
-		InstallID:        fmt.Sprintf("pkg_%s_%s", candidate.Package, candidate.Scope),
+		InstallID:        fmt.Sprintf(installer.InstallIDFormat, candidate.Package, candidate.Scope),
 		Package:          candidate.Package,
 		Version:          candidate.Version,
 		DoltCommit:       "",
@@ -704,7 +704,7 @@ func scanInstallRecord(candidate scanCandidate) installer.InstallRecord {
 }
 
 func upgradeScanRecord(lock *installer.ManifestLock, candidate scanCandidate) bool {
-	installID := fmt.Sprintf("pkg_%s_%s", candidate.Package, candidate.Scope)
+	installID := fmt.Sprintf(installer.InstallIDFormat, candidate.Package, candidate.Scope)
 	for i := range lock.Installs {
 		record := &lock.Installs[i]
 		if record.InstallID != installID && (record.Package != candidate.Package || record.InstallScope != candidate.Scope) {

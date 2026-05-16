@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -12,6 +13,10 @@ import (
 )
 
 type installScopeFailure = api.InstallScopeFailure
+
+var executeInstallService = func(ctx context.Context, req installer.Request) (installer.Summary, error) {
+	return (installer.Service{}).Execute(ctx, req)
+}
 
 // NewInstallCmd creates the sc install command.
 func NewInstallCmd() *cobra.Command {
@@ -64,7 +69,7 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 		pkg, err := client.GetPackage(cmd.Context(), packageID)
 		if err != nil {
 			if cfg.JSON {
-				return writeClassifiedJSONError(formatter, cfg, err)
+				return writeClassifiedJSONError(formatter, cfg, err, "get_package")
 			}
 			return err
 		}
@@ -85,35 +90,35 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 		files, err := client.GetPackageFiles(cmd.Context(), packageID)
 		if err != nil {
 			if cfg.JSON {
-				return writeClassifiedJSONError(formatter, cfg, err)
+				return writeClassifiedJSONError(formatter, cfg, err, "get_package_files")
 			}
 			return err
 		}
 		deps, err := client.GetPackageDeps(cmd.Context(), packageID)
 		if err != nil {
 			if cfg.JSON {
-				return writeClassifiedJSONError(formatter, cfg, err)
+				return writeClassifiedJSONError(formatter, cfg, err, "get_package_deps")
 			}
 			return err
 		}
 		hooks, err := client.GetPackageHooks(cmd.Context(), packageID)
 		if err != nil {
 			if cfg.JSON {
-				return writeClassifiedJSONError(formatter, cfg, err)
+				return writeClassifiedJSONError(formatter, cfg, err, "get_package_hooks")
 			}
 			return err
 		}
 		questions, err := client.GetPackageQuestions(cmd.Context(), packageID)
 		if err != nil {
 			if cfg.JSON {
-				return writeClassifiedJSONError(formatter, cfg, err)
+				return writeClassifiedJSONError(formatter, cfg, err, "get_package_questions")
 			}
 			return err
 		}
 
 		if err := confirmExternalDeps(cmd, formatter, deps, yolo, dryRun); err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, api.ErrorCodeConfirmationNeeded, err.Error())
+				return writeStructuredJSONError(formatter, classifyRuntimeJSONError(cfg, err, "confirm_external_dependencies"))
 			}
 			return err
 		}
@@ -131,7 +136,7 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 		rolledBack := make([]installer.Summary, 0, len(scopes))
 		partial := false
 		for _, targetScope := range scopes {
-			summary, err := (installer.Service{}).Execute(cmd.Context(), installer.Request{
+			summary, err := executeInstallService(cmd.Context(), installer.Request{
 				Package:   pkg,
 				Files:     files,
 				Deps:      deps,
@@ -144,20 +149,17 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 			})
 			if err != nil {
 				if scope == "both" {
-					failures = append(failures, installScopeFailure{
-						Package: pkg.ID,
-						Scope:   targetScope,
-						Error:   err.Error(),
-					})
+					failureErr := classifyRuntimeJSONError(cfg, err, "install_scope")
+					failures = append(failures, api.NewInstallScopeFailure(pkg.ID, targetScope, failureErr))
 					remaining := summaries[:0]
 					for _, prior := range summaries {
 						if rollbackErr := rollbackInstallSummary(root, prior); rollbackErr != nil {
 							partial = true
-							failures = append(failures, installScopeFailure{
-								Package: prior.PackageID,
-								Scope:   prior.Scope,
-								Error:   "rollback failed: " + rollbackErr.Error(),
-							})
+							failures = append(failures, api.NewInstallScopeFailure(
+								prior.PackageID,
+								prior.Scope,
+								api.NewError(api.ErrorCodeInternal, "rollback failed: "+rollbackErr.Error()),
+							))
 							remaining = append(remaining, prior)
 							continue
 						}
@@ -167,7 +169,7 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 					break
 				}
 				if cfg.JSON {
-					return writeClassifiedJSONError(formatter, cfg, err)
+					return writeClassifiedJSONError(formatter, cfg, err, "install_scope")
 				}
 				return err
 			}
@@ -177,9 +179,10 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 			if len(failures) > 0 {
 				if cfg.JSON {
 					message := "install failed for all selected scopes"
+					errorValue := aggregateInstallError(message, failures)
 					if err := formatter.WriteJSON(api.InstallResponse{
 						OK:         false,
-						Error:      &api.Error{Code: api.ErrorCodeInternal, Message: message},
+						Error:      &errorValue,
 						Plan:       dryRun,
 						Scope:      scope,
 						Partial:    partial,
@@ -230,7 +233,8 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 			}
 			var errorValue *api.Error
 			if partialFailed {
-				errorValue = &api.Error{Code: api.ErrorCodeInternal, Message: "install failed for one or more scopes"}
+				aggregate := aggregateInstallError("install failed for one or more scopes", failures)
+				errorValue = &aggregate
 			}
 			if err := formatter.WriteJSON(api.InstallResponse{
 				OK:         !partialFailed,
@@ -284,4 +288,29 @@ func runInstallCmd(cmd *cobra.Command, args []string) error {
 		}
 		return nil
 	})
+}
+
+func aggregateInstallError(message string, failures []installScopeFailure) api.Error {
+	dominant := dominantInstallFailure(failures)
+	return api.NewError(dominant.Code, message, api.ErrorOptions{
+		Retryable:       dominant.Retryable,
+		Details:         dominant.Details,
+		SuggestedAction: dominant.SuggestedAction,
+	})
+}
+
+func dominantInstallFailure(failures []installScopeFailure) installScopeFailure {
+	for _, failure := range failures {
+		if failure.Code != "" && failure.Code != api.ErrorCodeInternal {
+			return failure
+		}
+	}
+	if len(failures) > 0 {
+		return failures[0]
+	}
+	return installScopeFailure{
+		Code:      api.ErrorCodeInternal,
+		Error:     "install failed",
+		Retryable: false,
+	}
 }

@@ -170,7 +170,7 @@ func (Service) Execute(ctx context.Context, req Request) (Summary, error) {
 	}
 
 	record := InstallRecord{
-		InstallID:        fmt.Sprintf("pkg_%s_%s", req.Package.ID, scope),
+		InstallID:        fmt.Sprintf(InstallIDFormat, req.Package.ID, scope),
 		Package:          req.Package.ID,
 		Version:          req.Package.Version,
 		DoltCommit:       stringValue(req.Package.SHA256),
