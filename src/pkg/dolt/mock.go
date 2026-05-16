@@ -2,8 +2,11 @@ package dolt
 
 import (
 	"context"
+	"slices"
+	"sort"
 	"strings"
 
+	"github.com/randlee/synaptic-canvas-dolt/pkg/catalog"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
 )
 
@@ -16,6 +19,7 @@ type MockClient struct {
 	Hooks     map[string][]models.PackageHook
 	Questions map[string][]models.PackageQuestion
 	Variants  map[string]string // key: "logicalID/agentProfile" -> variantPackageID
+	Catalog   []catalog.CatalogEntry
 
 	// Error fields allow tests to inject errors for specific operations.
 	ListErr      error
@@ -25,6 +29,7 @@ type MockClient struct {
 	HooksErr     error
 	QuestionsErr error
 	VariantErr   error
+	CatalogErr   error
 	CloseErr     error
 
 	Closed bool
@@ -73,15 +78,37 @@ func (m *MockClient) AddVariant(logicalID, agentProfile, variantPackageID string
 	m.Variants[key] = variantPackageID
 }
 
-// ListPackages returns all packages in the mock store.
-func (m *MockClient) ListPackages(_ context.Context, _ ListOptions) ([]models.Package, error) {
+// GetPackageDetail returns a package by ID with derived counts from the mock store.
+func (m *MockClient) GetPackageDetail(_ context.Context, id string) (*models.Package, error) {
+	if m.GetErr != nil {
+		return nil, m.GetErr
+	}
+	p, ok := m.Packages[id]
+	if !ok {
+		return nil, nil
+	}
+	cp := *p
+	cp.FileCount = len(m.Files[id])
+	cp.DepCount = len(m.Deps[id])
+	return &cp, nil
+}
+
+// ListPackages returns all packages in the mock store with tag filtering and stable ordering.
+func (m *MockClient) ListPackages(_ context.Context, opts ListOptions) ([]models.Package, error) {
 	if m.ListErr != nil {
 		return nil, m.ListErr
 	}
 	result := make([]models.Package, 0, len(m.Packages))
 	for _, p := range m.Packages {
-		result = append(result, *p)
+		if !matchesTags(p.TagsList(), opts.Tags) {
+			continue
+		}
+		cp := *p
+		cp.FileCount = len(m.Files[p.ID])
+		cp.DepCount = len(m.Deps[p.ID])
+		result = append(result, cp)
 	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
 	return result, nil
 }
 
@@ -103,6 +130,30 @@ func (m *MockClient) GetPackageFiles(_ context.Context, packageID string) ([]mod
 		return nil, m.FilesErr
 	}
 	return m.Files[packageID], nil
+}
+
+// GetPackageFileSHAs returns version/SHA metadata for one package file path.
+func (m *MockClient) GetPackageFileSHAs(_ context.Context, packageID, docPath string) ([]PackageFileSHA, error) {
+	if m.FilesErr != nil {
+		return nil, m.FilesErr
+	}
+	pkg, ok := m.Packages[packageID]
+	if !ok {
+		return nil, nil
+	}
+	var result []PackageFileSHA
+	for _, file := range m.Files[packageID] {
+		if file.DestPath != docPath {
+			continue
+		}
+		result = append(result, PackageFileSHA{
+			PackageID: packageID,
+			Version:   pkg.Version,
+			DocPath:   docPath,
+			SHA256:    file.SHA256,
+		})
+	}
+	return result, nil
 }
 
 // GetPackageDeps returns dependencies for a package from the mock store.
@@ -136,6 +187,53 @@ func (m *MockClient) ResolveVariant(_ context.Context, logicalID, agentProfile s
 	}
 	key := logicalID + "/" + agentProfile
 	return m.Variants[key], nil
+}
+
+// GetPackageCatalog returns the configured mock catalog entries.
+func (m *MockClient) GetPackageCatalog(_ context.Context) ([]catalog.CatalogEntry, error) {
+	if m.CatalogErr != nil {
+		return nil, m.CatalogErr
+	}
+	if m.Catalog != nil {
+		result := make([]catalog.CatalogEntry, len(m.Catalog))
+		copy(result, m.Catalog)
+		return result, nil
+	}
+	result := []catalog.CatalogEntry{}
+	for _, pkg := range m.Packages {
+		for _, file := range m.Files[pkg.ID] {
+			if file.SHA256 == "" {
+				continue
+			}
+			result = append(result, catalog.CatalogEntry{
+				PackageID: pkg.ID,
+				Version:   pkg.Version,
+				DocPath:   file.DestPath,
+				SHA256:    file.SHA256,
+			})
+		}
+	}
+	return catalog.SortedEntries(result), nil
+}
+
+func matchesTags(have, want []string) bool {
+	if len(want) == 0 {
+		return true
+	}
+	normalized := make([]string, 0, len(have))
+	for _, tag := range have {
+		trimmed := strings.ToLower(strings.TrimSpace(tag))
+		if trimmed != "" {
+			normalized = append(normalized, trimmed)
+		}
+	}
+	for _, tag := range want {
+		trimmed := strings.ToLower(strings.TrimSpace(tag))
+		if trimmed != "" && slices.Contains(normalized, trimmed) {
+			return true
+		}
+	}
+	return false
 }
 
 // Close marks the mock client as closed.

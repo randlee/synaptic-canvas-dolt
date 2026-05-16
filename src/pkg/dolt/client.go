@@ -9,10 +9,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
+	"strconv"
 
 	// MySQL driver for database/sql — Dolt exposes a MySQL-compatible interface.
-	_ "github.com/go-sql-driver/mysql"
+	mysql "github.com/go-sql-driver/mysql"
 
+	"github.com/randlee/synaptic-canvas-dolt/pkg/catalog"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
 )
 
@@ -21,6 +24,17 @@ type ListOptions struct {
 	// Branch specifies the Dolt branch (channel) to query.
 	// Empty string means use the current/default branch.
 	Branch string
+
+	// Tags filters packages by requested tags using case-insensitive OR matching.
+	Tags []string
+}
+
+// PackageFileSHA is the immutable digest metadata for one package file path.
+type PackageFileSHA struct {
+	PackageID string `json:"package_id"`
+	Version   string `json:"version"`
+	DocPath   string `json:"doc_path"`
+	SHA256    string `json:"sha256"`
 }
 
 // Client defines the interface for querying the Synaptic Canvas Dolt database.
@@ -32,8 +46,14 @@ type Client interface {
 	// GetPackage retrieves a single package by ID.
 	GetPackage(ctx context.Context, id string) (*models.Package, error)
 
+	// GetPackageDetail retrieves one package with file/dependency counts.
+	GetPackageDetail(ctx context.Context, id string) (*models.Package, error)
+
 	// GetPackageFiles retrieves all files belonging to a package.
 	GetPackageFiles(ctx context.Context, packageID string) ([]models.PackageFile, error)
+
+	// GetPackageFileSHAs retrieves existing version/SHA rows for one package file path.
+	GetPackageFileSHAs(ctx context.Context, packageID, docPath string) ([]PackageFileSHA, error)
 
 	// GetPackageDeps retrieves all dependencies for a package.
 	GetPackageDeps(ctx context.Context, packageID string) ([]models.PackageDep, error)
@@ -47,6 +67,9 @@ type Client interface {
 	// ResolveVariant resolves a logical package ID and agent profile to a
 	// concrete variant package ID. Returns empty string if no variant exists.
 	ResolveVariant(ctx context.Context, logicalID, agentProfile string) (string, error)
+
+	// GetPackageCatalog returns package asset hashes visible on this client's branch.
+	GetPackageCatalog(ctx context.Context) ([]catalog.CatalogEntry, error)
 
 	// Close releases database resources.
 	Close() error
@@ -85,6 +108,29 @@ func (c Config) DSN() string {
 		c.User, c.Password, c.Host, c.Port, c.Database)
 }
 
+// ParseDSN parses a MySQL DSN into a Dolt SQL Config.
+func ParseDSN(dsn string) (Config, error) {
+	parsed, err := mysql.ParseDSN(dsn)
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing dolt DSN: %w", err)
+	}
+	host, portText, err := net.SplitHostPort(parsed.Addr)
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing dolt DSN address %q: %w", parsed.Addr, err)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing dolt DSN port %q: %w", portText, err)
+	}
+	return Config{
+		Host:     host,
+		Port:     port,
+		User:     parsed.User,
+		Password: parsed.Passwd,
+		Database: parsed.DBName,
+	}, nil
+}
+
 // NewSQLClient creates a new SQLClient connected to the Dolt SQL server.
 // The caller must call Close() when done.
 func NewSQLClient(db *sql.DB, database, branch string) *SQLClient {
@@ -121,7 +167,8 @@ func (c *SQLClient) Close() error {
 // ListPackages returns all packages, optionally filtered by branch.
 func (c *SQLClient) ListPackages(ctx context.Context, opts ListOptions) ([]models.Package, error) {
 	slog.Debug("listing packages", "branch", opts.Branch)
-	rows, err := c.db.QueryContext(ctx, ListPackagesQuery(c.database, opts.Branch))
+	query, args := ListPackagesQuery(c.database, opts.Branch, opts.Tags)
+	rows, err := c.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("listing packages: %w", err)
 	}
@@ -130,7 +177,10 @@ func (c *SQLClient) ListPackages(ctx context.Context, opts ListOptions) ([]model
 	var packages []models.Package
 	for rows.Next() {
 		var p models.Package
-		if err := rows.Scan(&p.ID, &p.Name, &p.Version, &p.Description, &p.Tags, &p.InstallScope); err != nil {
+		if err := rows.Scan(
+			&p.ID, &p.Name, &p.Version, &p.Description, &p.AgentVariant,
+			&p.Tags, &p.InstallScope, &p.SHA256, &p.FileCount, &p.DepCount,
+		); err != nil {
 			return nil, fmt.Errorf("scanning package row: %w", err)
 		}
 		packages = append(packages, p)
@@ -161,6 +211,26 @@ func (c *SQLClient) GetPackage(ctx context.Context, id string) (*models.Package,
 	return &p, nil
 }
 
+// GetPackageDetail retrieves a single package by ID with file/dependency counts.
+func (c *SQLClient) GetPackageDetail(ctx context.Context, id string) (*models.Package, error) {
+	slog.Debug("getting package detail", "id", id)
+	var p models.Package
+	err := c.db.QueryRowContext(ctx, GetPackageDetailQuery(c.database, c.branch), id).Scan(
+		&p.ID, &p.Name, &p.Version, &p.Description, &p.AgentVariant,
+		&p.Author, &p.License, &p.Tags, &p.InstallScope,
+		&p.Variables, &p.Options, &p.SHA256, &p.MinClaudeVer,
+		&p.FileCount, &p.DepCount,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		slog.Debug("package detail not found", "id", id)
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("getting package detail %q: %w", id, err)
+	}
+	return &p, nil
+}
+
 // GetPackageFiles retrieves all files belonging to a package.
 func (c *SQLClient) GetPackageFiles(ctx context.Context, packageID string) ([]models.PackageFile, error) {
 	slog.Debug("getting package files", "package_id", packageID)
@@ -187,6 +257,29 @@ func (c *SQLClient) GetPackageFiles(ctx context.Context, packageID string) ([]mo
 	}
 	slog.Debug("got package files", "package_id", packageID, "count", len(files))
 	return files, nil
+}
+
+// GetPackageFileSHAs retrieves existing version/SHA rows for one package file path.
+func (c *SQLClient) GetPackageFileSHAs(ctx context.Context, packageID, docPath string) ([]PackageFileSHA, error) {
+	slog.Debug("getting package file shas", "package_id", packageID, "doc_path", docPath)
+	rows, err := c.db.QueryContext(ctx, GetPackageFileSHAsQuery(c.database, c.branch), packageID, docPath)
+	if err != nil {
+		return nil, fmt.Errorf("getting file SHAs for package %q path %q: %w", packageID, docPath, err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var result []PackageFileSHA
+	for rows.Next() {
+		var row PackageFileSHA
+		if err := rows.Scan(&row.PackageID, &row.Version, &row.DocPath, &row.SHA256); err != nil {
+			return nil, fmt.Errorf("scanning file SHA row: %w", err)
+		}
+		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating file SHAs: %w", err)
+	}
+	return result, nil
 }
 
 // GetPackageDeps retrieves all dependencies for a package.
@@ -284,4 +377,27 @@ func (c *SQLClient) ResolveVariant(ctx context.Context, logicalID, agentProfile 
 		return "", fmt.Errorf("resolving variant %q/%q: %w", logicalID, agentProfile, err)
 	}
 	return variantID, nil
+}
+
+// GetPackageCatalog returns current package file SHAs for the configured branch.
+func (c *SQLClient) GetPackageCatalog(ctx context.Context) ([]catalog.CatalogEntry, error) {
+	slog.Debug("getting package catalog", "branch", c.branch)
+	rows, err := c.db.QueryContext(ctx, GetPackageCatalogQuery(c.database, c.branch))
+	if err != nil {
+		return nil, fmt.Errorf("getting package catalog: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var entries []catalog.CatalogEntry
+	for rows.Next() {
+		var entry catalog.CatalogEntry
+		if err := rows.Scan(&entry.PackageID, &entry.Version, &entry.DocPath, &entry.SHA256); err != nil {
+			return nil, fmt.Errorf("scanning package catalog row: %w", err)
+		}
+		entries = append(entries, entry)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating package catalog: %w", err)
+	}
+	return entries, nil
 }

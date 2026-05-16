@@ -11,6 +11,7 @@ import (
 
 // Execute creates the root command, configures it with version info, and runs it.
 func Execute(version, commit, date string) error {
+	defer logging.Close()
 	rootCmd := NewRootCmd(version, commit, date)
 	return rootCmd.Execute()
 }
@@ -62,13 +63,31 @@ stored in a Dolt database.`,
 
 	// Register persistent (global) flags.
 	pf := rootCmd.PersistentFlags()
+	pf.String("dolt-client", "", "Dolt client to use: http, sql, or cli")
+	pf.String("dolt-host", "", "DoltHub HTTP API host")
+	pf.String("dolt-database", "", "DoltHub database slug in owner/database format")
+	pf.String("dolt-token", "", "DoltHub API token")
+	pf.String("dolt-dsn", "", "Dolt SQL server DSN")
 	pf.String("dolt-dir", "", "Dolt database directory (default: auto-detect)")
+	pf.String("dolt-timeout", "", "Dolt HTTP timeout in seconds")
 	pf.String("remote", "", "DoltHub remote name")
 	pf.String("branch", "", "Branch override (default: SC_DOLT_BRANCH or main)")
 	pf.Bool("json", false, "output as JSON")
 	pf.Bool("quiet", false, "suppress non-essential output")
 	pf.Bool("verbose", false, "enable debug logging")
 
+	rootCmd.AddCommand(NewInitCmd())
+	rootCmd.AddCommand(NewInstallCmd())
+	rootCmd.AddCommand(NewListCmd())
+	rootCmd.AddCommand(NewInfoCmd())
+	rootCmd.AddCommand(NewValidateCmd())
+	rootCmd.AddCommand(NewStatusCmd())
+	rootCmd.AddCommand(NewSnapshotCmd())
+	rootCmd.AddCommand(NewUpgradeCmd())
+	rootCmd.AddCommand(NewUninstallCmd())
+	rootCmd.AddCommand(NewConfigCmd())
+	rootCmd.AddCommand(NewCatalogCmd())
+	rootCmd.AddCommand(NewScanCmd())
 	rootCmd.AddCommand(admin.NewAdminCmd())
 
 	return rootCmd
