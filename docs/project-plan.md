@@ -1922,6 +1922,38 @@ Detailed sprint plan: [4.8 Installer Hardening And Doc Gaps](./phase-4/4.8-insta
 - Phase 4 documentation matches the implemented five-level client-selection
   precedence and installer behavior
 
+### Sprint 4.9: Uninstall Atomicity And Installer PATH Hardening
+
+**Goal:** Fix uninstall atomicity so manifest state never claims an uninstall
+completed when tracked files remain on disk, and harden fresh-install PATH
+setup/documentation across the shell and PowerShell installers.
+
+Detailed sprint plan: [4.9 Uninstall Atomicity And Installer PATH Hardening](./phase-4/4.9-uninstall-atomicity-and-installer-path-hardening.md)
+
+**Deliverables:**
+- Uninstall workflow ordering updated to delete tracked files before hook and
+  manifest removal, preserving the manifest on file-removal failure
+- Installer PATH persistence updates for shell and PowerShell fresh installs,
+  with isolated tests for the new behavior
+- Final Phase 4 documentation corrections for rollback reporting and client
+  selection terminology
+
+**Key Requirements:**
+- Uninstall failures during tracked-file removal must leave manifest tracking
+  intact so disk state and metadata cannot diverge
+- Fresh installs must update persistent PATH configuration instead of only
+  warning the user
+- Phase 4 docs must describe the actual emitted rollback schema and implemented
+  precedence rules
+
+**Acceptance Criteria:**
+- Uninstall removes the manifest record only after all managed files are
+  successfully deleted
+- Fresh install tests verify the installed bin directory is persisted onto PATH
+  for both shell and PowerShell installers
+- Phase 4 docs match the implemented uninstall failure behavior and five-level
+  client-selection precedence
+
 ---
 
 ## Phase 5: Release Pipeline
@@ -1952,7 +1984,7 @@ Detailed sprint plan: [4.8 Installer Hardening And Doc Gaps](./phase-4/4.8-insta
 | 1. Foundation | 1.1–1.5 | Scaffold + CI pipeline, Dolt client, integrity, log-debug agent, gap closure |
 | 2. Admin | 2.1–2.4 | Import, export, verify, publish |
 | 3. End-User | 3.1–3.9 | List, install, validate, upgrade, HTTP client, SHA catalog, scan, import collision, scope/yolo/severity |
-| 4. AI Surface | 4.1–4.8 | JSON contract, backend parity, readback, sc:plugin, installer, error/fixture hardening |
+| 4. AI Surface | 4.1–4.9 | JSON contract, backend parity, readback, sc:plugin, installer, error/fixture hardening |
 | 5. Release | 5.1 | GoReleaser release pipeline |
 
 ---
