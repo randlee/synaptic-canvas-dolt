@@ -1,0 +1,11 @@
+name: importing-sc-packages
+version: 1.0.0
+description: Convert existing skills and packages into Synaptic Canvas packages that remain usable outside sc-dolt.
+artifacts:
+  skills:
+    - skills/importing-sc-packages/SKILL.md
+    - skills/importing-sc-packages/references/import-conversion-rules.md
+    - skills/importing-sc-packages/references/installation-and-troubleshooting.md
+requires:
+  cli:
+    - sc

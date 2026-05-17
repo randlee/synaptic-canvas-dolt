@@ -1,5 +1,6 @@
 ---
 name: importing-sc-packages
+version: 1.0.0
 description: Convert existing Claude Code skills, agents, commands, scripts, and package folders into Synaptic Canvas packages. Use when importing a legacy skill, merging related packages, adding install-and-troubleshooting guidance, preserving manual CLI/app install instructions, or preparing a package for sc admin import.
 ---
 
@@ -45,6 +46,10 @@ before proceeding.**
 
 Review this skill and converted skills against:
 - `/Users/randlee/Documents/github/synaptic-canvas/docs/claude-code-skills-agents-guidelines.md`
+
+## QA Sign-Off
+
+Reviewed against `/Users/randlee/Documents/github/synaptic-canvas/docs/claude-code-skills-agents-guidelines.md` on 2026-05-17. All normative skill rules checked and passed.
 
 ## Workflow
 
