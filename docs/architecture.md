@@ -2,7 +2,7 @@
 
 This document is the top-level architecture overview for the repository.
 Focused, drift-prone decisions are captured separately as ADRs under
-`docs/adr/`; this overview and those ADRs are jointly normative with
+`docs/adr/` (indexed in `docs/adr/README.md`); this overview and those ADRs are jointly normative with
 `requirements.md`.
 
 ## 1. System Shape

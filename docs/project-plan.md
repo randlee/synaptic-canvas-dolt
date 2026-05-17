@@ -1987,6 +1987,8 @@ Detailed sprint plan: [4.10 Operations Layer Workflow Extraction](./phase-4/4.10
 
 ## Phase 5: Release Readiness And Product Proof
 
+Phase plan: [docs/phase-5/README.md](./phase-5/README.md)
+
 ### Sprint 5.1: Release Pipeline
 
 **Goal:** Ship an MVP release pipeline with an explicit archive matrix,
@@ -2005,7 +2007,7 @@ Detailed sprint plan: [5.1 Release Pipeline](./phase-5/5.1-release-pipeline.md)
 - GoReleaser configuration with an explicit primary/secondary archive matrix
 - Homebrew publication prerequisite and failure-policy documentation
 - Accurate release-surface documentation for Homebrew, release archives, and
-  deferred Winget publication
+  the enabled-but-operationally-gated Winget publication path
 
 **Acceptance Criteria:**
 - `docs/phase-5/5.1-release-pipeline.md` exists and defines the full Sprint 5.1
@@ -2013,12 +2015,11 @@ Detailed sprint plan: [5.1 Release Pipeline](./phase-5/5.1-release-pipeline.md)
 - PR/push validation runs `goreleaser check` before tags are cut
 - The release matrix is explicit: primary `darwin/arm64`, `windows/amd64`,
   `linux/amd64`; secondary `darwin/amd64`, `windows/arm64`, `linux/arm64`
-- `windows/arm64` is stated explicitly as an MVP secondary archive target,
-  while Winget publication remains deferred
+- `windows/arm64` is stated explicitly as an MVP secondary archive target
 - Homebrew publication prerequisites and non-blocking failure behavior are
   documented
-- Winget publication is explicitly deferred pending publisher registration
-  (gh issue `#54`)
+- Winget publication configuration is described accurately relative to the
+  merged `develop` baseline and its remaining operational prerequisites
 
 ### Sprint 5.2: First Import Candidate And Package Normalization
 
@@ -2190,7 +2191,7 @@ Detailed sprint plan: [6.2 Web UI For Synaptic Canvas Catalog](./phase-6/6.2-web
 | 2. Admin | 2.1–2.4 | Import, export, verify, publish |
 | 3. End-User | 3.1–3.9 | List, install, validate, upgrade, HTTP client, SHA catalog, scan, import collision, scope/yolo/severity |
 | 4. AI Surface | 4.1–4.10 | JSON contract, backend parity, readback, sc:plugin, installer, error/fixture hardening |
-| 5. Release | 5.1–5.6 | Release pipeline, first-package import, local clone smoke, DoltHub smoke, package expansion, hardening closure |
+| 5. Release | 5.1–5.6 | Release readiness, first-package import, local clone smoke, DoltHub smoke, package expansion, hardening closure |
 | 6. Post-MVP | 6.1–6.2 | Dolt UX forwarding and catalog web UI |
 
 ---

@@ -50,8 +50,8 @@
 **Layer 1 — `sc` Go CLI:** The compiled binary. Binds command input/output to
 shared package-management workflows, typed JSON DTOs, Dolt client adapters,
 and file/state services. Distributed via GoReleaser release archives,
-Homebrew, and `go install`. Winget publication is deferred pending publisher
-registration (gh issue `#54`).
+Homebrew, `go install`, and an enabled Winget publication path whose catalog
+availability still depends on publisher registration/review (gh issue `#54`).
 
 **Layer 2 — `sc:plugin` skill:** A Claude Code skill that wraps the `sc` CLI.
 Allows Claude to manage packages conversationally ("install the delay
@@ -987,7 +987,8 @@ Following `claude-history` patterns:
 - **CGO_ENABLED=0** (static binaries)
 - **Ldflags:** version, commit, date injection
 - **Homebrew:** `randlee/homebrew-tap` → `Formula/sc.rb`
-- **Winget:** deferred pending publisher registration (gh issue `#54`)
+- **Winget:** publication path enabled in GoReleaser; catalog availability still
+  depends on publisher registration/review (gh issue `#54`)
 - **Checksums:** SHA256
 
 ### CI Workflows
@@ -1008,10 +1009,11 @@ Following `claude-history` patterns:
 - `goreleaser check`
 - Non-publishing validation of the release configuration before tags are cut
 
-Winget publication is intentionally out of MVP release scope until publisher
-registration is complete (tracked in gh issue `#54`). `windows/arm64` release
-archives remain in MVP scope as a secondary target; the deferred item is the
-Winget publication path, not the Windows ARM64 binary itself.
+Winget publication is part of the configured release surface, but public
+catalog availability still depends on publisher registration/review (tracked in
+gh issue `#54`). `windows/arm64` release archives remain in MVP scope as a
+secondary target. The operational risk is the Winget publication path becoming
+actionable in the public catalog, not Windows ARM64 binary generation itself.
 
 ---
 
