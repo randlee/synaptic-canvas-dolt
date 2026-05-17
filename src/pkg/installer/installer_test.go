@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -179,8 +180,15 @@ func TestExecuteRecordsVerifiedToolDependencies(t *testing.T) {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
 	toolPath := filepath.Join(binDir, "fake-tool")
-	if err := os.Symlink("/bin/sh", toolPath); err != nil {
-		t.Fatalf("Symlink() error = %v", err)
+	if runtime.GOOS == "windows" {
+		toolPath += ".bat"
+		if err := os.WriteFile(toolPath, []byte("@echo off\r\nexit /b 0\r\n"), 0o600); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+	} else {
+		if err := os.Symlink("/bin/sh", toolPath); err != nil {
+			t.Fatalf("Symlink() error = %v", err)
+		}
 	}
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
