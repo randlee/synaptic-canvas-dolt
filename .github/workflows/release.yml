@@ -44,6 +44,9 @@ jobs:
           go-version: "1.26"
           cache-dependency-path: src/go.sum
 
+      - name: Install GoReleaser
+        run: go install github.com/goreleaser/goreleaser/v2@latest
+
       - name: Run GoReleaser
         id: goreleaser
         continue-on-error: true
@@ -53,7 +56,7 @@ jobs:
           WINGET_GITHUB_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
         run: |
           set -o pipefail
-          goreleaser release --clean 2>&1 | tee goreleaser.log
+          "$(go env GOPATH)/bin/goreleaser" release --clean 2>&1 | tee goreleaser.log
           echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
       - name: Evaluate GoReleaser outcome
