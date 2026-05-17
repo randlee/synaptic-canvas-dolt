@@ -2,7 +2,7 @@
 
 This document is the top-level architecture overview for the repository.
 Focused, drift-prone decisions are captured separately as ADRs under
-`docs/adr/`; this overview and those ADRs are jointly normative with
+`docs/adr/` (indexed in `docs/adr/README.md`); this overview and those ADRs are jointly normative with
 `requirements.md`.
 
 ## 1. System Shape
@@ -188,6 +188,9 @@ Testing is part of the product story:
 - live DoltHub checks are human/AI-driven integration verification only; CI must
   use local fixtures, mocks, or `httptest` and must not depend on external
   DoltHub state
+- sprint completion reports are part of verification traceability; they record
+  issues encountered, fixes completed, and deferred follow-up items so phase
+  hardening work is driven by explicit evidence rather than chat memory
 - future package validation may include test evidence captured alongside package
   metadata or adjacent validation records, but that evidence model is a later
   design step rather than an MVP prerequisite

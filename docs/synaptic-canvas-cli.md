@@ -49,8 +49,9 @@
 
 **Layer 1 — `sc` Go CLI:** The compiled binary. Binds command input/output to
 shared package-management workflows, typed JSON DTOs, Dolt client adapters,
-and file/state services. Distributed via GoReleaser (Homebrew, winget,
-`go install`).
+and file/state services. Distributed via GoReleaser release archives,
+Homebrew, `go install`, and an enabled Winget publication path whose catalog
+availability still depends on publisher registration/review (gh issue `#54`).
 
 **Layer 2 — `sc:plugin` skill:** A Claude Code skill that wraps the `sc` CLI.
 Allows Claude to manage packages conversationally ("install the delay
@@ -979,11 +980,15 @@ Following `claude-history` patterns:
 
 - **Source directory:** `./src`
 - **Binary name:** `sc`
-- **Targets:** linux/darwin (amd64, arm64), windows (amd64)
+- **Primary targets:** `darwin/arm64` (Apple Silicon macOS), `windows/amd64`
+  (Windows x64), `linux/amd64` (Linux x64)
+- **Secondary targets:** `darwin/amd64` (Intel macOS), `windows/arm64`,
+  `linux/arm64`
 - **CGO_ENABLED=0** (static binaries)
 - **Ldflags:** version, commit, date injection
 - **Homebrew:** `randlee/homebrew-tap` → `Formula/sc.rb`
-- **Winget:** `randlee.sc`
+- **Winget:** publication path enabled in GoReleaser; catalog availability still
+  depends on publisher registration/review (gh issue `#54`)
 - **Checksums:** SHA256
 
 ### CI Workflows
@@ -998,7 +1003,17 @@ Following `claude-history` patterns:
 - Full test suite
 - GoReleaser build + publish
 - Homebrew tap update
-- Winget manifest update
+- GitHub release archives, checksums, and generated notes
+
+**release-validate.yml** (planned under Sprint 5.1):
+- `goreleaser check`
+- Non-publishing validation of the release configuration before tags are cut
+
+Winget publication is part of the configured release surface, but public
+catalog availability still depends on publisher registration/review (tracked in
+gh issue `#54`). `windows/arm64` release archives remain in MVP scope as a
+secondary target. The operational risk is the Winget publication path becoming
+actionable in the public catalog, not Windows ARM64 binary generation itself.
 
 ---
 
