@@ -1985,7 +1985,7 @@ Detailed sprint plan: [4.10 Operations Layer Workflow Extraction](./phase-4/4.10
 
 ---
 
-## Phase 5: Release Pipeline
+## Phase 5: Release Readiness And Product Proof
 
 ### Sprint 5.1: Release Pipeline
 
@@ -1993,6 +1993,10 @@ Detailed sprint plan: [4.10 Operations Layer Workflow Extraction](./phase-4/4.10
 pre-tag GoReleaser validation, documented Homebrew publication prerequisites,
 and an accurate statement of what is and is not part of the MVP release
 surface.
+
+Every Phase 5 sprint completion report must record issues encountered, the
+fixes completed inside the sprint, and any larger follow-up items that need a
+later sprint rather than disappearing into ad hoc notes.
 
 Detailed sprint plan: [5.1 Release Pipeline](./phase-5/5.1-release-pipeline.md)
 
@@ -2015,6 +2019,100 @@ Detailed sprint plan: [5.1 Release Pipeline](./phase-5/5.1-release-pipeline.md)
 - Winget publication configuration is described accurately relative to the
   merged baseline and its remaining operational prerequisites
 
+### Sprint 5.2: First Import Candidate And Package Normalization
+
+**Goal:** Convert the first real marketplace package into a clean Synaptic
+Canvas package in its source repository, preserve traditional marketplace
+usability, and prove that the package is ready for `sc admin import`.
+
+Detailed sprint plan: [5.2 First Import Candidate And Package Normalization](./phase-5/5.2-first-import-candidate-and-package-normalization.md)
+
+**Deliverables:**
+- Updated source package for `claude-history` on a dedicated worktree
+- QA-reviewed `.claude/skills/importing-sc-packages` skill used for conversion
+- `installation-and-troubleshooting` guidance that works for non-`sc` users
+- Short Synaptic Canvas install/upgrade/uninstall section
+- Package metadata and assets ready for catalog import
+
+**Acceptance Criteria:**
+- `docs/phase-5/5.2-first-import-candidate-and-package-normalization.md`
+  exists and defines the full Sprint 5.2 implementation plan
+- `claude-history` is updated in its source repo using the import skill rules
+- `.claude/skills/importing-sc-packages` is reviewed against
+  `/Users/randlee/Documents/github/synaptic-canvas/docs/claude-code-skills-agents-guidelines.md`
+  before it is treated as the authoritative conversion workflow
+- The package preserves the normal manual install path and adds a short `sc`
+  section
+- The package is ready for `sc admin import` without guessing about package
+  shape, dependency metadata, or install docs
+
+### Sprint 5.3: Local Dolt Clone Smoke Test
+
+**Goal:** Prove the first imported package works end-to-end against a local
+clone of the package database using the native `dolt` CLI workflow and the
+Synaptic Canvas local-clone reader path.
+
+Detailed sprint plan: [5.3 Local Dolt Clone Smoke Test](./phase-5/5.3-local-dolt-clone-smoke-test.md)
+
+**Deliverables:**
+- Local Dolt clone of the package database containing the imported package
+- End-to-end local-clone smoke-test evidence for install lifecycle commands
+- Verified local-scope and global-scope package installs
+
+**Acceptance Criteria:**
+- `docs/phase-5/5.3-local-dolt-clone-smoke-test.md` exists and defines the full
+  Sprint 5.3 implementation plan
+- The same package content can be read from a local Dolt clone
+- Local and global install flows pass against the local-clone backend
+- `status`, `validate`, `upgrade`, `uninstall`, and reinstall behavior are
+  proven against the local clone
+
+### Sprint 5.4: DoltHub Smoke Test
+
+**Goal:** Prove the same imported package works against the live DoltHub-backed
+catalog and that the remote behavior matches the local-clone proof closely
+enough for MVP release confidence.
+
+Detailed sprint plan: [5.4 DoltHub Smoke Test](./phase-5/5.4-dolthub-smoke-test.md)
+
+**Deliverables:**
+- Imported package available on the DoltHub-backed test catalog
+- End-to-end DoltHub smoke-test evidence for the install lifecycle
+- Comparison notes for local-clone versus DoltHub behavior
+
+**Acceptance Criteria:**
+- `docs/phase-5/5.4-dolthub-smoke-test.md` exists and defines the full Sprint
+  5.4 implementation plan
+- The imported package can be discovered and installed from the DoltHub-backed
+  catalog
+- Remote-backed install, status, validate, upgrade, uninstall, and reinstall
+  flows are proven
+- Any backend differences are documented explicitly rather than left implicit
+
+### Sprint 5.5: Candidate Package Expansion And Regression Pass
+
+**Goal:** Expand the import-and-smoke-test process to the next package set so
+Phase 5 validates more than one happy-path package and captures the first
+shared-infrastructure package merge decision.
+
+Detailed sprint plan: [5.5 Candidate Package Expansion And Regression Pass](./phase-5/5.5-candidate-package-expansion-and-regression-pass.md)
+
+**Deliverables:**
+- Ordered candidate list for the first expansion pass
+- Import and smoke-test evidence for the selected package set
+- Package-boundary decision for the launch-terminal package family
+
+**Acceptance Criteria:**
+- `docs/phase-5/5.5-candidate-package-expansion-and-regression-pass.md` exists
+  and defines the full Sprint 5.5 implementation plan
+- The phase explicitly covers `sc-docling-pdf`, the combined
+  `sc-launchpad`/`sc-launch-term` case, and `sprint-report` after
+  `claude-history`
+- The launch-terminal package merge decision is written down before
+  implementation starts
+- Each candidate package has explicit pass/fail evidence or a recorded blocker
+  from the local-clone and DoltHub smoke passes
+
 ---
 
 ## Phase Summary
@@ -2025,7 +2123,7 @@ Detailed sprint plan: [5.1 Release Pipeline](./phase-5/5.1-release-pipeline.md)
 | 2. Admin | 2.1–2.4 | Import, export, verify, publish |
 | 3. End-User | 3.1–3.9 | List, install, validate, upgrade, HTTP client, SHA catalog, scan, import collision, scope/yolo/severity |
 | 4. AI Surface | 4.1–4.10 | JSON contract, backend parity, readback, sc:plugin, installer, error/fixture hardening |
-| 5. Release | 5.1 | GoReleaser release pipeline |
+| 5. Release | 5.1–5.5 | Release pipeline, first import candidate, local clone proof, DoltHub proof, package expansion |
 
 ---
 
