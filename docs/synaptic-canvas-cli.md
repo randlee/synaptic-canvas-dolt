@@ -963,7 +963,8 @@ synaptic-canvas-dolt/
 ├── .github/
 │   └── workflows/
 │       ├── test.yml              # CI: lint + test + build
-│       └── release.yml           # Tag-triggered GoReleaser
+│       ├── release.yml           # Tag-triggered GoReleaser
+│       └── release-validate.yml  # PR/push: goreleaser check (non-publishing)
 ├── .goreleaser.yml               # Build configuration
 ├── .golangci.yml                 # Linter configuration
 └── CLAUDE.md                     # Project developer instructions
@@ -979,11 +980,15 @@ Following `claude-history` patterns:
 
 - **Source directory:** `./src`
 - **Binary name:** `sc`
-- **Targets:** linux/darwin (amd64, arm64), windows (amd64)
+- **Primary targets:** `darwin/arm64` (Apple Silicon macOS), `windows/amd64`
+  (Windows x64), `linux/amd64` (Linux x64)
+- **Secondary targets:** `darwin/amd64` (Intel macOS), `windows/arm64`,
+  `linux/arm64`
 - **CGO_ENABLED=0** (static binaries)
 - **Ldflags:** version, commit, date injection
 - **Homebrew:** `randlee/homebrew-tap` → `Formula/sc.rb`
-- **Winget:** `randlee.sc`
+- **Winget:** publication path enabled in GoReleaser; catalog availability
+  still depends on publisher registration/review (gh issue `#54`)
 - **Checksums:** SHA256
 
 ### CI Workflows
@@ -997,8 +1002,17 @@ Following `claude-history` patterns:
 **release.yml** (tag push `v*`):
 - Full test suite
 - GoReleaser build + publish
-- Homebrew tap update
-- Winget manifest update
+- Homebrew tap update using `HOMEBREW_TAP_TOKEN` (`contents:write` on `randlee/homebrew-tap` required); tap update failures are non-blocking — GitHub release artifacts still publish
+- Winget publish path using `WINGET_GITHUB_TOKEN` (`contents:write` + `pull_requests:write` on `randlee/winget-pkgs` required)
+
+**release-validate.yml** (added by Sprint 5.1):
+- `goreleaser check`
+- Non-publishing validation of the release configuration before tags are cut
+
+Winget publication occurs on every release tag through the configured publish
+path, but public catalog availability still depends on publisher
+registration/review (tracked in gh issue `#54`). `windows/arm64` release
+archives remain in MVP scope as a secondary target.
 
 ---
 

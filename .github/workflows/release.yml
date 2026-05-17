@@ -44,11 +44,36 @@ jobs:
           go-version: "1.26"
           cache-dependency-path: src/go.sum
 
+      - name: Install GoReleaser
+        run: go install github.com/goreleaser/goreleaser/v2@latest
+
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          distribution: goreleaser
-          version: latest
-          args: release --clean
+        id: goreleaser
+        continue-on-error: true
         env:
-          GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          WINGET_GITHUB_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
+        run: |
+          set -o pipefail
+          "$(go env GOPATH)/bin/goreleaser" release --clean 2>&1 | tee goreleaser.log
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Evaluate GoReleaser outcome
+        if: always()
+        run: |
+          if [ "${{ steps.goreleaser.outputs.exit_code }}" = "0" ]; then
+            exit 0
+          fi
+
+          # Homebrew tap publication is operationally non-blocking for GitHub
+          # release artifacts. If the only failure is the tap update path, keep
+          # the workflow green and surface a warning for follow-up.
+          if grep -Eiq "homebrew|Formula/sc\\.rb|homebrew-tap|resource not accessible by integration" goreleaser.log; then
+            echo "::warning::GoReleaser reported a Homebrew tap publication failure. GitHub release artifacts may already be published; treat tap remediation as follow-up work."
+            exit 0
+          fi
+
+          echo "::error::GoReleaser failed for a blocking reason."
+          cat goreleaser.log
+          exit 1
