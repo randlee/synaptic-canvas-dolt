@@ -21,6 +21,7 @@ optional_variables:
   - validation
   - requirement_refs
   - adr_refs
+  - completion_report
 defaults:
   status: planned
   worktree: ""
@@ -33,6 +34,7 @@ defaults:
   acceptance_criteria: []
   requirement_refs: []
   adr_refs: []
+  completion_report: []
   validation:
     - "go test ./..."
     - "go test ./... -race"
@@ -96,4 +98,9 @@ branch: {{ branch }}
 ## Required Validation
 
 {% for cmd in validation %}- `{{ cmd }}`
+{% endfor %}
+
+## Completion Report Requirements
+
+{% for item in completion_report %}- {{ item }}
 {% endfor %}

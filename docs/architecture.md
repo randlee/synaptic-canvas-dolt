@@ -188,6 +188,9 @@ Testing is part of the product story:
 - live DoltHub checks are human/AI-driven integration verification only; CI must
   use local fixtures, mocks, or `httptest` and must not depend on external
   DoltHub state
+- sprint completion reports are part of verification traceability; they record
+  issues encountered, fixes completed, and deferred follow-up items so phase
+  hardening work is driven by explicit evidence rather than chat memory
 - future package validation may include test evidence captured alongside package
   metadata or adjacent validation records, but that evidence model is a later
   design step rather than an MVP prerequisite

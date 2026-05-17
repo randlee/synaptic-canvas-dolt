@@ -457,3 +457,7 @@ branch.
   integration procedure, not a CI requirement. CI shall not make live network
   calls to DoltHub; live tests must be opt-in and configurable to use a
   dedicated project test repository with deterministic fixture data.
+- VER-013 Sprint plans shall define completion-report expectations. If issues
+  are encountered during implementation, the completion report shall record the
+  fixes made in that sprint and any larger unresolved items that require
+  follow-up work in later sprints.
