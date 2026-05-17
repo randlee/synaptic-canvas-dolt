@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/dolt"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/publisher"
@@ -33,7 +34,20 @@ func runPublishCmd(cmd *cobra.Command, args []string, fromBranch, toBranch strin
 	if fromBranch == "" || toBranch == "" {
 		return fmt.Errorf("--from and --to are required")
 	}
-	cfg, doltDir, err := loadConfigAndDoltDir(cmd)
+	cfg, err := config.NewConfigFromFlags(cmd)
+	if err != nil {
+		return fmt.Errorf("reading config flags: %w", err)
+	}
+	if err := cfg.LoadFileConfig(); err != nil {
+		return err
+	}
+	formatter := output.NewFormatter(cfg.JSON, cfg.Quiet)
+	formatter.Writer = cmd.OutOrStdout()
+	formatter.ErrW = cmd.ErrOrStderr()
+	if err := dolt.ValidateWriteClient(cfg); err != nil {
+		return err
+	}
+	doltDir, err := dolt.DetectDoltDir(cfg.Get(config.KeyDoltDir, cfg.DoltDir))
 	if err != nil {
 		return err
 	}
@@ -47,7 +61,6 @@ func runPublishCmd(cmd *cobra.Command, args []string, fromBranch, toBranch strin
 		return err
 	}
 
-	formatter := output.NewFormatter(cfg.JSON, cfg.Quiet)
 	return writePublishResult(formatter, summary, err)
 }
 

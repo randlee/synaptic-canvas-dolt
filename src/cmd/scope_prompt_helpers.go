@@ -22,16 +22,6 @@ func validateScope(scope string) error {
 	}
 }
 
-func scopesFromFlag(scope string) ([]string, error) {
-	if err := validateScope(scope); err != nil {
-		return nil, err
-	}
-	if scope == "both" {
-		return []string{"project", "global"}, nil
-	}
-	return []string{scope}, nil
-}
-
 func externalDeps(deps []models.PackageDep) []models.PackageDep {
 	result := make([]models.PackageDep, 0, len(deps))
 	for _, dep := range deps {

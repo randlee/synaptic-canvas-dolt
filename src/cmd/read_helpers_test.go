@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -12,6 +14,7 @@ func TestOpenReadClientConfigSelection(t *testing.T) {
 	tests := []struct {
 		name       string
 		env        map[string]string
+		setup      func(*testing.T)
 		wantErr    string
 		wantClient bool
 	}{
@@ -39,7 +42,28 @@ func TestOpenReadClientConfigSelection(t *testing.T) {
 			env: map[string]string{
 				"SC_DOLT_CLIENT": "cli",
 			},
-			wantErr: "dolt.dir is not configured",
+			setup: func(t *testing.T) {
+				t.Chdir(t.TempDir())
+			},
+			wantErr: "could not auto-detect Dolt database directory",
+		},
+		{
+			name: "cli auto detects repo dir",
+			env: map[string]string{
+				"SC_DOLT_CLIENT": "cli",
+			},
+			setup: func(t *testing.T) {
+				repoDir := t.TempDir()
+				if err := os.Mkdir(filepath.Join(repoDir, ".dolt"), 0o750); err != nil {
+					t.Fatalf("Mkdir(.dolt) error = %v", err)
+				}
+				child := filepath.Join(repoDir, "nested")
+				if err := os.MkdirAll(child, 0o750); err != nil {
+					t.Fatalf("MkdirAll(nested) error = %v", err)
+				}
+				t.Chdir(child)
+			},
+			wantClient: true,
 		},
 		{
 			name: "unsupported client",
@@ -56,6 +80,9 @@ func TestOpenReadClientConfigSelection(t *testing.T) {
 			for key, value := range tt.env {
 				t.Setenv(key, value)
 			}
+			if tt.setup != nil {
+				tt.setup(t)
+			}
 
 			client, err := openReadClient(&config.Config{})
 			if tt.wantErr != "" {
@@ -69,8 +96,15 @@ func TestOpenReadClientConfigSelection(t *testing.T) {
 			}
 			defer func() { _ = client.Close() }()
 			if tt.wantClient {
-				if _, ok := client.(*dolt.HTTPClient); !ok {
-					t.Fatalf("client type = %T, want *dolt.HTTPClient", client)
+				switch tt.env["SC_DOLT_CLIENT"] {
+				case "cli":
+					if _, ok := client.(*dolt.CLIReader); !ok {
+						t.Fatalf("client type = %T, want *dolt.CLIReader", client)
+					}
+				default:
+					if _, ok := client.(*dolt.HTTPClient); !ok {
+						t.Fatalf("client type = %T, want *dolt.HTTPClient", client)
+					}
 				}
 			}
 		})

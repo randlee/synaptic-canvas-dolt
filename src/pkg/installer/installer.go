@@ -170,7 +170,7 @@ func (Service) Execute(ctx context.Context, req Request) (Summary, error) {
 	}
 
 	record := InstallRecord{
-		InstallID:        fmt.Sprintf("pkg_%s_%s", req.Package.ID, scope),
+		InstallID:        fmt.Sprintf(InstallIDFormat, req.Package.ID, scope),
 		Package:          req.Package.ID,
 		Version:          req.Package.Version,
 		DoltCommit:       stringValue(req.Package.SHA256),
@@ -183,6 +183,7 @@ func (Service) Execute(ctx context.Context, req Request) (Summary, error) {
 		TrackingOrigin:   "local-install",
 		TemplateRendered: hasTemplates(req.Files),
 		Files:            make(map[string]string, len(renderedFiles)),
+		Hooks:            make([]HookEntry, 0, len(req.Hooks)),
 		Answers:          answers.Values,
 		QuestionSnapshot: QuestionSnapshot{QuestionIDs: questionIDs(req.Questions)},
 		Requirements: RequirementSnapshot{
@@ -206,6 +207,17 @@ func (Service) Execute(ctx context.Context, req Request) (Summary, error) {
 	}
 	for _, hash := range renderedFiles {
 		record.Files[hash.DestPath] = hash.SHA256
+	}
+	for _, hook := range req.Hooks {
+		record.Hooks = append(record.Hooks, HookEntry{
+			Event:    string(hook.Event),
+			Matcher:  hook.Matcher,
+			Skill:    req.Package.ID,
+			Scope:    scope,
+			Script:   filepath.ToSlash(hook.ScriptPath),
+			Priority: hook.Priority,
+			Blocking: hook.Blocking,
+		})
 	}
 	if err := ctx.Err(); err != nil {
 		rollbackFiles(writtenPaths)

@@ -19,6 +19,7 @@ func newTestCmd() *cobra.Command {
 		},
 	}
 	pf := cmd.PersistentFlags()
+	pf.String("client", "", "Dolt client to use: http, sql, or cli")
 	pf.String("dolt-client", "", "Dolt client to use: http, sql, or cli")
 	pf.String("dolt-host", "", "DoltHub HTTP API host")
 	pf.String("dolt-database", "", "DoltHub database slug in owner/database format")
@@ -237,7 +238,7 @@ func TestAllDoltConfigFlagsOverrideEnvAndFile(t *testing.T) {
 		flag  string
 		value string
 	}{
-		{key: KeyDoltClient, flag: "--dolt-client", value: "sql"},
+		{key: KeyDoltClient, flag: "--client", value: "sql"},
 		{key: KeyDoltHost, flag: "--dolt-host", value: "example.invalid"},
 		{key: KeyDoltDatabase, flag: "--dolt-database", value: "flag/db"},
 		{key: KeyDoltToken, flag: "--dolt-token", value: "flag-token"},
@@ -296,5 +297,28 @@ func TestSetFileValueWritesConfig(t *testing.T) {
 	if !strings.Contains(string(data), `database = 'randlee/synaptic-canvas'`) &&
 		!strings.Contains(string(data), `database = "randlee/synaptic-canvas"`) {
 		t.Fatalf("config file missing database value:\n%s", string(data))
+	}
+}
+
+func TestResolveDoltClientRejectsEnvDirWithHTTPClient(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("SC_DOLT_DIR", filepath.Join(home, "repo"))
+	t.Setenv("SC_DOLT_CLIENT", "http")
+
+	cmd := newTestCmd()
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("command execution failed: %v", err)
+	}
+	cfg, err := NewConfigFromFlags(cmd)
+	if err != nil {
+		t.Fatalf("NewConfigFromFlags() error = %v", err)
+	}
+	if err := cfg.LoadFileConfig(); err != nil {
+		t.Fatalf("LoadFileConfig() error = %v", err)
+	}
+	if _, err := cfg.ResolveDoltClient(); err == nil || !strings.Contains(err.Error(), "--dolt-dir may only be used with client=cli") {
+		t.Fatalf("ResolveDoltClient() error = %v, want dolt-dir conflict", err)
 	}
 }

@@ -6,20 +6,12 @@ import (
 
 	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/api"
 	"github.com/spf13/cobra"
 )
 
-type configGetResponse struct {
-	OK    bool   `json:"ok"`
-	Key   string `json:"key"`
-	Value string `json:"value"`
-}
-
-type configSetResponse struct {
-	OK   bool   `json:"ok"`
-	Key  string `json:"key"`
-	Path string `json:"path"`
-}
+type configGetResponse = api.ConfigGetResponse
+type configSetResponse = api.ConfigSetResponse
 
 // NewConfigCmd creates the sc config command group.
 func NewConfigCmd() *cobra.Command {
@@ -81,7 +73,7 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 	path, err := config.SetFileValue(key, value)
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
+			return writeClassifiedJSONError(formatter, cfg, err)
 		}
 		return err
 	}

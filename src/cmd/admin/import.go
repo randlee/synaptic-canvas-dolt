@@ -3,10 +3,8 @@ package admin
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
@@ -32,6 +30,9 @@ func NewImportCmd() *cobra.Command {
 			formatter := output.NewFormatter(cfg.JSON, cfg.Quiet)
 			formatter.Writer = cmd.OutOrStdout()
 			formatter.ErrW = cmd.ErrOrStderr()
+			if err := dolt.ValidateWriteClient(cfg); err != nil {
+				return err
+			}
 
 			path, err := filepath.Abs(args[0])
 			if err != nil {
@@ -39,11 +40,11 @@ func NewImportCmd() *cobra.Command {
 			}
 			branch := cfg.EffectiveBranch()
 
-			doltDir, err := detectDoltDir(config.ExpandPath(cfg.Get(config.KeyDoltDir, cfg.DoltDir)))
+			doltDir, err := dolt.DetectDoltDir(cfg.Get(config.KeyDoltDir, cfg.DoltDir))
 			if err != nil {
 				return err
 			}
-			readClient, err := openImportReadClient(cfg, doltDir, branch)
+			readClient, err := openImportReadClient(cfg, branch)
 			if err != nil {
 				return err
 			}
@@ -133,67 +134,12 @@ func writeImportJSONError(formatter *output.Formatter, err error) (bool, error) 
 	return true, err
 }
 
-func openImportReadClient(cfg *config.Config, doltDir, branch string) (dolt.Client, error) {
-	clientType := cfg.Get(config.KeyDoltClient, "http")
-	switch clientType {
-	case "http":
-		database := cfg.Get(config.KeyDoltDatabase, "")
-		if database == "" {
-			return nil, fmt.Errorf("dolt.database is not configured; run: sc config set dolt.database <owner/database>")
-		}
-		return dolt.NewHTTPClient(dolt.HTTPConfig{
-			Host:     cfg.Get(config.KeyDoltHost, "www.dolthub.com"),
-			Database: database,
-			Branch:   branch,
-			Token:    cfg.Get(config.KeyDoltToken, ""),
-			Timeout:  time.Duration(cfg.GetInt(config.KeyDoltTimeout, 30)) * time.Second,
-		}), nil
-	case "sql":
-		dsn := cfg.Get(config.KeyDoltDSN, "")
-		if dsn == "" {
-			return nil, fmt.Errorf("dolt.dsn is not configured; run: sc config set dolt.dsn <dsn>")
-		}
-		sqlCfg, err := dolt.ParseDSN(dsn)
-		if err != nil {
-			return nil, err
-		}
-		return dolt.OpenForBranch(sqlCfg, branch)
-	case "cli":
-		if doltDir == "" {
-			return nil, fmt.Errorf("dolt.dir is not configured; run: sc config set dolt.dir <path>")
-		}
-		return dolt.NewCLIReader(doltDir, branch), nil
-	default:
-		return nil, fmt.Errorf("unsupported dolt.client %q", clientType)
-	}
+func openImportReadClient(cfg *config.Config, branch string) (dolt.Client, error) {
+	return dolt.OpenConfiguredReadClient(cfg, branch)
 }
 
 func detectDoltDir(configured string) (string, error) {
-	if configured != "" {
-		if _, err := os.Stat(filepath.Join(configured, ".dolt")); err != nil {
-			return "", fmt.Errorf("invalid --dolt-dir %q: %w", configured, err)
-		}
-		return configured, nil
-	}
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", fmt.Errorf("getting current directory: %w", err)
-	}
-
-	dir := cwd
-	for {
-		if _, err := os.Stat(filepath.Join(dir, ".dolt")); err == nil {
-			return dir, nil
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		dir = parent
-	}
-
-	return "", errors.New("could not auto-detect Dolt database directory; pass --dolt-dir")
+	return dolt.DetectDoltDir(configured)
 }
 
 // FormatImportAck returns a short status string for tests and future callers.

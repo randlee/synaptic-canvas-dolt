@@ -12,11 +12,22 @@ requirements, but they must not conflict with this document.
   requirements.
 - REQ-002 Detailed design documents such as
   `synaptic-canvas-cli.md`, `synaptic-canvas-schema.md`,
+  `dolt-api.md`,
   `synaptic-canvas-export-pipeline.md`, `synaptic-canvas-install-system.md`,
-  and `synaptic-canvas-hook-system.md` shall remain consistent with this
-  document.
+  `synaptic-canvas-hook-system.md`, and accepted ADRs under `docs/adr/` shall
+  remain consistent with this document.
 - REQ-003 Sprint plans shall define acceptance criteria that can be traced to
   these requirements and to the relevant detailed design documents.
+- REQ-004 Any change that alters the public CLI contract, client-selection
+  model, install-state model, or wrapper boundary shall update the normative
+  requirements, architecture, and relevant ADRs in the same change.
+- REQ-005 Sprint plans and quality reviews shall cite the relevant requirement
+  IDs and ADRs for the behavior they validate so traceability does not depend
+  on reviewer memory.
+- REQ-006 MVP boundaries shall be explicit. Features such as additional runtime
+  targets, alternate machine-contract surfaces, or higher-level team
+  orchestration are out of scope until they are promoted into the normative
+  set by requirements, architecture, and any needed ADRs.
 
 ## 2. Structured Logging
 
@@ -46,37 +57,57 @@ lightweight and operationally useful.
 
 ## 3. Dolt Client Contract
 
-- DC-001 The MVP Dolt client implementation shall use the DoltHub HTTP SQL
-  API with `GET
-  https://www.dolthub.com/api/v1alpha1/{owner}/{database}/{branch}?q={sql}`.
-  MySQL wire protocol is not available on dolthub.com, and the MVP HTTP read
-  path shall not rely on POST requests.
+- DC-001 Synaptic Canvas shall support three first-class Dolt read clients:
+  `HTTPClient` for DoltHub HTTP SQL API access, `SQLClient` for hosted or
+  self-hosted MySQL-compatible Dolt servers, and `CLIReader` for local Dolt
+  clones via `dolt sql -q`.
 - DC-002 The `Client` interface in `src/pkg/dolt` shall be the only Dolt
-  access surface for CLI commands. Implementations are `HTTPClient` (MVP),
-  `SQLClient` (MySQL protocol, future), and `CLIReader` (subprocess, dev only).
+  access surface for CLI commands. No command may bypass that interface and
+  talk directly to HTTP, SQL, or subprocess transport code.
 - DC-003 `HTTPClient` shall pass the branch as a URL path segment and shall
   issue SQL that uses unqualified table names for the repository/ref named in
-  the URL. No session state exists between HTTP calls. This satisfies BR-004
-  and BR-005.
+  the URL. DoltHub HTTP reads shall use `GET
+  https://www.dolthub.com/api/v1alpha1/{owner}/{database}/{branch}?q={sql}` and
+  shall not rely on POST requests. No session state exists between HTTP calls.
+  This satisfies BR-004 and BR-005.
 - DC-004 For private DoltHub repos, the HTTP client shall send an
   `Authorization: token <TOKEN>` header. Tokens are stored in sc config, never
   in source control.
 - DC-005 When Dolt is unreachable, commands that require a live Dolt query
   shall emit a clear error. Commands that can fall back to local cache (e.g.
   `sc validate` using the SHA catalog) shall do so and emit a warning.
-- DC-006 The active client implementation shall be selectable via sc config
-  to support future migration from `HTTPClient` to `SQLClient` without code
-  changes. Default is `HTTPClient`.
-- DC-007 `SQLClient` and `CLIReader` shall be retained in the codebase as
-  documented alternatives. They shall not be deleted.
+- DC-006 The active client implementation shall be selectable explicitly for
+  end-user and admin reads using deterministic precedence. The selection model
+  shall be documented and testable. If an explicit CLI flag is added, its
+  precedence shall be above environment and file config.
+- DC-007 `dolt.client` shall accept the stable values `http`, `sql`, and
+  `cli`. Compatibility inference such as treating `--dolt-dir` as an implicit
+  CLI-reader selector may exist, but conflicting combinations shall fail with a
+  typed CLI error rather than silently picking a transport.
 - DC-008 DoltHub HTTP SQL responses shall be decoded from the actual response
   envelope: `query_execution_status`, `query_execution_message`, `schema`, and
   `rows`. Row values shall be decoded defensively from JSON strings, because
   DoltHub commonly returns SQL values as strings.
-- DC-009 File-backed configuration keys shall resolve in this precedence:
+- DC-009 The public CLI JSON contract shall remain transport-invariant across
+  `HTTPClient`, `SQLClient`, and `CLIReader`. Equivalent success cases shall use
+  the same top-level success schema, and equivalent failure classes shall use
+  the same top-level CLI error codes.
+- DC-010 Backend-specific failure facts such as HTTP timeout, SQL auth failure,
+  unsupported-backend rejection, or missing local dolt binary shall be
+  reported through structured error details without changing the top-level CLI
+  error schema. Backend JSON errors shall include `error.details.client` at a
+  minimum.
+- DC-011 File-backed configuration keys shall resolve in this precedence:
   explicitly supplied CLI flag, environment variable, config file value, then
   default. CLI flag default values that were not explicitly supplied shall not
-  override environment or file config.
+  override environment or file config. This rule applies equally to
+  compatibility-driving inputs such as `dolt.dir` regardless of whether the
+  value came from flag, environment, or file config.
+- DC-012 Admin or other write-path commands that mutate Dolt state shall not
+  use `HTTPClient`. MVP write-capable backends are `SQLClient` and `CLIReader`.
+  If a write-path command is invoked with `--client http` or an effective
+  `http` client selection, the CLI shall fail with a typed
+  `unsupported_backend` error rather than silently switching transports.
 
 See `docs/dolt-api.md` for API contracts and source citations.
 
@@ -121,8 +152,30 @@ The CLI is expected to be used by both humans and AI wrappers.
   explicitly rather than relying on ambient environment defaults.
 - CLI-004 If an output-mode environment variable is introduced later, it shall
   not replace `--json` as the preferred explicit machine-access contract.
-- CLI-005 JSON-mode errors shall be documented and stable enough for AI wrappers
-  and automation to consume predictably.
+- CLI-005 JSON-mode success and error contracts shall be documented and stable
+  enough for AI wrappers and automation to consume predictably.
+- CLI-005a Each end-user command that supports `--json` shall return a typed
+  JSON success envelope rather than ad hoc maps or prose fragments.
+- CLI-005b In `--json` mode, bootstrap failures such as config validation,
+  client selection, branch resolution, or Dolt connection setup shall still use
+  the standard JSON error envelope.
+- CLI-005c JSON error envelopes shall include a stable top-level `code`, a
+  human-readable `message`, structured `details`, and corrective guidance such
+  as `suggested_action` when recovery is possible. Retryability shall be
+  modeled explicitly when it matters for automation.
+- CLI-005d Transport-specific or backend-specific facts shall appear in
+  structured error details rather than by changing the top-level schema or
+  forcing callers to parse free-form text.
+- CLI-005e Shared failure categories shall use the fixed top-level error-code
+  vocabulary `invalid_args`, `not_found`, `ambiguous_target`,
+  `unsupported_backend`, `backend_unavailable`, `backend_auth_failed`,
+  `confirmation_required`, `blocked`, `conflict`, `validation_failed`, and
+  `internal_error`. Commands may add more specific machine-readable cause codes
+  only within structured `details`.
+- CLI-005f Every JSON response shall include a top-level boolean `ok`.
+  Successful responses omit `error`; failed responses omit success-only payload
+  objects other than stable metadata such as `command`, `scope`, or `branch`
+  when those fields are needed to identify the failed target.
 - CLI-006 Human-readable output may suppress the branch label for `main` when
   that improves readability, but structured output shall emit `"main"`
   explicitly.
@@ -135,9 +188,42 @@ The CLI is expected to be used by both humans and AI wrappers.
   request payload shall imply JSON output for that invocation.
 - CLI-010 Commands that can target project-local state, machine-global state, or
   both shall use `--scope <project|global|both>`. Omitted `--scope` means
-  `both`. Legacy scope aliases shall not be accepted CLI flags.
+  `both`. Legacy scope aliases such as `--global` and `--local` shall not be
+  accepted CLI flags.
+- CLI-010a Commands that produce a single-target export artifact rather than a
+  natural multi-target action may reject omitted `--scope` with a typed
+  `ambiguous_target` error when the same package exists in multiple install
+  scopes. MVP defines `sc snapshot <package>` as such a command.
+- CLI-011 If a wrapper or MCP surface is added above `sc`, it shall reuse the
+  same business payloads and stable error-code families rather than define a
+  second reshaped contract.
+- CLI-012 Human-readable mode shall not expose machine-significant state that is
+  absent from the JSON contract.
+- CLI-013 The MVP `sc` CLI contract covers package-management, validation,
+  snapshot, and catalog workflows only. ATM polling, sprint orchestration, git
+  workflow control, and team messaging are outside the MVP CLI scope.
 
-## 6. Agents And Scripts
+## 6. Module Boundaries And Interface Discipline
+
+- MB-001 `src/cmd` is a CLI binding layer. It may parse flags, select output
+  mode, and adapt process-level concerns, but package-management business rules
+  shall live below the Cobra command layer.
+- MB-002 Transport adapters, filesystem mutation, install tracking, catalog
+  state, rendering concerns, and reusable simulator harnesses shall be isolated
+  behind package boundaries or interfaces so behavior can be tested without
+  shelling through the full CLI.
+- MB-003 Shared machine-contract DTOs for public JSON payloads shall live
+  outside command handlers and be reusable by wrappers or future MCP surfaces.
+- MB-004 Wrapper layers shall not parse human-readable CLI output, re-encode
+  business payloads into a second canonical schema, or duplicate package
+  management rules that belong in `sc`.
+- MB-005 Domain and adapter packages shall not depend on Cobra, terminal UI
+  state, or other command-entrypoint concerns.
+- MB-006 End-user package operations shall be implemented behind shared
+  operation interfaces or packages that are reusable by command handlers and
+  reviewable without shelling through the entire CLI surface.
+
+## 7. Agents And Scripts
 
 - AG-001 Agent definitions in this repository shall comply with the shared
   Claude Code skills/agents guidelines located in the sibling
@@ -150,7 +236,7 @@ The CLI is expected to be used by both humans and AI wrappers.
 - AG-005 Agent and script behavior required by a sprint shall be documented in
   the sprint plan and verified by tests or explicit QA steps.
 
-## 7. Install Targets And Product State
+## 8. Install Targets And Product State
 
 - FS-001 For MVP, package artifacts for Claude Code shall be materialized into
   `.claude/` for local installs or `~/.claude/` for global installs.
@@ -188,7 +274,7 @@ The CLI is expected to be used by both humans and AI wrappers.
   `snapshot.toml` file that records, at minimum, package name, branch, version,
   snapshot timestamp, source install path, and repository path when applicable.
 
-## 8. Install Tracking And State Safety
+## 9. Install Tracking And State Safety
 
 - ST-001 Synaptic Canvas shall track all local and global package installs on
   the machine in product-managed state under `.synaptic/` or `~/.synaptic/`.
@@ -216,8 +302,16 @@ The CLI is expected to be used by both humans and AI wrappers.
   Self-cleaning OS-backed locking may be used as an additional guard, but the
   design shall not depend on process-exit cleanup as the only stale-lock
   prevention mechanism.
+- ST-008 Every mutating end-user command shall have a corresponding read path
+  rich enough to confirm resulting state without relying only on logs or direct
+  filesystem inspection.
+- ST-009 Mutating end-user commands shall update tracked state atomically per
+  targeted install scope. If a command fails after beginning side effects, the
+  CLI shall either roll the targeted install scope back to the prior tracked
+  state or return a typed failure that explicitly reports which rollback steps
+  succeeded, which failed, and what manual recovery remains.
 
-## 9. Install, Upgrade, And Uninstall Behavior
+## 10. Install, Upgrade, And Uninstall Behavior
 
 - IU-001 Installing external tools or CLIs as dependencies shall require an
   explicit plan acknowledgement unless the user opts into non-interactive
@@ -248,7 +342,7 @@ The CLI is expected to be used by both humans and AI wrappers.
   targeted package upgrades; it shall not be supported as a blanket override for
   `upgrade --all`.
 
-## 10. Validation And Inventory
+## 11. Validation And Inventory
 
 - VA-001 Validation shall cover more than file checksums. At minimum it shall
   verify tracked file presence, aggregate package integrity, dependency
@@ -281,8 +375,17 @@ The CLI is expected to be used by both humans and AI wrappers.
   sanitized repository key such as `<base-folder-name>-<repo-id>`, and shall
   include a readable `snapshot.toml` file containing, at minimum, the full
   source path, repo URL, snapshot timestamp, version, branch, and scope.
+- VA-009 The installed-state read contract shall be rich enough to confirm
+  mutation results. At minimum, structured readback shall expose scope, branch,
+  version, install site/root, dependency provenance summary, hook-registration
+  summary, and local modification inventory for the targeted install record.
+- VA-010 File-level validation state vocabulary shall be fixed as `ok`,
+  `modified`, `missing`, `unreadable`, and `extra`. Higher-level failures such
+  as dependency incompatibility, hook drift, template drift, or aggregate
+  integrity mismatch shall be modeled as typed validation items with severities
+  rather than by inventing additional file-state names.
 
-## 11. SHA Catalog
+## 12. SHA Catalog
 
 The SHA catalog is the authoritative, local-cacheable reference for all
 immutable `(package_id, version, doc_path, sha256)` tuples known for a given
@@ -315,8 +418,12 @@ branch.
   a different SHA, the import shall be rejected with a hard error naming the
   colliding file and both SHAs. A new version of the same package may use the
   same `doc_path` with a different SHA.
+- CA-008 `sc scan` shall use only on-disk files plus the local catalog cache.
+  It shall not initiate a live Dolt read implicitly. If the required catalog is
+  absent, `sc scan` shall fail with a typed `validation_failed` error that
+  names the missing catalog and the required `sc catalog update` action.
 
-## 12. Verification Traceability
+## 13. Verification Traceability
 
 - VER-001 Requirements shall be testable or otherwise verifiable.
 - VER-002 Sprint acceptance criteria shall map to one or more concrete
@@ -338,7 +445,16 @@ branch.
 - VER-009 Flaky tests are not acceptable. Tests that can pass or fail without a
   product change shall be treated as blocking defects and must be fixed or
   removed before the sprint is accepted.
-- VER-010 Live DoltHub verification shall be an explicit human/AI-driven
+- VER-010 Each supported Dolt client shall have simulator-backed or equivalent
+  deterministic adapter tests below the CLI layer. Routine CI shall not depend
+  on live DoltHub, a running SQL server, or a local Dolt clone. Shared harness
+  support may be reused by higher-layer command contract tests.
+- VER-011 Contract-conformance tests shall run equivalent command or adapter
+  scenarios across `http`, `sql`, and `cli` client modes and assert the same
+  top-level JSON success and error schemas where behavior is semantically
+  equivalent, including structured backend details when the top-level error
+  code is the same.
+- VER-012 Live DoltHub verification shall be an explicit human/AI-driven
   integration procedure, not a CI requirement. CI shall not make live network
   calls to DoltHub; live tests must be opt-in and configurable to use a
   dedicated project test repository with deterministic fixture data.

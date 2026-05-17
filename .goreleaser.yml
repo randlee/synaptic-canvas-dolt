@@ -8,6 +8,8 @@ builds:
     binary: sc
     env:
       - CGO_ENABLED=0
+    tags:
+      - production
     goos:
       - linux
       - darwin
@@ -15,9 +17,6 @@ builds:
     goarch:
       - amd64
       - arm64
-    ignore:
-      - goos: windows
-        goarch: arm64
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
 
@@ -43,17 +42,23 @@ brews:
     description: "Dolt-backed package manager for Claude Code skills"
     license: "MIT"
 
-# TODO: Enable winget publisher once publisher ID is registered.
-# winget:
-#   - name: sc
-#     publisher: randlee
-#     short_description: "Dolt-backed package manager for Claude Code skills"
-#     license: "MIT"
-#     publisher_url: "https://github.com/randlee/synaptic-canvas"
-#     repository:
-#       owner: randlee
-#       name: winget-pkgs
-#       branch: main
+winget:
+  - name: sc
+    publisher: randlee
+    short_description: "Dolt-backed package manager for Claude Code skills"
+    license: "MIT"
+    publisher_url: "https://github.com/randlee/synaptic-canvas-dolt"
+    repository:
+      owner: randlee
+      name: winget-pkgs
+      branch: "update-{{.Version}}"
+      token: "{{ .Env.WINGET_GITHUB_TOKEN }}"
+      pull_request:
+        enabled: true
+        base:
+          owner: microsoft
+          name: winget-pkgs
+          branch: master
 
 changelog:
   sort: asc

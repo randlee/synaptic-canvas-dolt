@@ -7,18 +7,13 @@ import (
 	"time"
 
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/api"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/installer"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/repo"
 	"github.com/spf13/cobra"
 )
 
-type initResponse struct {
-	OK        bool     `json:"ok"`
-	Root      string   `json:"root"`
-	Created   []string `json:"created"`
-	Refreshed []string `json:"refreshed"`
-	Warnings  []string `json:"warnings,omitempty"`
-}
+type initResponse = api.InitResponse
 
 var initializeRepoFunc = initializeRepo
 
@@ -41,7 +36,7 @@ func runInitCmd(cmd *cobra.Command, _ []string) error {
 		formatter.Writer = cmd.OutOrStdout()
 		formatter.ErrW = cmd.ErrOrStderr()
 		if cfg.JSON {
-			return writeJSONError(formatter, "query_failed", err.Error())
+			return writeClassifiedJSONError(formatter, cfg, err, cmd.Name())
 		}
 		return fmt.Errorf("getting current directory: %w", err)
 	}
@@ -51,7 +46,7 @@ func runInitCmd(cmd *cobra.Command, _ []string) error {
 	formatter.ErrW = cmd.ErrOrStderr()
 	if err != nil {
 		if cfg.JSON {
-			return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
+			return writeClassifiedJSONError(formatter, cfg, err, cmd.Name())
 		}
 		return err
 	}

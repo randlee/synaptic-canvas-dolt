@@ -6,36 +6,13 @@ import (
 
 	"github.com/randlee/synaptic-canvas-dolt/internal/config"
 	"github.com/randlee/synaptic-canvas-dolt/internal/output"
-	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
+	"github.com/randlee/synaptic-canvas-dolt/pkg/api"
 	"github.com/spf13/cobra"
 )
 
-type infoResponse struct {
-	OK      bool             `json:"ok"`
-	Branch  string           `json:"branch"`
-	Package infoPackageShape `json:"package"`
-}
-
-type infoPackageShape struct {
-	ID              string              `json:"id"`
-	Name            string              `json:"name"`
-	Version         string              `json:"version"`
-	Description     *string             `json:"description,omitempty"`
-	Variant         string              `json:"variant"`
-	InstallScope    models.InstallScope `json:"install_scope"`
-	SHA256          *string             `json:"sha256,omitempty"`
-	FileCount       int                 `json:"file_count"`
-	DependencyCount int                 `json:"dependency_count"`
-	Dependencies    []dependencyShape   `json:"dependencies"`
-	HookCount       int                 `json:"hook_count"`
-	QuestionCount   int                 `json:"question_count"`
-}
-
-type dependencyShape struct {
-	Name string         `json:"name"`
-	Type models.DepType `json:"type"`
-	Spec string         `json:"spec,omitempty"`
-}
+type infoResponse = api.InfoResponse
+type infoPackageShape = api.InfoPackage
+type dependencyShape = api.Dependency
 
 // NewInfoCmd creates the sc info command.
 func NewInfoCmd() *cobra.Command {
@@ -58,7 +35,7 @@ func runInfoCmd(cmd *cobra.Command, args []string) error {
 		pkg, err := client.GetPackageDetail(cmd.Context(), packageID)
 		if err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
+				return writeClassifiedJSONError(formatter, cfg, err, "get_package_detail")
 			}
 			return err
 		}
@@ -73,21 +50,21 @@ func runInfoCmd(cmd *cobra.Command, args []string) error {
 		deps, err := client.GetPackageDeps(cmd.Context(), packageID)
 		if err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
+				return writeClassifiedJSONError(formatter, cfg, err, "get_package_files")
 			}
 			return err
 		}
 		hooks, err := client.GetPackageHooks(cmd.Context(), packageID)
 		if err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
+				return writeClassifiedJSONError(formatter, cfg, err, "get_package_deps")
 			}
 			return err
 		}
 		questions, err := client.GetPackageQuestions(cmd.Context(), packageID)
 		if err != nil {
 			if cfg.JSON {
-				return writeJSONError(formatter, classifyJSONError(err.Error()), err.Error())
+				return writeClassifiedJSONError(formatter, cfg, err, "get_package_hooks")
 			}
 			return err
 		}
@@ -101,7 +78,7 @@ func runInfoCmd(cmd *cobra.Command, args []string) error {
 				Version:         pkg.Version,
 				Description:     pkg.Description,
 				Variant:         pkg.AgentVariant,
-				InstallScope:    pkg.InstallScope,
+				InstallScope:    apiInstallScope(pkg.InstallScope),
 				SHA256:          pkg.SHA256,
 				FileCount:       pkg.FileCount,
 				DependencyCount: pkg.DepCount,
@@ -113,7 +90,7 @@ func runInfoCmd(cmd *cobra.Command, args []string) error {
 		for _, dep := range deps {
 			resp.Package.Dependencies = append(resp.Package.Dependencies, dependencyShape{
 				Name: dep.DepName,
-				Type: dep.DepType,
+				Type: apiDependencyType(dep.DepType),
 				Spec: dep.DepSpec,
 			})
 		}
