@@ -2015,6 +2015,46 @@ Detailed sprint plan: [5.1 Release Pipeline](./phase-5/5.1-release-pipeline.md)
 - Winget publication configuration is described accurately relative to the
   merged baseline and its remaining operational prerequisites
 
+### Sprint 5.2: First Import Candidate And Package Normalization
+
+**Goal:** Convert the first real marketplace package into a clean Synaptic
+Canvas package in its source repository, preserve traditional marketplace
+usability, and prove that the package is ready for `sc admin import`.
+
+**Deliverables:**
+- Updated source package for `claude-history` on a dedicated worktree
+- QA-reviewed `.claude/skills/importing-sc-packages` skill used for conversion
+- `installation-and-troubleshooting` guidance that works for non-`sc` users
+- Short Synaptic Canvas install/upgrade/uninstall section
+- Package metadata and assets ready for catalog import
+
+**Acceptance Criteria:**
+- `claude-history` is updated in its source repo using the import skill rules
+- `.claude/skills/importing-sc-packages` is reviewed against
+  `/Users/randlee/Documents/github/synaptic-canvas/docs/claude-code-skills-agents-guidelines.md`
+  before it is treated as the authoritative conversion workflow
+- The package preserves the normal manual install path and adds a short `sc`
+  section
+- The package is ready for `sc admin import` without guessing about package
+  shape, dependency metadata, or install docs
+
+### Sprint 5.3: Local Dolt Clone Smoke Test
+
+**Goal:** Prove the first imported package works end-to-end against a local
+clone of the package database using the native `dolt` CLI workflow and the
+Synaptic Canvas local-clone reader path.
+
+**Deliverables:**
+- Local Dolt clone of the package database containing the imported package
+- End-to-end local-clone smoke-test evidence for install lifecycle commands
+- Verified local-scope and global-scope package installs
+
+**Acceptance Criteria:**
+- The same package content can be read from a local Dolt clone
+- Local and global install flows pass against the local-clone backend
+- `status`, `validate`, `upgrade`, `uninstall`, and reinstall behavior are
+  proven against the local clone
+
 ---
 
 ## Phase Summary
@@ -2025,7 +2065,7 @@ Detailed sprint plan: [5.1 Release Pipeline](./phase-5/5.1-release-pipeline.md)
 | 2. Admin | 2.1–2.4 | Import, export, verify, publish |
 | 3. End-User | 3.1–3.9 | List, install, validate, upgrade, HTTP client, SHA catalog, scan, import collision, scope/yolo/severity |
 | 4. AI Surface | 4.1–4.10 | JSON contract, backend parity, readback, sc:plugin, installer, error/fixture hardening |
-| 5. Release | 5.1 | GoReleaser release pipeline |
+| 5. Release | 5.1–5.3 | Release pipeline, first import candidate, local-clone smoke proof |
 
 ---
 
