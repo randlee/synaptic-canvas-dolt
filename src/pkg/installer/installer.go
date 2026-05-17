@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -106,12 +107,13 @@ func (Service) Execute(ctx context.Context, req Request) (Summary, error) {
 		Scope:                      scope,
 		InstallRoot:                packageInstallRoot(installBase, req.Package.ID),
 		Dependencies:               dependencyNames(req.Deps),
-		DependencyWarnings:         dependencyWarnings(req.Deps),
 		HooksRegistered:            make([]HookEntry, 0, len(req.Hooks)),
 		TemplateValidationWarnings: warnings,
 		Files:                      make([]PlannedFile, 0, len(planned)),
 		Answers:                    answers.Values,
 	}
+	verifiedTools, dependencyWarnings := verifyDependencies(req.Deps)
+	summary.DependencyWarnings = dependencyWarnings
 	for _, file := range planned {
 		summary.Files = append(summary.Files, PlannedFile{
 			Path:       file.DestPath,
@@ -143,6 +145,7 @@ func (Service) Execute(ctx context.Context, req Request) (Summary, error) {
 	}
 
 	renderedFiles := make([]integrity.FileHash, 0, len(planned))
+	aggregateFiles := make([]integrity.FileHash, 0, len(planned))
 	writtenPaths := make([]string, 0, len(planned))
 	for _, file := range planned {
 		if err := ctx.Err(); err != nil {
@@ -160,9 +163,10 @@ func (Service) Execute(ctx context.Context, req Request) (Summary, error) {
 			return Summary{}, fmt.Errorf("sha mismatch for %s", file.DestPath)
 		}
 		renderedFiles = append(renderedFiles, integrity.FileHash{DestPath: file.DestPath, SHA256: actual})
+		aggregateFiles = append(aggregateFiles, integrity.FileHash{DestPath: file.Source.DestPath, SHA256: actual})
 	}
 	if req.Package.SHA256 != nil {
-		aggregate := integrity.ComputeAggregateSHA256(renderedFiles)
+		aggregate := integrity.ComputeAggregateSHA256(aggregateFiles)
 		if aggregate != *req.Package.SHA256 {
 			rollbackFiles(writtenPaths)
 			return Summary{}, fmt.Errorf("aggregate sha mismatch for %s", req.Package.ID)
@@ -178,7 +182,7 @@ func (Service) Execute(ctx context.Context, req Request) (Summary, error) {
 		Variant:          req.Package.AgentVariant,
 		InstalledAt:      req.Now.UTC().Format(time.RFC3339),
 		InstallScope:     scope,
-		InstallRoot:      summary.InstallRoot,
+		InstallRoot:      filepath.ToSlash(installBase),
 		InstallSite:      req.RepoRoot,
 		TrackingOrigin:   "local-install",
 		TemplateRendered: hasTemplates(req.Files),
@@ -188,7 +192,7 @@ func (Service) Execute(ctx context.Context, req Request) (Summary, error) {
 		QuestionSnapshot: QuestionSnapshot{QuestionIDs: questionIDs(req.Questions)},
 		Requirements: RequirementSnapshot{
 			Tools:         dependencyNames(req.Deps),
-			ToolsVerified: map[string]string{},
+			ToolsVerified: verifiedTools,
 			Agents:        []string{req.Package.AgentVariant},
 			CLIInstalled:  []string{},
 			CLIProvenance: map[string]string{},
@@ -206,7 +210,12 @@ func (Service) Execute(ctx context.Context, req Request) (Summary, error) {
 		},
 	}
 	for _, hash := range renderedFiles {
-		record.Files[hash.DestPath] = hash.SHA256
+		rel, err := filepath.Rel(installBase, filepath.FromSlash(hash.DestPath))
+		if err != nil {
+			rollbackFiles(writtenPaths)
+			return Summary{}, fmt.Errorf("computing install record path for %s: %w", hash.DestPath, err)
+		}
+		record.Files[filepath.ToSlash(rel)] = hash.SHA256
 	}
 	for _, hook := range req.Hooks {
 		record.Hooks = append(record.Hooks, HookEntry{
@@ -390,14 +399,21 @@ func dependencyNames(deps []models.PackageDep) []string {
 	return names
 }
 
-func dependencyWarnings(deps []models.PackageDep) []string {
+func verifyDependencies(deps []models.PackageDep) (map[string]string, []string) {
+	verified := map[string]string{}
 	warnings := make([]string, 0, len(deps))
 	for _, dep := range deps {
-		if dep.DepType == models.DepTypeCLI || dep.DepType == models.DepTypeTool {
-			warnings = append(warnings, "missing dependency verification for "+dep.DepName)
+		if dep.DepType != models.DepTypeCLI && dep.DepType != models.DepTypeTool {
+			continue
 		}
+		path, err := exec.LookPath(dep.DepName)
+		if err != nil {
+			warnings = append(warnings, "missing dependency verification for "+dep.DepName)
+			continue
+		}
+		verified[dep.DepName+dep.DepSpec] = path
 	}
-	return warnings
+	return verified, warnings
 }
 
 func writeFileAtomic(ctx context.Context, path string, data []byte, mode os.FileMode) error {

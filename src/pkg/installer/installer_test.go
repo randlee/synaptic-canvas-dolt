@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/randlee/synaptic-canvas-dolt/pkg/integrity"
 	"github.com/randlee/synaptic-canvas-dolt/pkg/models"
 )
 
@@ -122,6 +123,95 @@ func TestExecuteRollbackOnAggregateMismatch(t *testing.T) {
 	}
 	if _, statErr := os.Stat(filepath.Join(root, ".claude", "skills", "team-lead", "SKILL.md")); !os.IsNotExist(statErr) {
 		t.Fatalf("expected rollback to remove installed file, got err=%v", statErr)
+	}
+}
+
+func TestExecuteAggregateUsesPackageDocPaths(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	skillContent := "# skill\n"
+	agentContent := "---\nname: helper\nversion: 1.0.0\n---\nbody\n"
+	pkgSHA := integrity.ComputeAggregateSHA256([]integrity.FileHash{
+		{DestPath: "agents/helper.md", SHA256: shaHex([]byte(agentContent))},
+		{DestPath: "skills/sample/SKILL.md", SHA256: shaHex([]byte(skillContent))},
+	})
+	_, err := (Service{}).Execute(context.Background(), Request{
+		Package: &models.Package{
+			ID:           "sample",
+			Version:      "1.0.0",
+			InstallScope: models.InstallScopeAny,
+			AgentVariant: "claude",
+			SHA256:       &pkgSHA,
+		},
+		Files: []models.PackageFile{
+			{DestPath: "skills/sample/SKILL.md", Content: skillContent, SHA256: shaHex([]byte(skillContent)), FileType: models.FileTypeSkill},
+			{DestPath: "agents/helper.md", Content: agentContent, SHA256: shaHex([]byte(agentContent)), FileType: models.FileTypeAgent},
+		},
+		Branch:   "main",
+		RepoRoot: root,
+		Now:      time.Date(2026, 4, 25, 0, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("expected aggregate computed from package doc paths to pass, got %v", err)
+	}
+	lock, err := LoadManifestLock(root)
+	if err != nil {
+		t.Fatalf("LoadManifestLock() error = %v", err)
+	}
+	if len(lock.Installs) != 1 {
+		t.Fatalf("expected 1 install record, got %+v", lock.Installs)
+	}
+	if lock.Installs[0].InstallRoot != filepath.ToSlash(filepath.Join(root, ".claude")) {
+		t.Fatalf("InstallRoot = %q, want %q", lock.Installs[0].InstallRoot, filepath.ToSlash(filepath.Join(root, ".claude")))
+	}
+	for path := range lock.Installs[0].Files {
+		if strings.HasPrefix(path, "..") || filepath.IsAbs(path) {
+			t.Fatalf("install record file path must stay under install root, got %q", path)
+		}
+	}
+}
+
+func TestExecuteRecordsVerifiedToolDependencies(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(t.TempDir(), "bin")
+	if err := os.MkdirAll(binDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	toolPath := filepath.Join(binDir, "fake-tool")
+	if err := os.Symlink("/bin/sh", toolPath); err != nil {
+		t.Fatalf("Symlink() error = %v", err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	content := "# static"
+	sum := shaHex([]byte(content))
+	_, err := (Service{}).Execute(context.Background(), Request{
+		Package: &models.Package{
+			ID:           "sample",
+			Version:      "1.0.0",
+			InstallScope: models.InstallScopeAny,
+			AgentVariant: "claude",
+		},
+		Files: []models.PackageFile{
+			{DestPath: "SKILL.md", Content: content, SHA256: sum, FileType: models.FileTypeSkill},
+		},
+		Deps: []models.PackageDep{
+			{DepType: models.DepTypeTool, DepName: "fake-tool"},
+		},
+		Branch:   "main",
+		RepoRoot: root,
+		Now:      time.Date(2026, 4, 25, 0, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	lock, err := LoadManifestLock(root)
+	if err != nil {
+		t.Fatalf("LoadManifestLock() error = %v", err)
+	}
+	if got := lock.Installs[0].Requirements.ToolsVerified["fake-tool"]; got != toolPath {
+		t.Fatalf("ToolsVerified[fake-tool] = %q, want %q", got, toolPath)
 	}
 }
 
