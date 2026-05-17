@@ -84,12 +84,23 @@ type manifestFile struct {
 	Install     struct {
 		Scope string `yaml:"scope"`
 	} `yaml:"install"`
-	Variables map[string]any      `yaml:"variables"`
-	Options   map[string]any      `yaml:"options"`
-	Artifacts map[string][]string `yaml:"artifacts"`
-	Requires  []string            `yaml:"requires"`
-	Questions []manifestQuestion  `yaml:"questions"`
-	Hooks     []manifestHook      `yaml:"hooks"`
+	Variables map[string]any       `yaml:"variables"`
+	Options   map[string]any       `yaml:"options"`
+	Artifacts map[string][]string  `yaml:"artifacts"`
+	Requires  manifestRequirements `yaml:"requires"`
+	Questions []manifestQuestion   `yaml:"questions"`
+	Hooks     []manifestHook       `yaml:"hooks"`
+}
+
+type manifestRequirements []string
+
+func (r *manifestRequirements) UnmarshalYAML(value *yaml.Node) error {
+	flattened, err := flattenRequirementsNode(value)
+	if err != nil {
+		return err
+	}
+	*r = manifestRequirements(flattened)
+	return nil
 }
 
 type manifestQuestion struct {
@@ -461,6 +472,66 @@ func parseRequirement(req string) (string, string) {
 		return fields[0], ""
 	}
 	return fields[0], strings.Join(fields[1:], " ")
+}
+
+func flattenRequirementsNode(node *yaml.Node) ([]string, error) {
+	if node == nil {
+		return nil, nil
+	}
+	switch node.Kind {
+	case yaml.SequenceNode:
+		result := make([]string, 0, len(node.Content))
+		for _, item := range node.Content {
+			if strings.TrimSpace(item.Value) == "" {
+				continue
+			}
+			result = append(result, strings.TrimSpace(item.Value))
+		}
+		return result, nil
+	case yaml.MappingNode:
+		result := []string{}
+		type kv struct {
+			key string
+			val *yaml.Node
+		}
+		entries := make([]kv, 0, len(node.Content)/2)
+		for i := 0; i < len(node.Content); i += 2 {
+			entries = append(entries, kv{key: strings.TrimSpace(node.Content[i].Value), val: node.Content[i+1]})
+		}
+		sort.Slice(entries, func(i, j int) bool { return entries[i].key < entries[j].key })
+		for _, entry := range entries {
+			if entry.key == "" || entry.val == nil {
+				continue
+			}
+			switch entry.val.Kind {
+			case yaml.ScalarNode:
+				val := strings.TrimSpace(entry.val.Value)
+				if val == "" {
+					result = append(result, entry.key)
+					continue
+				}
+				result = append(result, entry.key+" "+val)
+			case yaml.SequenceNode:
+				for _, item := range entry.val.Content {
+					if strings.TrimSpace(item.Value) == "" {
+						continue
+					}
+					result = append(result, strings.TrimSpace(item.Value))
+				}
+			case yaml.MappingNode:
+				nested, err := flattenRequirementsNode(entry.val)
+				if err != nil {
+					return nil, err
+				}
+				result = append(result, nested...)
+			default:
+				return nil, fmt.Errorf("unsupported requires entry for %s", entry.key)
+			}
+		}
+		return result, nil
+	default:
+		return nil, fmt.Errorf("unsupported requires format")
+	}
 }
 
 func normalizeString(value any) string {

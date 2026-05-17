@@ -71,6 +71,7 @@ func apiInstallSummary(summary installer.Summary) api.InstallSummary {
 		DependencyWarnings:         summary.DependencyWarnings,
 		HooksRegistered:            apiInstallHookEntries(summary.HooksRegistered),
 		TemplateValidationWarnings: summary.TemplateValidationWarnings,
+		Warnings:                   append([]string(nil), summary.Warnings...),
 		Files:                      apiInstallPlannedFiles(summary.Files),
 		Answers:                    apiInstallAnswers(summary.Answers),
 	}

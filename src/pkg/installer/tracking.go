@@ -31,25 +31,28 @@ type ManifestLock struct {
 // "local-install" for installs performed by sc and "scan-reconciled" for
 // records recovered from on-disk artifacts by sc scan.
 type InstallRecord struct {
-	InstallID          string                   `toml:"install_id"`
-	Package            string                   `toml:"package"`
-	Version            string                   `toml:"version"`
-	DoltCommit         string                   `toml:"dolt_commit"`
-	Branch             string                   `toml:"branch"`
-	Variant            string                   `toml:"variant"`
-	InstalledAt        string                   `toml:"installed_at"`
-	InstallScope       string                   `toml:"install_scope"`
-	InstallRoot        string                   `toml:"install_root"`
-	InstallSite        string                   `toml:"install_site"`
-	TrackingOrigin     string                   `toml:"tracking_origin"`
-	TemplateRendered   bool                     `toml:"template_rendered"`
-	Files              map[string]string        `toml:"files"`
-	Hooks              []HookEntry              `toml:"hooks"`
-	Answers            map[string]any           `toml:"answers"`
-	QuestionSnapshot   QuestionSnapshot         `toml:"question_snapshot"`
-	Requirements       RequirementSnapshot      `toml:"requirements"`
-	RepoProfile        map[string]any           `toml:"repo_profile_snapshot"`
-	TemplateValidation TemplateValidationRecord `toml:"template_validation"`
+	InstallID                string                   `toml:"install_id"`
+	Package                  string                   `toml:"package"`
+	Version                  string                   `toml:"version"`
+	DoltCommit               string                   `toml:"dolt_commit"`
+	PackageAggregateExpected string                   `toml:"package_aggregate_expected"`
+	PackageAggregateActual   string                   `toml:"package_aggregate_actual"`
+	Branch                   string                   `toml:"branch"`
+	Variant                  string                   `toml:"variant"`
+	InstalledAt              string                   `toml:"installed_at"`
+	InstallScope             string                   `toml:"install_scope"`
+	InstallRoot              string                   `toml:"install_root"`
+	InstallSite              string                   `toml:"install_site"`
+	TrackingOrigin           string                   `toml:"tracking_origin"`
+	TemplateRendered         bool                     `toml:"template_rendered"`
+	Files                    map[string]string        `toml:"files"`
+	Hooks                    []HookEntry              `toml:"hooks"`
+	Answers                  map[string]any           `toml:"answers"`
+	QuestionSnapshot         QuestionSnapshot         `toml:"question_snapshot"`
+	Requirements             RequirementSnapshot      `toml:"requirements"`
+	RepoProfile              map[string]any           `toml:"repo_profile_snapshot"`
+	TemplateValidation       TemplateValidationRecord `toml:"template_validation"`
+	Warnings                 []string                 `toml:"warnings"`
 }
 
 type QuestionSnapshot struct {

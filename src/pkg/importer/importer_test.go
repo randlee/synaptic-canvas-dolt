@@ -3,6 +3,7 @@ package importer
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -199,5 +200,49 @@ func TestImportReadFailureAbortsBeforeWrite(t *testing.T) {
 	}
 	if writer.writes != 0 {
 		t.Fatalf("writer writes = %d, want 0", writer.writes)
+	}
+}
+
+func TestScanPackageSupportsStructuredRequires(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	manifest := `name: structured
+version: 1.0.0
+artifacts:
+  skills:
+    - skills/structured/SKILL.md
+requires:
+  cli:
+    - python >= 3.10
+    - docling >= 2.90.0
+  optional:
+    - poppler
+`
+	if err := os.MkdirAll(filepath.Join(root, "skills", "structured"), 0o750); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "manifest.yaml"), []byte(manifest), 0o600); err != nil {
+		t.Fatalf("WriteFile(manifest) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "skills", "structured", "SKILL.md"), []byte("# structured"), 0o600); err != nil {
+		t.Fatalf("WriteFile(SKILL) error = %v", err)
+	}
+
+	scanned, _, err := scanPackage(root)
+	if err != nil {
+		t.Fatalf("scanPackage() error = %v", err)
+	}
+	if len(scanned.Deps) != 3 {
+		t.Fatalf("deps = %d, want 3", len(scanned.Deps))
+	}
+	if scanned.Deps[0].DepName != "python" || strings.TrimSpace(scanned.Deps[0].DepSpec) != ">= 3.10" {
+		t.Fatalf("dep[0] = %+v", scanned.Deps[0])
+	}
+	if scanned.Deps[1].DepName != "docling" || strings.TrimSpace(scanned.Deps[1].DepSpec) != ">= 2.90.0" {
+		t.Fatalf("dep[1] = %+v", scanned.Deps[1])
+	}
+	if scanned.Deps[2].DepName != "poppler" || strings.TrimSpace(scanned.Deps[2].DepSpec) != "" {
+		t.Fatalf("dep[2] = %+v", scanned.Deps[2])
 	}
 }

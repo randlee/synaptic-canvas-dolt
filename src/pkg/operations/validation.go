@@ -40,6 +40,19 @@ func ValidateTrackedInstall(
 		Status:            "PASS",
 		AggregateStatus:   string(api.ValidationSeverityInfo),
 	}
+	if record.PackageAggregateExpected != "" && record.PackageAggregateActual != "" && record.PackageAggregateExpected != record.PackageAggregateActual {
+		message := "package aggregate differs from imported package SHA; install proceeded and drift should be reviewed"
+		summary.Warnings = append(summary.Warnings, message)
+		appendValidationItem(&summary, api.ValidationItem{
+			Kind:     api.ValidationKindAggregate,
+			State:    api.ValidationStateModified,
+			Severity: api.ValidationSeverityWarn,
+			Code:     "package_aggregate_mismatch",
+			Message:  message,
+			Expected: record.PackageAggregateExpected,
+			Actual:   record.PackageAggregateActual,
+		})
+	}
 	summary.DependencySummary = dependencySummary(record)
 
 	expectedSet := make(map[string]struct{}, len(expected))

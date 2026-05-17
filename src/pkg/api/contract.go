@@ -140,6 +140,7 @@ type InstallSummary struct {
 	DependencyWarnings         []string             `json:"dependency_warnings,omitempty"`
 	HooksRegistered            []InstallHookEntry   `json:"hooks_registered,omitempty"`
 	TemplateValidationWarnings []string             `json:"template_validation_warnings,omitempty"`
+	Warnings                   []string             `json:"warnings,omitempty"`
 	Files                      []InstallPlannedFile `json:"files,omitempty"`
 	Answers                    *InstallAnswers      `json:"answers,omitempty"`
 }

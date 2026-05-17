@@ -62,6 +62,57 @@ func TestLoadTrackedInstallsAndFilters(t *testing.T) {
 	}
 }
 
+func TestValidateTrackedInstallSurfacesRecordedPackageAggregateMismatch(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	installRoot := filepath.Join(root, ".claude", "skills", "team-lead")
+	writeTestFile(t, filepath.Join(installRoot, "SKILL.md"), "current")
+
+	record := installer.InstallRecord{
+		Package:                  "team-lead",
+		Version:                  "1.0.0",
+		Branch:                   "main",
+		InstallScope:             "project",
+		InstallRoot:              installRoot,
+		InstallSite:              root,
+		Files:                    map[string]string{"SKILL.md": integrity.ComputeContentSHA256([]byte("current"))},
+		PackageAggregateExpected: "package-sha",
+		PackageAggregateActual:   "installed-sha",
+	}
+	expected := []integrity.FileHash{
+		{DestPath: "SKILL.md", SHA256: integrity.ComputeContentSHA256([]byte("current"))},
+	}
+
+	summary, err := ValidateTrackedInstall(context.Background(), record, expected, nil, func(repoRoot, scope string) (string, error) {
+		return repoRoot, nil
+	})
+	if err != nil {
+		t.Fatalf("ValidateTrackedInstall() error = %v", err)
+	}
+	if !summary.Pass {
+		t.Fatalf("summary.Pass = false, want true for advisory package aggregate mismatch")
+	}
+	if summary.Status != "PASS" {
+		t.Fatalf("Status = %q, want PASS", summary.Status)
+	}
+	if len(summary.Warnings) != 1 || !strings.Contains(summary.Warnings[0], "package aggregate differs") {
+		t.Fatalf("Warnings = %+v", summary.Warnings)
+	}
+	found := false
+	for _, item := range summary.Items {
+		if item.Code == "package_aggregate_mismatch" {
+			found = true
+			if item.Severity != api.ValidationSeverityWarn {
+				t.Fatalf("item.Severity = %q, want warn", item.Severity)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected package_aggregate_mismatch item in %+v", summary.Items)
+	}
+}
+
 func TestResolveExpectedHashesProjectAndMachineCatalogFallbacks(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
