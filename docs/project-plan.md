@@ -1989,20 +1989,31 @@ Detailed sprint plan: [4.10 Operations Layer Workflow Extraction](./phase-4/4.10
 
 ### Sprint 5.1: Release Pipeline
 
-**Goal:** Tag-triggered GoReleaser publish.
+**Goal:** Ship an MVP release pipeline with an explicit archive matrix,
+pre-tag GoReleaser validation, documented Homebrew publication prerequisites,
+and an accurate statement of what is and is not part of the MVP release
+surface.
+
+Detailed sprint plan: [5.1 Release Pipeline](./phase-5/5.1-release-pipeline.md)
 
 **Deliverables:**
-- `.github/workflows/release.yml` — tag-triggered release
-- GoReleaser configuration for cross-platform builds
-- Homebrew tap update (`randlee/homebrew-tap`)
-- Checksums and release notes
+- Tag-triggered publish workflow and PR/push GoReleaser validation workflow
+- GoReleaser configuration with an explicit primary/secondary archive matrix
+- Homebrew publication prerequisite and failure-policy documentation
+- Accurate release-surface documentation for Homebrew, release archives, and
+  the enabled Winget publication path
 
 **Acceptance Criteria:**
-- Tag push `v*` triggers release
-- Binaries for linux/darwin (amd64, arm64), windows (amd64)
-- Homebrew formula updated automatically
-- SHA256 checksums published
-- Release notes generated from commits
+- `docs/phase-5/5.1-release-pipeline.md` exists and defines the full Sprint 5.1
+  implementation plan
+- PR/push validation runs `goreleaser check` before tags are cut
+- The release matrix is explicit: primary `darwin/arm64`, `windows/amd64`,
+  `linux/amd64`; secondary `darwin/amd64`, `windows/arm64`, `linux/arm64`
+- `windows/arm64` is stated explicitly as an MVP secondary archive target
+- Homebrew publication prerequisites and non-blocking failure behavior are
+  documented
+- Winget publication configuration is described accurately relative to the
+  merged baseline and its remaining operational prerequisites
 
 ---
 
