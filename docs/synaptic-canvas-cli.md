@@ -963,7 +963,8 @@ synaptic-canvas-dolt/
 ├── .github/
 │   └── workflows/
 │       ├── test.yml              # CI: lint + test + build
-│       └── release.yml           # Tag-triggered GoReleaser
+│       ├── release.yml           # Tag-triggered GoReleaser
+│       └── release-validate.yml  # PR/push: goreleaser check (non-publishing)
 ├── .goreleaser.yml               # Build configuration
 ├── .golangci.yml                 # Linter configuration
 └── CLAUDE.md                     # Project developer instructions
@@ -1001,8 +1002,8 @@ Following `claude-history` patterns:
 **release.yml** (tag push `v*`):
 - Full test suite
 - GoReleaser build + publish
-- Homebrew tap update using `HOMEBREW_TAP_TOKEN`
-- Winget publish path using `WINGET_GITHUB_TOKEN`
+- Homebrew tap update using `HOMEBREW_TAP_TOKEN` (`contents:write` on `randlee/homebrew-tap` required); tap update failures are non-blocking — GitHub release artifacts still publish
+- Winget publish path using `WINGET_GITHUB_TOKEN` (`contents:write` + `pull_requests:write` on `randlee/winget-pkgs` required)
 
 **release-validate.yml** (added by Sprint 5.1):
 - `goreleaser check`

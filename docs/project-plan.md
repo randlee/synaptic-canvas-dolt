@@ -2067,3 +2067,4 @@ later planning so verification remains part of the product story:
 | 2026-04-08 | Align plan with `requirements.md` and `architecture.md`, including explicit branch resolution and AI JSON access |
 | 2026-04-08 | Add Sprint 1.5 for Phase 1 gap closure and strengthen verification/test expectations across later phases |
 | 2026-04-08 | Add MVP release gate and future validation considerations (test harness, evals, validation evidence) |
+| 2026-05-17 | Sprint 5.1: add release-validate.yml, align release matrix labeling, document Homebrew/Winget token requirements and non-blocking tap failure behavior |
