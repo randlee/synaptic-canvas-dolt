@@ -2015,6 +2015,47 @@ Detailed sprint plan: [5.1 Release Pipeline](./phase-5/5.1-release-pipeline.md)
 - Winget publication configuration is described accurately relative to the
   merged baseline and its remaining operational prerequisites
 
+### Sprint 5.2: First Import Candidate And Package Normalization
+
+**Goal:** Convert the first real marketplace package into a clean Synaptic
+Canvas package in its source repository, preserve traditional marketplace
+usability, and prove that the package is ready for `sc admin import`.
+
+**Deliverables:**
+- Updated source package for `claude-history` on a dedicated worktree
+- QA-reviewed `.claude/skills/importing-sc-packages` skill used for conversion
+- `installation-and-troubleshooting` guidance that works for non-`sc` users
+- Short Synaptic Canvas install/upgrade/uninstall section
+- Package metadata and assets ready for catalog import
+
+### Sprint 5.3: Local Dolt Clone Smoke Test
+
+**Goal:** Prove the first imported package works end-to-end against a local
+clone of the package database using the native `dolt` CLI workflow and the
+Synaptic Canvas local-clone reader path.
+
+**Deliverables:**
+- Local Dolt clone of the package database containing the imported package
+- End-to-end local-clone smoke-test evidence for install lifecycle commands
+- Verified local-scope and global-scope package installs
+
+### Sprint 5.4: DoltHub Smoke Test
+
+**Goal:** Prove the same imported package works against the live DoltHub-backed
+catalog and record any explicit environment blockers when the remote proof
+cannot yet be completed.
+
+**Deliverables:**
+- Imported package target and attempted DoltHub smoke evidence
+- Explicit record of blocked remote behaviors and required follow-up
+- Comparison notes for local-clone versus DoltHub behavior
+
+**Acceptance Criteria:**
+- Sprint 5.4 is registered under Phase 5
+- Any remaining DoltHub environment blockers are documented explicitly rather
+  than implied away
+- Non-environment documentation and traceability gaps are closed on the branch
+
 ---
 
 ## Phase Summary
@@ -2025,7 +2066,7 @@ Detailed sprint plan: [5.1 Release Pipeline](./phase-5/5.1-release-pipeline.md)
 | 2. Admin | 2.1–2.4 | Import, export, verify, publish |
 | 3. End-User | 3.1–3.9 | List, install, validate, upgrade, HTTP client, SHA catalog, scan, import collision, scope/yolo/severity |
 | 4. AI Surface | 4.1–4.10 | JSON contract, backend parity, readback, sc:plugin, installer, error/fixture hardening |
-| 5. Release | 5.1 | GoReleaser release pipeline |
+| 5. Release | 5.1–5.4 | Release pipeline, first import candidate, local-clone smoke proof, DoltHub smoke attempt |
 
 ---
 
