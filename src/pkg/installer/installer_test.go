@@ -96,13 +96,13 @@ func TestExecuteWritesFilesAndTracking(t *testing.T) {
 	}
 }
 
-func TestExecuteRollbackOnAggregateMismatch(t *testing.T) {
+func TestExecuteContinuesOnAggregateMismatch(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
 	content := "# static"
 	sum := shaHex([]byte(content))
-	_, err := (Service{}).Execute(context.Background(), Request{
+	summary, err := (Service{}).Execute(context.Background(), Request{
 		Package: &models.Package{
 			ID:           "team-lead",
 			Version:      "1.2.0",
@@ -117,11 +117,31 @@ func TestExecuteRollbackOnAggregateMismatch(t *testing.T) {
 		RepoRoot: root,
 		Now:      time.Date(2026, 4, 25, 0, 0, 0, 0, time.UTC),
 	})
-	if err == nil || !strings.Contains(err.Error(), "aggregate sha mismatch") {
-		t.Fatalf("expected aggregate mismatch, got %v", err)
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
 	}
-	if _, statErr := os.Stat(filepath.Join(root, ".claude", "skills", "team-lead", "SKILL.md")); !os.IsNotExist(statErr) {
-		t.Fatalf("expected rollback to remove installed file, got err=%v", statErr)
+	if _, statErr := os.Stat(filepath.Join(root, ".claude", "skills", "team-lead", "SKILL.md")); statErr != nil {
+		t.Fatalf("expected installed file to remain, got err=%v", statErr)
+	}
+	if len(summary.Warnings) == 0 || !strings.Contains(summary.Warnings[0], "aggregate SHA mismatch") {
+		t.Fatalf("Warnings = %+v, want aggregate mismatch warning", summary.Warnings)
+	}
+	lock, err := LoadManifestLock(root)
+	if err != nil {
+		t.Fatalf("LoadManifestLock() error = %v", err)
+	}
+	if len(lock.Installs) != 1 {
+		t.Fatalf("installs = %d, want 1", len(lock.Installs))
+	}
+	record := lock.Installs[0]
+	if record.PackageAggregateExpected != "wrong-aggregate" {
+		t.Fatalf("PackageAggregateExpected = %q, want wrong-aggregate", record.PackageAggregateExpected)
+	}
+	if record.PackageAggregateActual == "" || record.PackageAggregateActual == record.PackageAggregateExpected {
+		t.Fatalf("PackageAggregateActual = %q, want non-empty mismatch", record.PackageAggregateActual)
+	}
+	if len(record.Warnings) == 0 || !strings.Contains(record.Warnings[0], "aggregate SHA mismatch") {
+		t.Fatalf("record.Warnings = %+v, want aggregate mismatch warning", record.Warnings)
 	}
 }
 

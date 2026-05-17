@@ -111,7 +111,7 @@ func renderInstallResult(formatter *output.Formatter, jsonMode bool, result oper
 				DependencyWarnings:         summary.DependencyWarnings,
 				HooksRegistered:            apiInstallHookEntries(summary.HooksRegistered),
 				TemplateValidationWarnings: summary.TemplateValidationWarnings,
-				Warnings:                   result.Warnings,
+				Warnings:                   append(append([]string(nil), result.Warnings...), summary.Warnings...),
 				Files:                      apiInstallPlannedFiles(summary.Files),
 				Answers:                    apiInstallAnswers(summary.Answers),
 			}); err != nil {
@@ -164,6 +164,9 @@ func renderInstallResult(formatter *output.Formatter, jsonMode bool, result oper
 		}
 		for _, warning := range summary.TemplateValidationWarnings {
 			formatter.Success("template warning: " + warning)
+		}
+		for _, warning := range summary.Warnings {
+			formatter.Success("warning: " + warning)
 		}
 	}
 	if !result.OK() {

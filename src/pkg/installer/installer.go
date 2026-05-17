@@ -47,6 +47,7 @@ type Summary struct {
 	DependencyWarnings         []string       `json:"dependency_warnings"`
 	HooksRegistered            []HookEntry    `json:"hooks_registered"`
 	TemplateValidationWarnings []string       `json:"template_validation_warnings"`
+	Warnings                   []string       `json:"warnings,omitempty"`
 	Files                      []PlannedFile  `json:"files"`
 	Answers                    map[string]any `json:"answers"`
 }
@@ -164,28 +165,30 @@ func (Service) Execute(ctx context.Context, req Request) (Summary, error) {
 	if req.Package.SHA256 != nil {
 		aggregate := integrity.ComputeAggregateSHA256(renderedFiles)
 		if aggregate != *req.Package.SHA256 {
-			rollbackFiles(writtenPaths)
-			return Summary{}, fmt.Errorf("aggregate sha mismatch for %s", req.Package.ID)
+			summary.Warnings = append(summary.Warnings,
+				fmt.Sprintf("aggregate SHA mismatch for %s: package=%s installed=%s; continuing with install", req.Package.ID, *req.Package.SHA256, aggregate),
+			)
 		}
 	}
 
 	record := InstallRecord{
-		InstallID:        fmt.Sprintf(InstallIDFormat, req.Package.ID, scope),
-		Package:          req.Package.ID,
-		Version:          req.Package.Version,
-		DoltCommit:       stringValue(req.Package.SHA256),
-		Branch:           req.Branch,
-		Variant:          req.Package.AgentVariant,
-		InstalledAt:      req.Now.UTC().Format(time.RFC3339),
-		InstallScope:     scope,
-		InstallRoot:      summary.InstallRoot,
-		InstallSite:      req.RepoRoot,
-		TrackingOrigin:   "local-install",
-		TemplateRendered: hasTemplates(req.Files),
-		Files:            make(map[string]string, len(renderedFiles)),
-		Hooks:            make([]HookEntry, 0, len(req.Hooks)),
-		Answers:          answers.Values,
-		QuestionSnapshot: QuestionSnapshot{QuestionIDs: questionIDs(req.Questions)},
+		InstallID:                fmt.Sprintf(InstallIDFormat, req.Package.ID, scope),
+		Package:                  req.Package.ID,
+		Version:                  req.Package.Version,
+		DoltCommit:               stringValue(req.Package.SHA256),
+		PackageAggregateExpected: stringValue(req.Package.SHA256),
+		Branch:                   req.Branch,
+		Variant:                  req.Package.AgentVariant,
+		InstalledAt:              req.Now.UTC().Format(time.RFC3339),
+		InstallScope:             scope,
+		InstallRoot:              summary.InstallRoot,
+		InstallSite:              req.RepoRoot,
+		TrackingOrigin:           "local-install",
+		TemplateRendered:         hasTemplates(req.Files),
+		Files:                    make(map[string]string, len(renderedFiles)),
+		Hooks:                    make([]HookEntry, 0, len(req.Hooks)),
+		Answers:                  answers.Values,
+		QuestionSnapshot:         QuestionSnapshot{QuestionIDs: questionIDs(req.Questions)},
 		Requirements: RequirementSnapshot{
 			Tools:         dependencyNames(req.Deps),
 			ToolsVerified: map[string]string{},
@@ -204,6 +207,10 @@ func (Service) Execute(ctx context.Context, req Request) (Summary, error) {
 			Unresolved:        warnings,
 			Warnings:          warnings,
 		},
+		Warnings: summary.Warnings,
+	}
+	if req.Package.SHA256 != nil {
+		record.PackageAggregateActual = integrity.ComputeAggregateSHA256(renderedFiles)
 	}
 	for _, hash := range renderedFiles {
 		record.Files[hash.DestPath] = hash.SHA256
