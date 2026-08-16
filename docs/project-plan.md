@@ -156,7 +156,7 @@ Scaffold the Go project, establish patterns, connect to Dolt.
 
 **Deliverables:**
 - `.claude/agents/sc-log-debug.md` — log monitoring agent
-- Agent definition aligned with `../synaptic-canvas/docs/claude-code-skills-agents-guidelines.md`
+- Agent definition aligned with `/Users/randlee/Documents/github/synaptic-canvas/docs/claude-code-skills-agents-guidelines.md`
 - Python helper scripts under `.claude/scripts/`
 - Unit tests for all helper scripts
 - Tails `~/.sc/logs/sc.log` in background
@@ -1985,24 +1985,201 @@ Detailed sprint plan: [4.10 Operations Layer Workflow Extraction](./phase-4/4.10
 
 ---
 
-## Phase 5: Release Pipeline
+## Phase 5: Release Readiness And Product Proof
+
+Phase plan: [docs/phase-5/README.md](./phase-5/README.md)
 
 ### Sprint 5.1: Release Pipeline
 
-**Goal:** Tag-triggered GoReleaser publish.
+**Goal:** Ship an MVP release pipeline with an explicit archive matrix,
+pre-tag GoReleaser validation, documented Homebrew publication prerequisites,
+and an accurate statement of what is and is not part of the MVP release
+surface.
+
+Every Phase 5 sprint completion report must record issues encountered, the
+fixes completed inside the sprint, and any larger follow-up items that need a
+later sprint rather than disappearing into ad hoc notes.
+
+Detailed sprint plan: [5.1 Release Pipeline](./phase-5/5.1-release-pipeline.md)
 
 **Deliverables:**
-- `.github/workflows/release.yml` — tag-triggered release
-- GoReleaser configuration for cross-platform builds
-- Homebrew tap update (`randlee/homebrew-tap`)
-- Checksums and release notes
+- Tag-triggered publish workflow and PR/push GoReleaser validation workflow
+- GoReleaser configuration with an explicit primary/secondary archive matrix
+- Homebrew publication prerequisite and failure-policy documentation
+- Accurate release-surface documentation for Homebrew, release archives, and
+  the enabled-but-operationally-gated Winget publication path
 
 **Acceptance Criteria:**
-- Tag push `v*` triggers release
-- Binaries for linux/darwin (amd64, arm64), windows (amd64)
-- Homebrew formula updated automatically
-- SHA256 checksums published
-- Release notes generated from commits
+- `docs/phase-5/5.1-release-pipeline.md` exists and defines the full Sprint 5.1
+  implementation plan
+- PR/push validation runs `goreleaser check` before tags are cut
+- The release matrix is explicit: primary `darwin/arm64`, `windows/amd64`,
+  `linux/amd64`; secondary `darwin/amd64`, `windows/arm64`, `linux/arm64`
+- `windows/arm64` is stated explicitly as an MVP secondary archive target
+- Homebrew publication prerequisites and non-blocking failure behavior are
+  documented
+- Winget publication configuration is described accurately relative to the
+  merged `develop` baseline and its remaining operational prerequisites
+
+### Sprint 5.2: First Import Candidate And Package Normalization
+
+**Goal:** Convert the first real marketplace package into a clean Synaptic
+Canvas package in its source repository, preserve traditional marketplace
+usability, and prove that the package is ready for `sc admin import`.
+
+Detailed sprint plan: [5.2 First Import Candidate And Package Normalization](./phase-5/5.2-first-import-candidate-and-package-normalization.md)
+
+**Deliverables:**
+- Updated source package for `claude-history` on a dedicated worktree
+- QA-reviewed `.claude/skills/importing-sc-packages` skill used for conversion
+- `installation-and-troubleshooting` guidance that works for non-`sc` users
+- Short Synaptic Canvas install/upgrade/uninstall section
+- Package metadata and assets ready for catalog import
+
+**Acceptance Criteria:**
+- `docs/phase-5/5.2-first-import-candidate-and-package-normalization.md`
+  exists and defines the full Sprint 5.2 implementation plan
+- `claude-history` is updated in its source repo using the import skill rules
+- `.claude/skills/importing-sc-packages` is reviewed against
+  `/Users/randlee/Documents/github/synaptic-canvas/docs/claude-code-skills-agents-guidelines.md`
+  before it is treated as the authoritative conversion workflow
+- The package preserves the normal manual install path and adds a short `sc`
+  section
+- The package is ready for `sc admin import` without guessing about package
+  shape, dependency metadata, or install docs
+
+### Sprint 5.3: Local Dolt Clone Smoke Test
+
+**Goal:** Prove the first imported package works end-to-end against a local
+clone of the package database using the native `dolt` CLI workflow and the
+Synaptic Canvas local-clone reader path.
+
+Detailed sprint plan: [5.3 Local Dolt Clone Smoke Test](./phase-5/5.3-local-dolt-clone-smoke-test.md)
+
+**Deliverables:**
+- Local Dolt clone of the package database containing the imported package
+- End-to-end local-clone smoke-test evidence for install lifecycle commands
+- Verified local-scope and global-scope package installs
+
+**Acceptance Criteria:**
+- `docs/phase-5/5.3-local-dolt-clone-smoke-test.md` exists and defines the full
+  Sprint 5.3 implementation plan
+- The same package content can be read from a local Dolt clone
+- Local and global install flows pass against the local-clone backend
+- `status`, `validate`, `upgrade`, `uninstall`, and reinstall behavior are
+  proven against the local clone
+
+### Sprint 5.4: DoltHub Smoke Test
+
+**Goal:** Prove the same imported package works against the live DoltHub-backed
+catalog and that the remote behavior matches the local-clone proof closely
+enough for MVP release confidence.
+
+Detailed sprint plan: [5.4 DoltHub Smoke Test](./phase-5/5.4-dolthub-smoke-test.md)
+
+**Deliverables:**
+- Imported package available on the DoltHub-backed test catalog
+- End-to-end DoltHub smoke-test evidence for the install lifecycle
+- Comparison notes for local-clone versus DoltHub behavior
+
+**Acceptance Criteria:**
+- `docs/phase-5/5.4-dolthub-smoke-test.md` exists and defines the full Sprint
+  5.4 implementation plan
+- The imported package can be discovered and installed from the DoltHub-backed
+  catalog
+- Remote-backed install, status, validate, upgrade, uninstall, and reinstall
+  flows are proven
+- Any backend differences are documented explicitly rather than left implicit
+
+### Sprint 5.5: Candidate Package Expansion And Regression Pass
+
+**Goal:** Expand the import-and-smoke-test process to the next package set so
+Phase 5 validates more than one happy-path package and captures the first
+shared-infrastructure package merge decision.
+
+Detailed sprint plan: [5.5 Candidate Package Expansion And Regression Pass](./phase-5/5.5-candidate-package-expansion-and-regression-pass.md)
+
+**Deliverables:**
+- Ordered candidate list for the first expansion pass
+- Import and smoke-test evidence for the selected package set
+- Package-boundary decision for the launch-terminal package family
+
+**Acceptance Criteria:**
+- `docs/phase-5/5.5-candidate-package-expansion-and-regression-pass.md` exists
+  and defines the full Sprint 5.5 implementation plan
+- The phase explicitly covers `sc-docling-pdf`, the combined
+  `sc-launchpad`/`sc-launch-term` case, and `sprint-report` after
+  `claude-history`
+- The launch-terminal package merge decision is written down before
+  implementation starts
+- Each candidate package has explicit pass/fail evidence or a recorded blocker
+  from the local-clone and DoltHub smoke passes
+
+### Sprint 5.6: Phase-5 Hardening And Follow-Up Closure
+
+**Goal:** Consume the issues and follow-up items recorded in Sprint `5.1–5.5`,
+close the Phase 5 items that remain within MVP scope, rerun the critical smoke
+matrix after fixes, and produce the final Phase 5 readiness report.
+
+Detailed sprint plan: [5.6 Phase-5 Hardening And Follow-Up Closure](./phase-5/5.6-phase-5-hardening-and-follow-up-closure.md)
+
+**Deliverables:**
+- Consolidated Phase 5 issue list from Sprint `5.1–5.5` completion reports
+- MVP-scope fixes completed for cross-sprint blockers and regressions
+- Final rerun evidence for the release, local-clone, and DoltHub smoke paths
+- Final Phase 5 readiness report with remaining deferred items called out
+
+**Acceptance Criteria:**
+- `docs/phase-5/5.6-phase-5-hardening-and-follow-up-closure.md` exists and
+  defines the full Sprint 5.6 implementation plan
+- MVP-scope follow-up items from Sprint `5.1–5.5` are either fixed or
+  explicitly deferred out of Phase 5 with rationale
+- The critical smoke matrix is rerun after fixes rather than relying only on
+  pre-fix evidence
+- The final Phase 5 report lists fixes completed, blockers closed, and any
+  remaining non-MVP or later-phase items explicitly
+
+---
+
+## Phase 6: Post-MVP Product Surface
+
+### Sprint 6.1: sc dolt Pass-Through Commands
+
+**Goal:** Add a thin `sc dolt` wrapper over the local `dolt` CLI so users can
+discover clone/pull/push/status-style database workflows through the Synaptic
+Canvas entry point without learning a second command location first.
+
+Detailed sprint plan: [6.1 sc dolt Pass-Through Commands](./phase-6/6.1-sc-dolt-pass-through-commands.md)
+
+**Deliverables:**
+- `sc dolt <args...>` pass-through command family
+- Missing-CLI guidance for `dolt`
+- Docs for common clone/pull/push/status workflows through `sc dolt`
+
+**Acceptance Criteria:**
+- `sc dolt` forwards directly to the installed `dolt` CLI
+- Missing `dolt` is surfaced clearly with install guidance
+- Docs describe the feature as a thin convenience wrapper, not a second
+  database-management model
+
+### Sprint 6.2: Web UI For Synaptic Canvas Catalog
+
+**Goal:** Plan and implement a web UI that reads Synaptic Canvas catalog data
+from DoltHub and presents packages and skills in a browsable site.
+
+Detailed sprint plan: [6.2 Web UI For Synaptic Canvas Catalog](./phase-6/6.2-web-ui-for-synaptic-canvas-catalog.md)
+
+**Deliverables:**
+- Frontend stack decision and architecture
+- DoltHub catalog read strategy
+- Initial package/skill browsing UX
+- Deployment and cache/update plan
+
+**Acceptance Criteria:**
+- The plan defines the frontend stack, DoltHub read path, initial UX scope,
+  and deployment model
+- The first UI milestone stays focused on catalog browsing rather than full
+  browser-side package management
 
 ---
 
@@ -2014,7 +2191,8 @@ Detailed sprint plan: [4.10 Operations Layer Workflow Extraction](./phase-4/4.10
 | 2. Admin | 2.1–2.4 | Import, export, verify, publish |
 | 3. End-User | 3.1–3.9 | List, install, validate, upgrade, HTTP client, SHA catalog, scan, import collision, scope/yolo/severity |
 | 4. AI Surface | 4.1–4.10 | JSON contract, backend parity, readback, sc:plugin, installer, error/fixture hardening |
-| 5. Release | 5.1 | GoReleaser release pipeline |
+| 5. Release | 5.1–5.6 | Release readiness, first-package import, local clone smoke, DoltHub smoke, package expansion, hardening closure |
+| 6. Post-MVP | 6.1–6.2 | Dolt UX forwarding and catalog web UI |
 
 ---
 
@@ -2024,6 +2202,10 @@ The MVP should not be considered production-ready until all of the following are
 true:
 
 - Phase 1 through Phase 5 deliverables are complete
+- Local-clone and live DoltHub smoke tests have been executed for the first
+  real package set
+- Phase 5 follow-up items within MVP scope have been resolved or explicitly
+  deferred with rationale in the final readiness report
 - Cross-cutting branch-resolution rules are implemented consistently
 - Structured logging and integrity verification behave as documented
 - All documented CLI JSON contracts required for AI wrappers are implemented
@@ -2054,5 +2236,7 @@ later planning so verification remains part of the product story:
 | 2026-02-22 | Move CI pipeline from Phase 5 into Sprint 1.1; Phase 5 now release-only |
 | 2026-02-22 | Add template variable validation to Sprints 2.1 (validator + warning), 2.4 (blocking gate), 3.2 (post-install scan) |
 | 2026-04-08 | Align plan with `requirements.md` and `architecture.md`, including explicit branch resolution and AI JSON access |
+| 2026-05-16 | Expand Phase 5 planning with explicit release matrix, pre-tag validation, Homebrew prerequisite/failure policy, and Winget deferral |
+| 2026-05-16 | Add initial Phase 6 post-MVP planning for `sc dolt` pass-through commands and a DoltHub-backed catalog web UI |
 | 2026-04-08 | Add Sprint 1.5 for Phase 1 gap closure and strengthen verification/test expectations across later phases |
 | 2026-04-08 | Add MVP release gate and future validation considerations (test harness, evals, validation evidence) |
