@@ -151,8 +151,7 @@ venv.bak/
 # Rope project settings
 .ropeproject
 
-# mkdocs documentation
-/site
+# docs site (rendered by scripts/build_site.py — tracked, served via GitHub Pages)
 
 # mypy
 .mypy_cache/
@@ -213,3 +212,9 @@ doltdb/
 *.out
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
