@@ -2,6 +2,8 @@
 
 A Dolt-backed package management system for Claude Code skills, agents, and commands.
 
+> **📚 Documentation site:** https://randlee.github.io/synaptic-canvas-dolt/
+
 ## Overview
 
 Synaptic Canvas provides a CLI tool (`sc`) for discovering, installing, and managing packages that extend Claude Code's capabilities. Packages are stored in a [Dolt](https://www.dolthub.com/) database, providing Git-like versioning, branching (used as release channels), and content-addressable integrity verification.
