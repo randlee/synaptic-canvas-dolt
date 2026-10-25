@@ -65,4 +65,7 @@
 # - linear.api_key  → use LINEAR_API_KEY env var instead
 # - github.token    → use GITHUB_TOKEN env var instead
 
-sync.remote: "git+https://github.com/randlee/synaptic-canvas-dolt.git"
+
+dolt.shared-server: true
+sync:
+    remote: "https://doltremoteapi.dolthub.com/randlee/sc-dev"
