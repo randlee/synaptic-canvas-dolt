@@ -39,6 +39,7 @@ registry. Live mapping: `~/github/hendrix/sc-ecosystem-registry.json`.
 | Workspace `.beads` repointed to server mode | done — PR #77, merged `51e71e5` |
 | Vestigial embedded local store removed | done |
 | 5 stale local worktrees removed | done — 2026-10-25 |
+| Legacy duplicates purged from `sc-beads` | done — 57 issues, 66 deps, 7 counters |
 
 ### The workspace repoint (why it mattered)
 
@@ -65,23 +66,38 @@ local dolt server spawned.
 
 ## Remaining work
 
-| # | Item | Priority |
-|---|---|---|
-| 1 | Backfill `close_reason` on 15 of the 52 sc-beads beads | Optional (bookkeeping) |
-| 2 | `sc-dolt` row in `sc-beads.project_prefixes` | **No action** — intentionally retained |
+**None.** The migration is complete, and `sc-beads` no longer carries stale
+duplicates (see *Legacy copy purge* below).
 
-### Detail
+The two items previously listed here were resolved by **deletion rather than
+bookkeeping**:
 
-**1. Tombstone reasons.** In `sc-beads`, all 52 `sc-dolt-*` issues are `closed`,
-but only **37** carry `RELOCATED to sc-dev`; 15 were closed before the migration
-for unrelated reasons. No data risk — `sc-dev` is authoritative and holds all 52
-with IDs and hierarchy intact. This is audit-label consistency only.
+- **No backfill of `RELOCATED` reasons.** Stamping where 15 legacy copies went
+  has no SSOT value — those rows no longer exist.
+- **No `project_prefixes` change.** The `sc-dolt` row is retained deliberately:
+  `sc-beads` is the canonical SC-wide prefix registry, and rows are moved out,
+  never dropped.
 
-**2. Prefix registry — no action.** The original plan said to delete the
-`sc-dolt` row from `sc-beads.project_prefixes`. That was **not** done and should
-not be: `sc-beads` is the canonical **SC-wide prefix registry** (archive +
-registry post-graduation). Dropping the row would orphan the registry — rows are
-moved out, never just deleted.
+## Legacy copy purge (done 2026-10-25)
+
+`sc-beads` held **57 issues, all stale duplicates** of the SSOT databases:
+
+| Set | Count | What `sc-beads` said | Truth |
+|---|---|---|---|
+| `sc-dolt-*` | 52 | `closed` | perfect duplicate of `sc-dev` — ID sets diffed, 52 vs 52, no gaps either way |
+| `atm-x7y*` | 5 | `closed` | `atm-dev` has them **open / in_progress** — the copies were actively misleading |
+
+All 57 were deleted, plus their `dependencies` (66) and `child_counters` (7)
+rows. `project_prefixes` (16 rows), `metadata` and `config` were retained.
+
+Post-purge state, verified by a **fresh `dolt clone` from DoltHub**:
+
+- issues **0**, registry rows **16**, history **165 commits** (nothing rewritten)
+- `sc-dev` remains SSOT for sc-dolt beads; `atm-dev` for atm beads
+- `sc-beads` is now purely the canonical SC-wide prefix registry
+
+Cold backup taken before the purge:
+`~/sc-beads-backup-pre-purge-20261025T172947Z`
 
 ## Worktree cleanup (done 2026-10-25)
 
@@ -101,8 +117,10 @@ removed. `sc/beads-migration-plan1` can be deleted whenever convenient.
 
 ## Rollback
 
-The `sc-beads` copies are `closed`, not deleted, so they remain reopenable. The
-authoritative copy is `sc-dev`; rolling back means recreating sc-dolt beads there
-from the sc-beads tombstones. Note there is currently **no retained
-`DOLT_BACKUP` snapshot of `sc-dev`** — take one before any destructive operation
-on it.
+The purge is reversible: Dolt keeps full history, and a cold backup was taken
+first — `~/sc-beads-backup-pre-purge-20261025T172947Z`. To restore, clone that
+backup and push its `main` back to DoltHub.
+
+`sc-dev` (52 sc-dolt beads) and `atm-dev` (atm beads) were **not touched** by the
+purge and remain SSOT. Note there is still **no retained `DOLT_BACKUP` snapshot of
+`sc-dev`** — take one before any destructive operation on it.
