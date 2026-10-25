@@ -38,6 +38,8 @@ registry. Live mapping: `~/github/hendrix/sc-ecosystem-registry.json`.
 | Synced to DoltHub | done — 0 unpushed / 0 unpulled (2026-10-25) |
 | Workspace `.beads` repointed to server mode | done — PR #77, merged `51e71e5` |
 | Vestigial embedded local store removed | done |
+| 5 stale local worktrees removed | done — 2026-10-25 |
+| Legacy duplicates purged from `sc-beads` | done — 57 issues, 66 deps, 7 counters |
 
 ### The workspace repoint (why it mattered)
 
@@ -64,36 +66,61 @@ local dolt server spawned.
 
 ## Remaining work
 
-| # | Item | Priority |
-|---|---|---|
-| 1 | Remove the 5 stale local worktrees — all still carry the pre-#77 embedded `.beads` and will spawn a dolt server if `bd` runs there | Should do |
-| 2 | Backfill `close_reason` on 15 of the 52 sc-beads beads | Optional (bookkeeping) |
-| 3 | `sc-dolt` row in `sc-beads.project_prefixes` | **No action** — intentionally retained |
+**None.** The migration is complete, and `sc-beads` no longer carries stale
+duplicates (see *Legacy copy purge* below).
 
-### Detail
+The two items previously listed here were resolved by **deletion rather than
+bookkeeping**:
 
-**1. Stale worktrees.** `git worktree list` shows five under
-`~/github/synaptic-canvas-dolt-worktrees/`: `add-readme-site-url1`,
-`beads-migration-plan1`, `rename-team-sc-dev1`, `site-docs-index1`,
-`site-sc-compose-pattern1`. All are merged except `beads-migration-plan1`, whose
-only commit is the superseded proposal this record replaces. Removing them
-removes the last local places where an embedded server can be spawned.
+- **No backfill of `RELOCATED` reasons.** Stamping where 15 legacy copies went
+  has no SSOT value — those rows no longer exist.
+- **No `project_prefixes` change.** The `sc-dolt` row is retained deliberately:
+  `sc-beads` is the canonical SC-wide prefix registry, and rows are moved out,
+  never dropped.
 
-**2. Tombstone reasons.** In `sc-beads`, all 52 `sc-dolt-*` issues are `closed`,
-but only **37** carry `RELOCATED to sc-dev`; 15 were closed before the migration
-for unrelated reasons. No data risk — `sc-dev` is authoritative and holds all 52
-with IDs and hierarchy intact. This is audit-label consistency only.
+## Legacy copy purge (done 2026-10-25)
 
-**3. Prefix registry — no action.** The original plan said to delete the
-`sc-dolt` row from `sc-beads.project_prefixes`. That was **not** done and should
-not be: `sc-beads` is the canonical **SC-wide prefix registry** (archive +
-registry post-graduation). Dropping the row would orphan the registry — rows are
-moved out, never just deleted.
+`sc-beads` held **57 issues, all stale duplicates** of the SSOT databases:
+
+| Set | Count | What `sc-beads` said | Truth |
+|---|---|---|---|
+| `sc-dolt-*` | 52 | `closed` | perfect duplicate of `sc-dev` — ID sets diffed, 52 vs 52, no gaps either way |
+| `atm-x7y*` | 5 | `closed` | `atm-dev` has them **open / in_progress** — the copies were actively misleading |
+
+All 57 were deleted, plus their `dependencies` (66) and `child_counters` (7)
+rows. `project_prefixes` (16 rows), `metadata` and `config` were retained.
+
+Post-purge state, verified by a **fresh `dolt clone` from DoltHub**:
+
+- issues **0**, registry rows **16**, history **165 commits** (nothing rewritten)
+- `sc-dev` remains SSOT for sc-dolt beads; `atm-dev` for atm beads
+- `sc-beads` is now purely the canonical SC-wide prefix registry
+
+Cold backup taken before the purge:
+`~/sc-beads-backup-pre-purge-20261025T172947Z`
+
+## Worktree cleanup (done 2026-10-25)
+
+All five worktrees under `~/github/synaptic-canvas-dolt-worktrees/` were removed
+— `add-readme-site-url1`, `beads-migration-plan1`, `rename-team-sc-dev1`,
+`site-docs-index1`, `site-sc-compose-pattern1` — along with the parent scaffolding
+directory. All were clean (no uncommitted work); four were merged branches and
+`beads-migration-plan1` was superseded by this record.
+
+They mattered because each still carried the **pre-#77 embedded `.beads`**, so
+any `bd` invocation inside one would auto-spawn a per-workspace dolt server. With
+them gone, `git worktree list` shows only the main checkout on `develop`, and the
+only dolt server is the launchd-managed shared one on `127.0.0.1:3308`.
+
+Branches were left intact (local + remote); only the working directories were
+removed. `sc/beads-migration-plan1` can be deleted whenever convenient.
 
 ## Rollback
 
-The `sc-beads` copies are `closed`, not deleted, so they remain reopenable. The
-authoritative copy is `sc-dev`; rolling back means recreating sc-dolt beads there
-from the sc-beads tombstones. Note there is currently **no retained
-`DOLT_BACKUP` snapshot of `sc-dev`** — take one before any destructive operation
-on it.
+The purge is reversible: Dolt keeps full history, and a cold backup was taken
+first — `~/sc-beads-backup-pre-purge-20261025T172947Z`. To restore, clone that
+backup and push its `main` back to DoltHub.
+
+`sc-dev` (52 sc-dolt beads) and `atm-dev` (atm beads) were **not touched** by the
+purge and remain SSOT. Note there is still **no retained `DOLT_BACKUP` snapshot of
+`sc-dev`** — take one before any destructive operation on it.
