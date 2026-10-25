@@ -38,6 +38,7 @@ registry. Live mapping: `~/github/hendrix/sc-ecosystem-registry.json`.
 | Synced to DoltHub | done — 0 unpushed / 0 unpulled (2026-10-25) |
 | Workspace `.beads` repointed to server mode | done — PR #77, merged `51e71e5` |
 | Vestigial embedded local store removed | done |
+| 5 stale local worktrees removed | done — 2026-10-25 |
 
 ### The workspace repoint (why it mattered)
 
@@ -66,29 +67,37 @@ local dolt server spawned.
 
 | # | Item | Priority |
 |---|---|---|
-| 1 | Remove the 5 stale local worktrees — all still carry the pre-#77 embedded `.beads` and will spawn a dolt server if `bd` runs there | Should do |
-| 2 | Backfill `close_reason` on 15 of the 52 sc-beads beads | Optional (bookkeeping) |
-| 3 | `sc-dolt` row in `sc-beads.project_prefixes` | **No action** — intentionally retained |
+| 1 | Backfill `close_reason` on 15 of the 52 sc-beads beads | Optional (bookkeeping) |
+| 2 | `sc-dolt` row in `sc-beads.project_prefixes` | **No action** — intentionally retained |
 
 ### Detail
 
-**1. Stale worktrees.** `git worktree list` shows five under
-`~/github/synaptic-canvas-dolt-worktrees/`: `add-readme-site-url1`,
-`beads-migration-plan1`, `rename-team-sc-dev1`, `site-docs-index1`,
-`site-sc-compose-pattern1`. All are merged except `beads-migration-plan1`, whose
-only commit is the superseded proposal this record replaces. Removing them
-removes the last local places where an embedded server can be spawned.
-
-**2. Tombstone reasons.** In `sc-beads`, all 52 `sc-dolt-*` issues are `closed`,
+**1. Tombstone reasons.** In `sc-beads`, all 52 `sc-dolt-*` issues are `closed`,
 but only **37** carry `RELOCATED to sc-dev`; 15 were closed before the migration
 for unrelated reasons. No data risk — `sc-dev` is authoritative and holds all 52
 with IDs and hierarchy intact. This is audit-label consistency only.
 
-**3. Prefix registry — no action.** The original plan said to delete the
+**2. Prefix registry — no action.** The original plan said to delete the
 `sc-dolt` row from `sc-beads.project_prefixes`. That was **not** done and should
 not be: `sc-beads` is the canonical **SC-wide prefix registry** (archive +
 registry post-graduation). Dropping the row would orphan the registry — rows are
 moved out, never just deleted.
+
+## Worktree cleanup (done 2026-10-25)
+
+All five worktrees under `~/github/synaptic-canvas-dolt-worktrees/` were removed
+— `add-readme-site-url1`, `beads-migration-plan1`, `rename-team-sc-dev1`,
+`site-docs-index1`, `site-sc-compose-pattern1` — along with the parent scaffolding
+directory. All were clean (no uncommitted work); four were merged branches and
+`beads-migration-plan1` was superseded by this record.
+
+They mattered because each still carried the **pre-#77 embedded `.beads`**, so
+any `bd` invocation inside one would auto-spawn a per-workspace dolt server. With
+them gone, `git worktree list` shows only the main checkout on `develop`, and the
+only dolt server is the launchd-managed shared one on `127.0.0.1:3308`.
+
+Branches were left intact (local + remote); only the working directories were
+removed. `sc/beads-migration-plan1` can be deleted whenever convenient.
 
 ## Rollback
 
