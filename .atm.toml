@@ -26,7 +26,7 @@ env = { ATM_IDENTITY = "team-lead", ATM_TEAM = "sc-dev" }
 
 [[rmux.windows.panes]]
 name = "csc"
-command = "codex --yolo"
+command = "codex --no-daemon --yolo"
 env = { ATM_IDENTITY = "csc", ATM_TEAM = "sc-dev" }
 
 [[rmux.windows.panes]]
